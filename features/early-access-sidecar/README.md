@@ -59,6 +59,15 @@ private, so its release files are not downloadable).
    folder, then swapped in, so a download in flight is never cut short).
 2. Nothing restarts: the next request reads the new `release.json`.
 
+The API container has no `curl` or `wget`, and copying 743 MB through
+`kubectl cp` ran at about 200 KB/s (one stream through the API server, 320 ms
+away). The fast way is to have the server fetch each file from GitHub on a
+short-lived signed asset link and check its SHA-256. Only `filebrowser` on the
+volume has a downloader, and it mounts just the `assets/` folder (`subPath`), so
+what it fetches lands at `/mnt/data/assets/...` to the API: copy it from the API
+container into `/mnt/data/sidecar`, then remove filebrowser's copy. The 0.3.1
+upload first went live in the wrong folder that way (2026-11-15).
+
 ## The page
 
 - A download strip for the visitor's own OS (Apple silicon for a Mac), with the
