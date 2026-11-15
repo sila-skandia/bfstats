@@ -156,3 +156,12 @@ live stay live.
   as the replay reads a speed of 0 as 1 (`replay.js` resets it); the card now
   pauses the round. The salt's faint quote mark sat over the speaker's name
   and went; the NSFW card came in on the owner's review.
+
+## On the site (2026-11-15)
+
+The first recap is live: Omaha Beach (`ku8gdc58b6`), slug `2v7vt4wata`,
+83.7 s (the card, 57 s of moments with two 1 v 1s, the NSFW card and five
+salt slides, the closing card); 306 MB 4K, 67 MB HD, a 40 MB link copy the
+share page names, so it plays in a Discord embed. In the REPLAY tab under
+Recaps, a 16:9 card. The nightly films the next on the first night of ISO
+week 47.
