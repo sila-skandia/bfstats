@@ -82,6 +82,12 @@ class RecapPickTests(unittest.TestCase):
         # The owner, 2026-11-15: "maybe just in a couple of interesting frames".
         self.assertEqual(self.r["tune"]["duels"], 2)
 
+    def test_a_recap_films_about_two_minutes_of_action(self) -> None:
+        # The owner, 2026-11-15: the first was "a highlight reel of a very brief
+        # number of kills"; the budget is about two minutes of 5 s beats.
+        self.assertGreaterEqual(self.r["tune"]["budget"], 120)
+        self.assertLessEqual(self.r["tune"]["beat"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()

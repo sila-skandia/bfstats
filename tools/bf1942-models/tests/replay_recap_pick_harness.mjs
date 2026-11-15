@@ -63,5 +63,5 @@ console.log(JSON.stringify({
     standing: P.sampleGapAt(runner(0.104, { still: true }), 7),
     outside: P.sampleGapAt(runner(0.104), 30),
   },
-  tune: { reach: P.RECAP.reach, gap: P.RECAP.gap, duels: P.RECAP.duels, min: P.RECAP.min },
+  tune: { reach: P.RECAP.reach, gap: P.RECAP.gap, duels: P.RECAP.duels, min: P.RECAP.min, budget: P.RECAP.budget, beat: P.RECAP.beat },
 }));

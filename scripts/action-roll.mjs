@@ -563,6 +563,11 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       st.impact = P.clone();
       return { pos, look, subject: P };
     }
+    // A bullet's hold over: stay where the round cam left the camera.
+    if ((b.phase === 'bullet' || b.phase === 'held') && st.pos) {
+      const v = b.victims.length ? where(b.victims[0], Math.min(t, b.tAct + 0.05)) : null;
+      return { pos: st.pos.clone(), look: v ? v.eye.clone() : st.look.clone(), subject: v ? v.eye.clone() : st.look.clone() };
+    }
     // After it lands: where it landed, the camera drawn back from it.
     if (b.phase === 'impact' && st.impact) {
       const P = st.impact.clone();
@@ -640,6 +645,16 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   const tagBeat = (b, q) => {
     b.moment = q.moment; b.part = q.part; b.parts = q.parts; b.k = q.k; b.first = q.first;
     b.split = Boolean(q.moment.split) && b.victims.length > 0;
+    // A long shot rides its bullet (the owner, 2026-11-15: "the long shots
+    // need to chase the bullet because for sniper it's hard to sometimes see
+    // the victim"): the creator's round cam, as a Short's kill shot is filmed,
+    // armed just before the round leaves.
+    if (cfg.recap.bullet && b.kind === 'kill' && !b.split && q.k) {
+      const dist = Number(q.k.distance ?? q.moment.distance ?? 0);
+      const long = q.moment.kind === 'long-shot' || dist >= cfg.recap.bullet.from;
+      const row = long ? r.creator?.killAt?.(q.k.t, q.k.victim) : null;
+      if (row?.round?.f) b.bullet = { f: row.round.f, kill: row.kill, dist: dist || Number(row.round.distance ?? 0) };
+    }
     const log = st.beats[st.beats.length - 1];
     if (log) { log.moment = q.moment.label; log.momentKind = q.moment.kind; log.part = q.part; log.split = b.split; }
   };
@@ -756,6 +771,29 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         if (c.fov !== cfg.fov) { c.fov = cfg.fov; c.updateProjectionMatrix(); }
         c.updateMatrixWorld();
         c.matrixWorldInverse.copy(c.matrixWorld).invert();
+        return true;
+      }
+      // A long shot's bullet: the round cam has the camera from just before
+      // the round leaves until its hold ends; the settled camera then carries
+      // on from where it left it.
+      const ro = r.creator?.rounds;
+      if (st.beat?.bullet?.armed && ro && ro.state !== 'idle' && ro.place(c, dt, t)) {
+        st.pos = c.position.clone();
+        st.look = new V3(0, 0, -20).applyQuaternion(c.quaternion).add(c.position);
+        st.goal = st.pos.clone(); st.goalLook = st.look.clone(); st.goalBeat = st.beat;
+        st.lift = 0;
+        st.want = { pos: st.pos.clone(), look: st.look.clone(), subject: st.look.clone() };
+        return true;
+      }
+      // After the bullet's hold, until the cut: held exactly where the round
+      // cam left it. Eased toward the man as a settled camera is, it pushed
+      // through the landing craft he fell beside (Omaha, 2026-11-15).
+      if (st.beat?.phase === 'held' && st.pos && st.look) {
+        c.position.copy(st.pos);
+        c.quaternion.setFromRotationMatrix(new M4().lookAt(st.pos, st.look, new V3(0, 1, 0)));
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+        measure(st.pos, st.look);
         return true;
       }
       if (!st.want) return false;
@@ -890,6 +928,38 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         b = startBeat(forcedPick(0, t, null) ?? { a: first, near: true, d: 0 }, t, 'opening');
         st.blend = 1;
       }
+      // A long shot's bullet: arm the round cam 2.5 s (its own set-up lead)
+      // before the round leaves, our rig kept on top; while it rides, it owns
+      // the clock and the beat waits for its hold to end.
+      const ro = r.creator?.rounds;
+      if (b.bullet && ro && !b.bullet.armed && !b.bullet.failed && t >= b.bullet.f.t - 2.6) {
+        ro.bulletTime = { pace: cfg.recap.bullet.pace, flight: Math.min(cfg.recap.bullet.flightMax, Math.max(cfg.recap.bullet.flightMin, cfg.recap.bullet.flightBase + (b.bullet.dist || 0) / cfg.recap.bullet.flightPerM)) };
+        ro.hold = cfg.recap.bullet.hold;
+        ro.afterHit = 'stay';
+        const ok = ro.arm(b.bullet.f, { kill: b.bullet.kill });
+        r.camera.setRig(placeRig);
+        if (ok) { b.bullet.armed = true; b.bullet.at = t; } else b.bullet.failed = true;
+      }
+      if (b.bullet?.armed && ro) {
+        if (ro.state === 'flying' || ro.state === 'impact') b.bullet.rode = true;
+        const done = ro.state === 'idle' && b.bullet.rode;
+        // A round that never leaves: the beat goes on as a kill's.
+        const stuck = ro.state === 'armed' && t > b.tAct + 1.5;
+        if (stuck) { ro.stop(false); r.camera.setRig(placeRig); b.bullet.armed = false; b.bullet.failed = true; }
+        else if (!done) {
+          b.phase = 'bullet';
+          st.speed = r.speed;
+          st.want = want(b, t) ?? st.want;
+          const log = st.beats[st.beats.length - 1];
+          if (log) log.bullet = true;
+        } else if (b.phase === 'bullet') {
+          b.phase = 'held';
+          b.end = t + cfg.recap.bullet.after;
+          b.slowed = true;
+          b.lingered = true;
+          st.speed = r.speed;
+        }
+      }
       // Beat phases: lead -> (round -> impact) | down -> done.
       if (b.phase === 'lead' && t >= b.tAct) {
         if (b.kind === 'shot') { b.phase = 'round'; b.firedAt = t; }
@@ -944,7 +1014,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       }
       const ease = 1 / (cfg.slowEase * cfg.fps);
       const target = t < st.slowUntil ? cfg.slow : 1;
-      st.speed += Math.sign(target - st.speed) * Math.min(Math.abs(target - st.speed), (1 - cfg.slow) * ease);
+      if (b.phase === 'bullet') st.speed = r.speed;
+      else st.speed += Math.sign(target - st.speed) * Math.min(Math.abs(target - st.speed), (1 - cfg.slow) * ease);
       // Smoke or a blast filling the picture: move on rather than show white
       // (Arnhem, 2026-11-12: six seconds of a smoke screen).
       if (st.whiteRun > cfg.whiteFor * cfg.fps && b.phase !== 'round' && (b.end === null || b.end > t + 0.3) && st.blend >= 1) {
@@ -982,6 +1053,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         seek = to;
         b = startBeat({ a: q.a, near: true, d: 0 }, to + settle, q.first ? 'next moment' : 'cut in the moment');
         tagBeat(b, q);
+        if (r.creator?.rounds && r.creator.rounds.state !== 'idle') { r.creator.rounds.stop(false); r.camera.setRig(placeRig); }
         st.pos = null; st.look = null; st.goal = null; st.from = null; st.blend = 1; st.lift = 0; st.wallLift = 0;
         st.slowUntil = -1; st.speed = 1; st.round = null; st.impact = null; st.posB = null;
         st.hide = cfg.recap.settle;
@@ -1303,7 +1375,22 @@ const recordingId = { slug: SLUG, title: rec.title, mod: rec.mod, level: rec.lev
 // --- A recap's plan (features/match-recap), made here from the recording as
 // the Shorts runner makes its picks: its moments (replay-recap-pick.js) and
 // its salt. A script's plan is filmed as it was.
-const RECAP_TUNE = Object.freeze({ fadeOut: 0.55, fadeIn: 0.5, dip: 0.3, settle: 14, end: 3.4, intro: 3.6 });
+const RECAP_TUNE = Object.freeze({ fadeOut: 0.45, fadeIn: 0.4, dip: 0.25, settle: 14, end: 3.4, intro: 3.6 });
+// A recap's beats are shorter than a roll's (the owner, 2026-11-15: more
+// action, "either by shortening what we already film or making the reel
+// longer"): 2.4 s on him before a kill, 2.2 s held after, a fight 1.2 s more.
+const RECAP_PACE = Object.freeze({
+  lead: { shot: 2.0, kill: 2.4, bomb: 3.0, fire: 1.4 },
+  after: { shot: 2.0, kill: 2.2, fire: 1.2, miss: 0.7 },
+  busy: { acts: 2, near: 80, within: 5, stay: 1.2 },
+});
+// A long shot's bullet ride: the Shorts' own pace (shorts-runner.mjs
+// SHORT_PACE), the round on screen 0.45-1.4 s by distance, its hold 1 s at
+// 0.6x; from 60 m, and every long-shot moment.
+const RECAP_BULLET = Object.freeze({
+  from: 60, pace: 90, flightBase: 0.35, flightPerM: 250, flightMin: 0.45, flightMax: 1.4, after: 0.5,
+  hold: Object.freeze({ real: 1.0, speed: 0.6, max: 2.5, pastKill: 0.7, hullReal: 2.6, hullMax: 4, hullSpeed: 0.75 }),
+});
 let recapPlan = null;
 if (RECAP) {
   const viewer = path.join(REPO, 'tools/bf1942-models/viewer');
@@ -1365,7 +1452,13 @@ try {
     (0, eval)(src);
     if (overlay) { (0, eval)(overlay); await window.__recapDraw.ready; }
     const r = window.replay;
-    r.creator?.toggle?.(false);
+    // A recap's long shots ride the creator's round cam: its view on, the
+    // camera staying where the hold left it.
+    if (cfg.recap) {
+      r.creator?.grant?.(true);
+      r.creator?.toggle?.(true);
+      if (r.creator) { r.creator.prefs.afterHit = 'stay'; r.creator.rounds.afterHit = 'stay'; }
+    } else r.creator?.toggle?.(false);
     const n = window.__roll.install(cfg);
     // The viewer as it is now: one hash over the modules the take runs.
     const parts = [];
@@ -1376,7 +1469,7 @@ try {
   }, {
     src: ROLL_SRC,
     overlay: RECAP ? fs.readFileSync(path.join(REPO, 'scripts/recap-overlay.js'), 'utf8') : null,
-    cfg: { ...ROLL, recap: recapPlan ? { ...RECAP_TUNE, moments: recapPlan.moments } : null, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0,
+    cfg: { ...ROLL, ...(RECAP ? RECAP_PACE : {}), recap: recapPlan ? { ...RECAP_TUNE, bullet: RECAP_BULLET, moments: recapPlan.moments } : null, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0,
       viewerModules: VIEWER_MODULES, forced: SCRIPT && !RECAP ? SCRIPT.beats.map(b => ({ kind: b.kind, pid: b.pid, tAct: b.tAct, how: b.how })) : null },
   });
   log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts; ${info.dropped} dropped as out of range or stuttering); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
@@ -1611,7 +1704,7 @@ try {
   }, null, 2));
   fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, clipping: { ...qa, at: undefined, runs }, beats,
     ...(recapPlan ? { salt: recapPlan.salt, tail } : {}) }, null, 2));
-  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${(RECAP ? (b.moment ?? '') + (b.split ? ' [split]' : '') + ' ' : '')}${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
+  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${(RECAP ? (b.moment ?? '') + (b.split ? ' [split]' : '') + (b.bullet ? ' [bullet]' : '') + ' ' : '')}${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
   let wavPath = null;
   if (SOUND && from !== null) {
     const adv = paces.map(p => p / FPS);

@@ -165,3 +165,46 @@ salt slides, the closing card); 306 MB 4K, 67 MB HD, a 40 MB link copy the
 share page names, so it plays in a Discord embed. In the REPLAY tab under
 Recaps, a 16:9 card. The nightly films the next on the first night of ISO
 week 47.
+
+## Review of the first: more action, long shots ride the bullet (2026-11-15)
+
+The owner, on the Omaha recap:
+
+> the long shots need to chase the bullet because for sniper it's hard to
+> sometimes see the victim
+
+> I think the clip is too short, it's not really a recap but a higlight reel
+> of a very brief number of kills. So we probably newd to film more action,
+> eithe by shortening what already film or making the reel longer
+
+What changed:
+
+- **A long shot rides its bullet.** A kill of 60 m or more on foot, and every
+  long-shot moment, is handed to the creator's round cam as a Short's kill
+  shot is (`replay-roundcam.js`): armed 2.6 s before the recorded round
+  leaves (its own set-up lead), the round held back to land as he dies, the
+  camera behind it at the Shorts' pace (0.45-1.4 s on screen by distance, the
+  hold 1 s at 0.6x). The recap's camera keeps the lead-in over his shoulder,
+  gives the camera to the round cam while it rides, and after the hold stays
+  exactly where it left it until the cut (eased on, it pushed through the
+  landing craft the man fell beside). The round cam owns the clock while it
+  rides. A round that never leaves (1.5 s past the kill) falls back to the
+  kill's own circle. The creator view is on for a recap's take.
+- **More action.** Beats are shorter (2.4 s before a kill, 2.2 s held after,
+  a fight 1.2 s more; fades 0.45 s, dips 0.25 s), moments may be 4 s apart
+  and 4 of one man, and the budget is 125 s of moments (was 96). Two kinds
+  fill a round without streaks: a **firefight** (3 or more kills by 2 or
+  more men within 15 s and 80 m, up to 4 of them, weight 30 + 6 a kill) and
+  **any other kill** the recorder saw well (weight 8). Omaha went from 9 beats
+  in 57 s to 23 beats in 125 s; Kursk picks 23 moments, Caen 10 bigger ones
+  (seven streaks).
+
+The 1080p check of Omaha (`t5-omaha`): all four long shots rode their bullet
+(116, 115, 131, 102 m). Two beats on the bluff log the lens near terrain: the
+camera is tucked against the slope with the man and the fight in view, left
+as it is.
+
+Re-filmed in 4K with sound and swapped on the site the same day: `rjaqdw87yb`
+(158.9 s: the card, 129 s of moments in 23 beats with four bullet rides and
+two 1 v 1s, the NSFW card and five salt slides, the closing card; 665 MB 4K,
+147 MB HD, a 40.5 MB link copy). The first (`2v7vt4wata`) was taken down.

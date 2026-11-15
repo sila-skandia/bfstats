@@ -23,20 +23,24 @@ import { recorderName } from './replay-chapters.js';
  *  moments for a recap at all; `duels` split screens at most. */
 export const RECAP = Object.freeze({
   reach: 200, gap: 0.16, step: 0.25, before: 3.6, after: 2.5,
-  spacing: 6, perPlayer: 3, budget: 96, beat: 6.4, min: 4, max: 12,
-  multiGap: 5, duels: 2, streakMin: 5, streakParts: 3, streakWindow: 30, revenge: 45,
+  // More action (the owner, 2026-11-15, on the first: "not really a recap but
+  // a highlight reel of a very brief number of kills"): beats of about 5 s,
+  // about two minutes of them, firefights and any well-seen kill to fill.
+  spacing: 4, perPlayer: 4, budget: 125, beat: 5, min: 4, max: 24,
+  multiGap: 5, duels: 2, streakMin: 5, streakParts: 4, streakWindow: 30, revenge: 45,
+  fight: { window: 15, near: 80, min: 3, parts: 4 },
 });
 
 /** A moment's weight before the recorder's bonus. */
 const WEIGHT = {
   'tank-to-air': 95, 'air-to-air': 70, 'ground-to-air': 68, 'tank-to-tank': 52, 'tank-buster': 58, 'long-shot': 40,
-  bomb: 50, duel: 56, multi: 34, streak: 44, revenge: 38, kill: 14,
+  bomb: 50, duel: 56, multi: 34, streak: 44, revenge: 38, fight: 30, kill: 14, any: 8,
 };
 /** What a moment's caption calls it. */
 const LABEL = {
   'tank-to-air': 'Tank downs a plane', 'air-to-air': 'Air to air', 'ground-to-air': 'Ground to air',
   'tank-to-tank': 'Tank duel', 'tank-buster': 'Tank buster', 'long-shot': 'Long shot', bomb: 'Bombs away',
-  revenge: 'Revenge', kill: 'Kill',
+  revenge: 'Revenge', kill: 'Kill', fight: 'Firefight', any: '',
 };
 const MULTI_WORD = ['', '', 'Double kill', 'Triple kill', 'Quad kill'];
 /** The recording player's own moments weigh this much more ("always
@@ -228,6 +232,29 @@ export function momentCandidates(rec, { models = new Map(), kills = rec.kills, r
     const back = good.find(o => o.killer === k.victim && o.victim === k.killer && o.t > k.t + 3 && o.t - k.t <= RECAP.revenge);
     if (!back) continue;
     push({ kind: 'revenge', label: LABEL.revenge, pid: back.killer, score: WEIGHT.revenge, kills: [partOf(rec, back)], avenges: k.t });
+  }
+  // A firefight: kills by different men close together in time and place,
+  // filmed one after another (a dip between them).
+  for (let i = 0; i < good.length; i++) {
+    const k = good[i];
+    const at = whereIs(rec, k.victim, k.t - 0.3, kills).pos;
+    if (!at) continue;
+    if (good.some((o, j) => j < i && k.t - o.t <= RECAP.fight.window && (() => { const p = whereIs(rec, o.victim, o.t - 0.3, kills).pos; return p && flatDistance(p, at) <= RECAP.fight.near; })())) continue;
+    const run = [k];
+    for (let j = i + 1; j < good.length && good[j].t - k.t <= RECAP.fight.window; j++) {
+      const p = whereIs(rec, good[j].victim, good[j].t - 0.3, kills).pos;
+      if (p && flatDistance(p, at) <= RECAP.fight.near && good[j].t - run.at(-1).t > 0.3) run.push(good[j]);
+    }
+    const killers = new Set(run.map(o => o.killer));
+    if (run.length < RECAP.fight.min || killers.size < 2) continue;
+    const parts = run.slice(0, RECAP.fight.parts);
+    push({ kind: 'fight', label: LABEL.fight, pid: parts[0].killer, score: WEIGHT.fight + 6 * Math.min(8, run.length),
+      kills: parts.map((o, j) => partOf(rec, o, { index: j + 1, of: run.length, shooter: o.killer })), count: run.length });
+  }
+  // Any other kill the recorder saw well: the filler a quiet round needs.
+  for (const k of good) {
+    if (k.killer === recorder) continue;
+    push({ kind: 'any', label: LABEL.any, pid: k.killer, score: WEIGHT.any, kills: [partOf(rec, k)] });
   }
   // The recorder's own kills, so he is in his own recap whatever he did.
   for (const k of good) {
