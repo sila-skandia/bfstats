@@ -53,20 +53,25 @@ private, so its release files are not downloadable).
 
 ### Publishing a release
 
-1. Download the release's files (Windows `.exe`, the two Mac `.dmg`s, the
-   AppImage, `.deb` and `.pacman`), write `release.json` with their sizes and
-   SHA-256s, and copy the folder to `/mnt/data/sidecar` in the API pod (a new
-   folder, then swapped in, so a download in flight is never cut short).
-2. Nothing restarts: the next request reads the new `release.json`.
+`deploy/app/sidecar-release-job.yaml`, applied by hand like the other manifests
+Jenkins does not apply. One run of the Job reads the release from GitHub
+(the repository and a read-only token are the `sidecar-release` Secret, made
+once by hand, so neither is in this repo), downloads the six installers and
+the release's `SHA256SUMS` files, checks every file, writes `release.json`
+into `/mnt/data/sidecar.next`, and swaps it in for `/mnt/data/sidecar`. A
+failed run leaves the live release as it was. The API reads the folder on each
+request, so nothing restarts.
 
-The API container has no `curl` or `wget`, and copying 743 MB through
-`kubectl cp` ran at about 200 KB/s (one stream through the API server, 320 ms
-away). The fast way is to have the server fetch each file from GitHub on a
-short-lived signed asset link and check its SHA-256. Only `filebrowser` on the
-volume has a downloader, and it mounts just the `assets/` folder (`subPath`), so
-what it fetches lands at `/mnt/data/assets/...` to the API: copy it from the API
-container into `/mnt/data/sidecar`, then remove filebrowser's copy. The 0.3.1
-upload first went live in the wrong folder that way (2026-11-15).
+To publish a version: set `SIDECAR_VERSION` and the Job's name in the file,
+then apply it and follow its log (the commands are at the top of the file).
+Downloading from GitHub inside the cluster takes under a minute; the script ran
+end to end against 0.3.1 in 25 s from a home connection.
+
+Copying the files up by hand was tried first (2026-11-15) and is not the way:
+`kubectl cp` goes through the API server, one stream 320 ms away, and ran at
+about 200 KB/s; the API container has no `curl` or `wget`; and `filebrowser`
+mounts only the volume's `assets/` folder (`subPath`), so what it writes is
+not where the API looks.
 
 ## The page
 

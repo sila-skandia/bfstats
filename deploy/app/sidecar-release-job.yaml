@@ -1,0 +1,159 @@
+# bfstats Sidecar's installers for the early access page (features/early-access-sidecar).
+#
+# One run puts one release on the stats volume, where the API serves it to
+# Early Adopters (/stats/sidecar, SidecarDownloads__Path = /mnt/data/sidecar):
+# it reads the release from GitHub, downloads the Windows, Mac and Linux
+# installers and the release's SHA256SUMS files, checks every file, writes
+# release.json, then swaps the folder in. A failed run leaves the live release
+# as it was. The API reads the folder on each request: nothing restarts.
+#
+# The GitHub repository and a token that can read its releases are a Secret,
+# created once by hand (a fine-grained token, that repository only,
+# Contents: read-only):
+#   kubectl --context hetzner -n bf42-stats create secret generic sidecar-release \
+#     --from-literal=repo=<owner>/<repository> --from-literal=token=<token>
+#
+# To publish a version: set SIDECAR_VERSION below and the Job's name to match
+# (a Job runs once per name), then apply it and follow it:
+#   kubectl --context hetzner -n bf42-stats apply -f deploy/app/sidecar-release-job.yaml
+#   kubectl --context hetzner -n bf42-stats logs -f job/sidecar-release-0-3-1
+# A finished Job removes itself after a day (ttlSecondsAfterFinished).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sidecar-release-script
+  namespace: bf42-stats
+data:
+  publish.py: |
+    import hashlib, json, os, shutil, sys, urllib.request
+
+    ROOT = "/mnt/data"
+    LIVE, NEXT, OLD = (os.path.join(ROOT, n) for n in ("sidecar", "sidecar.next", "sidecar.old"))
+    version = os.environ["SIDECAR_VERSION"]
+    repo = os.environ["SIDECAR_REPO"].strip()
+    token = os.environ["SIDECAR_TOKEN"].strip()
+    tag = f"sidecar-desktop-v{version}"
+
+    # The installers the page offers: (file name suffix, platform, arch).
+    WANTED = [
+        ("-x64.exe", "windows", "x64"),
+        ("-mac-arm64.dmg", "mac", "arm64"),
+        ("-mac-x64.dmg", "mac", "x64"),
+        ("-x86_64.AppImage", "linux", "x64"),
+        ("-amd64.deb", "linux", "x64"),
+        ("-x64.pacman", "linux", "x64"),
+    ]
+
+    def api(url, accept="application/vnd.github+json"):
+        req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "bfstats-release-job"})
+        # Only GitHub's API sees the token: an asset answers with a redirect to
+        # a signed download link, which must not carry it.
+        req.add_unredirected_header("Authorization", f"Bearer {token}")
+        return urllib.request.urlopen(req, timeout=120)
+
+    with api(f"https://api.github.com/repos/{repo}/releases/tags/{tag}") as r:
+        release = json.load(r)
+    assets = {a["name"]: a for a in release["assets"]}
+
+    def fetch(name, dest):
+        sha = hashlib.sha256()
+        with api(assets[name]["url"], "application/octet-stream") as r, open(dest, "wb") as out:
+            while chunk := r.read(1 << 20):
+                sha.update(chunk)
+                out.write(chunk)
+        return sha.hexdigest()
+
+    shutil.rmtree(NEXT, ignore_errors=True)
+    os.makedirs(NEXT)
+
+    sums = {}
+    for name in assets:
+        if name.startswith("SHA256SUMS"):
+            with api(assets[name]["url"], "application/octet-stream") as r:
+                for line in r.read().decode().splitlines():
+                    if line.strip():
+                        digest, file = line.split(maxsplit=1)
+                        sums[file.lstrip("*").strip()] = digest
+
+    files = []
+    for suffix, platform, arch in WANTED:
+        name = f"bfstats-sidecar-{version}{suffix}"
+        if name not in assets:
+            sys.exit(f"{tag} has no {name}")
+        if name not in sums:
+            sys.exit(f"{tag}'s SHA256SUMS do not list {name}")
+        print(f"downloading {name} ({assets[name]['size']} bytes)", flush=True)
+        got = fetch(name, os.path.join(NEXT, name))
+        if got != sums[name]:
+            sys.exit(f"{name}: sha256 {got}, the release says {sums[name]}")
+        files.append({"file": name, "platform": platform, "arch": arch,
+                      "size": os.path.getsize(os.path.join(NEXT, name)), "sha256": got})
+
+    with open(os.path.join(NEXT, "release.json"), "w") as out:
+        json.dump({"version": version, "releasedAt": release["published_at"][:10], "files": files}, out, indent=2)
+
+    shutil.rmtree(OLD, ignore_errors=True)
+    if os.path.isdir(LIVE):
+        os.rename(LIVE, OLD)
+    os.rename(NEXT, LIVE)
+    shutil.rmtree(OLD, ignore_errors=True)
+    # Left by the hand uploads of 0.3.1 (2026-11-15), before this Job.
+    shutil.rmtree(os.path.join(ROOT, "sidecar.incoming"), ignore_errors=True)
+    print(f"live: {version}, {len(files)} files in {LIVE}", flush=True)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sidecar-release-0-3-1
+  namespace: bf42-stats
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      # The API's uid and group, so it reads what this writes.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: publish
+          image: python:3.13-alpine
+          command: ["python3", "/script/publish.py"]
+          env:
+            - name: SIDECAR_VERSION
+              value: "0.3.1"
+            - name: SIDECAR_REPO
+              valueFrom:
+                secretKeyRef:
+                  name: sidecar-release
+                  key: repo
+            - name: SIDECAR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sidecar-release
+                  key: token
+          volumeMounts:
+            - name: stats-data
+              mountPath: /mnt/data
+            - name: script
+              mountPath: /script
+              readOnly: true
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        # The API's own volume (deployment.yaml); local-path, so the Job runs
+        # on the node that holds it.
+        - name: stats-data
+          persistentVolumeClaim:
+            claimName: bf42-stats-pvc-v2
+        - name: script
+          configMap:
+            name: sidecar-release-script
