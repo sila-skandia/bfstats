@@ -265,6 +265,7 @@ folder answers.
 | [replay-feature-sweep-2026-11-01](replay-feature-sweep-2026-11-01/README.md) | research | What does retail BF1942 have that the replay or its recorders do not, ranked for implementation, with each entry's brief and the files it shares? |
 | [replay-accuracy](replay-accuracy/README.md) | build | How accurate was each player in a recorded round, from the server's tally or rebuilt from the recording? |
 | [replay-spotlight](replay-spotlight/README.md) | build | How does a kill in the replay's timeline play from just before it with the killer and the one they killed lit, the rest dulled and their rounds flying as tracers (the match-up and its breakdown before it, in its history)? |
+| [replay-load-batching](replay-load-batching/README.md) | fix | Why did a replay keep fetching small files for minutes after it showed, and how does it ask for them up front now? |
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [replay-on-stats-pages](replay-on-stats-pages/README.md) | build | Where do shared replays show on bfstats.io's server and player pages, and how are they matched to them? |
 | [recording-stats-round](recording-stats-round/README.md) | build | How is a shared recording tied to the bfstats.io round it was recorded in, and where do round reports and session lists show it? |

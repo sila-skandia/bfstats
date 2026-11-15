@@ -537,11 +537,10 @@ export function createPageAudio(page) {
         files.add(a.file);
         for (const f of a.randomPlay || []) files.add(f);
       }
-      for (const f of files) {
-        const buf = await getBuffer(f);
-        if (gen !== pageAudio.soundsGeneration) return;
-        if (buf) buffers.set(f, buf);
-      }
+      // Together, not one round trip each.
+      const got = await Promise.all([...files].map(f => getBuffer(f)));
+      if (gen !== pageAudio.soundsGeneration) return;
+      [...files].forEach((f, i) => { if (got[i]) buffers.set(f, got[i]); });
       pageAudio.scrape = { areas: scrapeAreas, buffers, voices: new ScrapeVoices(), started: 0 };
     }
 
@@ -554,6 +553,9 @@ export function createPageAudio(page) {
         groups.get(key).areas.push(area);
       }
 
+      // Every bed asked for at once (the cache holds the pending decode), then
+      // each placed in order as it lands.
+      for (const group of groups.values()) getBuffer(group.file);
       for (const group of groups.values()) {
         const buf = await getBuffer(group.file);
         if (gen !== pageAudio.soundsGeneration) return;
@@ -649,6 +651,13 @@ export function createPageAudio(page) {
       drive: drive ?? null,
       groups: groups ?? [],
     });
+  }
+
+  /** Every sample of `templates`' engines, guns and parts, fetched and
+   *  decoded now rather than on each hull's first claim (`VehicleAudioRack.prime`). */
+  function primeVehicleAudio(templates) {
+    if (page.AUDIO_OFF || !templates?.length) return Promise.resolve(0);
+    return ensureVehicleAudio().prime(templates).catch(() => 0);
   }
 
   /** A seat left. The hull keeps sounding while anyone remains aboard. */
@@ -1492,6 +1501,7 @@ export function createPageAudio(page) {
     soldierSoundTick,
     soldierSoundView,
     claimVehicleAudio,
+    primeVehicleAudio,
     cutVehicleAudio,
     disposeEngineAudio,
     disposeSounds,

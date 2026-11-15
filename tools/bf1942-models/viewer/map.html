@@ -4259,6 +4259,10 @@ replayController = createReplayController({
   groundHeight: (x, z, fromY) => level.groundHeight(x, z, fromY),
   waterLevel: () => level.collider?.waterLevel ?? level.extras?.waterLevel,
   claimVehicleAudio: (key, node, drive, groups) => pageAudio.claimVehicleAudio(key, node, drive, groups),
+  // Every hull's and every effect's samples as the replay opens, all asked
+  // for together (features/replay-load-batching).
+  primeVehicleAudio: templates => pageAudio.primeVehicleAudio?.(templates) ?? Promise.resolve(0),
+  primeEffectAudio: () => Promise.resolve(loadEffectSounds()).then(() => effectAudio.primeAll()).catch(() => 0),
   releaseVehicleAudio: (key, node) => pageAudio.releaseVehicleAudio(key, node),
   cutVehicleAudio: node => pageAudio.cutVehicleAudio(node),
   makeReplayBodies: shim => createBotVisuals(bag(

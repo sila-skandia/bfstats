@@ -49,7 +49,7 @@
 // rather than stealing the quietest voice, is likewise a choice: `.ssc` says
 // what a sound's priority is and not what a full mixer does with it.
 
-import { EngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
+import { EngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE, loadLayerBuffers } from './engine-audio.js';
 
 /** Speed of sound, m/s — what the scripts' own step ramps are measured in. */
 export const SPEED_OF_SOUND = 340;
@@ -417,6 +417,26 @@ export class EffectAudio {
     return Promise.all(scripts.map(script => this.#primeScript(script)));
   }
 
+  /**
+   * Every script's samples and first slot, `concurrency` scripts at a time
+   * (each script's own samples together): a replay plays whatever the round
+   * fired, and a bundle primed on its first play was silent for that play
+   * and fetched a minute or two into the round. Resolves with how many have
+   * a slot; never throws.
+   */
+  async primeAll({ concurrency = 6 } = {}) {
+    const queue = [...this.scripts.values()];
+    let primed = 0;
+    const worker = async () => {
+      while (queue.length && !this.disposed) {
+        const got = await this.#primeScript(queue.shift()).catch(() => null);
+        if (got?.slots?.length) primed++;
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, worker));
+    return primed;
+  }
+
   #primeScript(script) {
     if (script.slots.length) return Promise.resolve(script);
     if (this.pending.has(script.key)) return this.pending.get(script.key);
@@ -429,11 +449,7 @@ export class EffectAudio {
   async #grow(script) {
     if (this.disposed || script.slots.length >= this.#cap(script)) return null;
     if (!script.buffers) {
-      const buffers = new Map();
-      for (const layer of script.layers) {
-        if (buffers.has(layer.file)) continue;
-        buffers.set(layer.file, await this.getBuffer(layer.file));
-      }
+      const buffers = await loadLayerBuffers(script.layers, file => this.getBuffer(file));
       if (this.disposed) return null;
       script.buffers = buffers;
     }

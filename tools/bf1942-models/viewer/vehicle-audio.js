@@ -47,6 +47,20 @@ import {
 import { resolveAcross } from './ssc-coherent.js';
 import { attachesToListener, findPartSpecs } from './ssc-specs.js';
 
+/** Every sample a vehicle's sound entry names, at any depth (its engine's
+ *  layers, its guns' and their burst edges', its parts' patches). */
+export function sampleFiles(entry, out = new Set()) {
+  if (Array.isArray(entry)) {
+    for (const item of entry) sampleFiles(item, out);
+  } else if (entry && typeof entry === 'object') {
+    for (const [key, value] of Object.entries(entry)) {
+      if (key === 'file' && typeof value === 'string') out.add(value);
+      else if (value && typeof value === 'object') sampleFiles(value, out);
+    }
+  }
+  return out;
+}
+
 /**
  * How a vehicle part plays its own script, by the class the exporter ships as
  * `kind` (`extract_map.PART_SOUND_KINDS`). Every object's patches are all
@@ -182,14 +196,16 @@ export async function loadBurstEdges(spec, options) {
     const kept = oneShots(layers);
     return kept.length ? loadEngineAudio({ ...spec, layers: kept }, options) : null;
   };
-  const press = await build(spec.press);
+  // All at once, not one patch's samples after another's.
+  const slots = Object.entries(spec.release || {});
+  const [press, reload, ...released] = await Promise.all([
+    build(spec.press),
+    // The magazine change's patch, triggered as a reload starts (SND-17).
+    build(spec.reload),
+    ...slots.map(([, layers]) => build(layers)),
+  ]);
   const release = new Map();
-  for (const [slot, layers] of Object.entries(spec.release || {})) {
-    const audio = await build(layers);
-    if (audio) release.set(slot, audio);
-  }
-  // The magazine change's patch, triggered as a reload starts (SND-17).
-  const reload = await build(spec.reload);
+  slots.forEach(([slot], i) => { if (released[i]) release.set(slot, released[i]); });
   return { press, release, reload };
 }
 
@@ -422,6 +438,29 @@ export class VehicleAudioRack {
     this.vehicles = new Map();
     this.generation = 0;
     this.disposed = false;
+  }
+
+  /**
+   * Fetch and decode, ahead of any claim, every sample of `templates`' sound
+   * entries (the level's report first, then the tree's shared table), all at
+   * once. A replay knows from its first frame every hull it will show; built
+   * on first claim, each hull's engine and guns were fetched sample by
+   * sample as it drove into view, the last ones two minutes in. Resolves
+   * when they are in; never throws.
+   */
+  async prime(templates) {
+    if (this.disposed) return 0;
+    const dir = this.getDir();
+    const level = this.getReport();
+    const want = [...new Set([...(templates ?? [])].filter(Boolean))];
+    const needShared = want.some(t => !findEngineSpec(level, t));
+    const shared = needShared ? await Promise.resolve(this.getShared?.() ?? null).catch(() => null) : null;
+    const files = new Set();
+    for (const template of want) sampleFiles(findEngineSpec(level, template) ?? findEngineSpec(shared, template), files);
+    if (this.disposed) return 0;
+    const got = await Promise.all([...files].map(file => Promise.resolve()
+      .then(() => this.getBuffer(dir, file)).catch(() => null)));
+    return got.filter(Boolean).length;
   }
 
   /**
@@ -703,21 +742,23 @@ export class VehicleAudioRack {
         // behind to un-mute.
         oneShotsOnTrigger: true,
       };
-      for (const spec of specs) {
+      // Every gun at once (each its report, then its edges), in the
+      // order the report lists them.
+      const guns = await Promise.all(specs.map(async spec => {
         const audio = await loadEngineAudio(spec, gunOptions);
-        if (audio) {
-          weapons.push({
-            spec,
-            audio,
-            // The burst's edges, `press` and `release` (SND-12, SND-16).
-            edges: await loadBurstEdges(spec, gunOptions),
-            burst: false,
-            // The voices belong on the gun, not the vehicle origin: a
-            // Corsair's guns are 2.2 m out each wing.
-            node: fireArmsNode(node, spec.fireArms) || node,
-          });
-        }
-      }
+        if (!audio) return null;
+        return {
+          spec,
+          audio,
+          // The burst's edges, `press` and `release` (SND-12, SND-16).
+          edges: await loadBurstEdges(spec, gunOptions),
+          burst: false,
+          // The voices belong on the gun, not the vehicle origin: a
+          // Corsair's guns are 2.2 m out each wing.
+          node: fireArmsNode(node, spec.fireArms) || node,
+        };
+      }));
+      for (const gun of guns) if (gun) weapons.push(gun);
 
       // The parts (`PART_RULES`): one relatched patch per patch of the part's
       // script, in its order, the silent ones null.
@@ -726,14 +767,13 @@ export class VehicleAudioRack {
         const rule = PART_RULES[String(spec.kind || '').toLowerCase()];
         const partNode = rule ? partNodeOf(node, spec.node) : null;
         if (!partNode) continue;
-        const patches = [];
-        for (const raw of spec.patches || []) {
+        const patches = await Promise.all((spec.patches || []).map(raw => {
           const layers = rule === 'always' ? (raw || []).filter(layer => layer.loop) : (raw || []);
-          patches.push(layers.length ? await loadEngineAudio(
+          return layers.length ? loadEngineAudio(
             { template, engine: spec.node, script: spec.script, level: report?.level ?? null,
               layers, attachToListener: spec.attachToListener },
-            { listener, getBuffer, oneShotsOnTrigger: true, relatch: true }) : null);
-        }
+            { listener, getBuffer, oneShotsOnTrigger: true, relatch: true }) : null;
+        }));
         if (patches.some(Boolean)) {
           parts.push({ spec, rule, node: partNode, patches, prev: null, rate: 0 });
         }

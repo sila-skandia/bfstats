@@ -677,6 +677,15 @@ class ReplayPlayer {
       }),
     ]);
 
+    // Every hull's engine and guns, and every effect's sound (impacts,
+    // blasts, the distant guns), asked for together once the models no
+    // longer need the network, and not waited for. Built on each hull's
+    // first claim and each bundle's first play, sample by sample, they were
+    // still arriving two minutes into a live round, and the first of each
+    // was silent (features/replay-load-batching).
+    extra("the hulls' sounds", () => this.ctx.primeVehicleAudio?.(templates)?.catch?.(() => 0));
+    extra("the effects' sounds", () => this.ctx.primeEffectAudio?.()?.catch?.(() => 0));
+
     // The soldiers' bodies, if they are not in yet: at most BODY_WAIT_MS, a
     // slow network's late ones then come in as they land.
     if (openingBodies) {

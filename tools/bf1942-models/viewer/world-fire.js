@@ -56,7 +56,7 @@
 // are the game's own reason nobody hears another soldier reload: every one of
 // vanilla's 239 reload loads stops at a metre, and 563 of Desert Combat's 573.
 
-import { loadEngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
+import { loadEngineAudio, loadLayerBuffers, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
 
 /**
  * A stand-in `Volume <- Distance` for a manifest with no `layers`.
@@ -264,11 +264,7 @@ export class WorldFire {
     if (this.disposed || entry.slots.length >= PER_WEAPON) return null;
     const listener = this.getListener?.();
     if (!listener) return null;
-    const buffers = new Map();
-    for (const layer of entry.layers) {
-      if (buffers.has(layer.file)) continue;
-      buffers.set(layer.file, await this.getBuffer(layer.file));
-    }
+    const buffers = await loadLayerBuffers(entry.layers, file => this.getBuffer(file));
     if (this.disposed) return null;
     const layers = entry.layers.filter(l => buffers.get(l.file));
     if (!layers.length) return null;

@@ -160,6 +160,13 @@ function hideDrawnWeapon(root) {
  * over `shim` (map.html `makeReplayBodies`), so every read the renderer makes
  * of "the world" and "the bots" lands here.
  */
+/** Bodies warmed at once. Each is three round trips in a row (its recipe,
+ *  then its rig and weapon, then their textures): four at a time, a 41-man
+ *  Kursk round on the live site was still fetching bodies 115 s after it
+ *  opened (features/replay-load-batching). HTTP/2 carries ten as easily as
+ *  four, and the men alive at the opening are still first in the queue. */
+const WARM_AT_ONCE = 10;
+
 export class ReplaySoldiers {
   constructor(player) {
     this.player = player;
@@ -480,7 +487,7 @@ export class ReplaySoldiers {
   /**
    * Every replayed soldier's body, loaded before the replay shows: the pose
    * and gait pair of every item in every kit of the round (`kitItems`), those
-   * of the men alive at `t` first, four at a time, `onProgress(done, total)`
+   * of the men alive at `t` first, `WARM_AT_ONCE` at a time, `onProgress(done, total)`
    * as they land. Once they are in, a seek anywhere draws its men at once
    * (0.3 s on a page that had them, against 2.5 s without). Without it a fresh page
    * drew no soldier at all for its first seconds: on the live site the first
@@ -507,7 +514,7 @@ export class ReplaySoldiers {
         onProgress(++done, total);
       }
     };
-    await Promise.all([worker(), worker(), worker(), worker()]);
+    await Promise.all(Array.from({ length: WARM_AT_ONCE }, worker));
     return done;
   }
 

@@ -1333,6 +1333,19 @@ export class EngineAudio {
 }
 
 /**
+ * Every distinct sample `layers` name, fetched and decoded together: `file ->
+ * AudioBuffer | null`. One at a time, a patch of fourteen variants (the
+ * distant MG's `mgdist1..14`, an explosion's six tails) cost fourteen round
+ * trips; on the live site, at 1.3 s each, the replay was still fetching
+ * sounds two minutes after it opened (features/replay-load-batching).
+ */
+export async function loadLayerBuffers(layers, getBuffer) {
+  const files = [...new Set((layers ?? []).map(layer => layer.file))];
+  const got = await Promise.all(files.map(file => getBuffer(file)));
+  return new Map(files.map((file, i) => [file, got[i]]));
+}
+
+/**
  * Decode a vehicle's engine layers and build its graph, without starting it.
  *
  * `getBuffer` is the caller's cache-keyed loader — sharing it is what keeps the
@@ -1346,11 +1359,7 @@ export async function loadEngineAudio(spec, { listener, getBuffer,
                                               rand = Math.random,
                                               relatch = false }) {
   if (!spec || !spec.layers || !spec.layers.length || !listener) return null;
-  const buffers = new Map();
-  for (const layer of spec.layers) {
-    if (buffers.has(layer.file)) continue;
-    buffers.set(layer.file, await getBuffer(layer.file));
-  }
+  const buffers = await loadLayerBuffers(spec.layers, getBuffer);
   const layers = spec.layers.filter(l => buffers.get(l.file));
   if (!layers.length) return null;
   return new EngineAudio(spec, layers, buffers, listener, headroom,

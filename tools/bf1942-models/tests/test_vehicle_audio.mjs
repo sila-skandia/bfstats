@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES, MAX_BUILD_ATTEMPTS } from '../viewer/vehicle-audio.js';
+import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES, MAX_BUILD_ATTEMPTS, sampleFiles } from '../viewer/vehicle-audio.js';
+import { loadLayerBuffers } from '../viewer/engine-audio.js';
 
 function stubCtx() {
   const param = (initial = 0) => ({
@@ -956,6 +957,50 @@ async function panzer(x = 10) {
     assert.equal(engineAsks, MAX_BUILD_ATTEMPTS, 'one request per try, no more');
     assert.ok(warned.some(w => /built without sherm\.wav/.test(w)), 'the degraded build is a warning');
   }
+}
+
+// --- samples asked for together (features/replay-load-batching) -------------
+//
+// One patch's variants (the distant MG's fourteen) were fetched one round trip
+// after another, and each hull's samples only on its first claim: a live
+// replay was still fetching sounds two minutes after it showed.
+{
+  // Every distinct sample is asked for before the first answers.
+  const asked = [];
+  const waiting = [];
+  const loading = loadLayerBuffers(
+    [{ file: 'a.mp3' }, { file: 'b.mp3' }, { file: 'a.mp3' }, { file: 'c.mp3' }],
+    file => { asked.push(file); return new Promise(resolve => waiting.push(() => resolve(`buf:${file}`))); });
+  assert.deepEqual(asked, ['a.mp3', 'b.mp3', 'c.mp3'], 'each distinct sample asked for at once, once');
+  for (const answer of waiting) answer();
+  const buffers = await loading;
+  assert.equal(buffers.get('b.mp3'), 'buf:b.mp3');
+  assert.equal(buffers.size, 3);
+
+  // Every sample a vehicle's entry names, however deep.
+  const entry = {
+    template: 'Tiger', layers: [{ file: 'eng.mp3' }],
+    weapons: [{ fireArms: 'gun', layers: [{ file: 'fire.mp3' }], press: [{ file: 'press.mp3' }],
+                release: { a: [{ file: 'rel.mp3' }] }, reload: [{ file: 'reload.mp3' }] }],
+    parts: [{ node: 'turret', patches: [[{ file: 'turn.mp3' }], null] }],
+  };
+  assert.deepEqual([...sampleFiles(entry)].sort(),
+    ['eng.mp3', 'fire.mp3', 'press.mp3', 'rel.mp3', 'reload.mp3', 'turn.mp3']);
+
+  // The rack primes every template's samples before any hull is claimed:
+  // the level's own entry, else the tree's shared table.
+  const primed = [];
+  const rack = new VehicleAudioRack({
+    listener: () => null,
+    getBuffer: async (dir, rel) => { primed.push(`${dir}/${rel}`); return null; },
+    report: () => ({ sounds: { vehicles: [entry] } }),
+    shared: async () => ({ sounds: { vehicles: [{ template: 'Willy', layers: [{ file: 'willy.mp3' }] }] } }),
+    dir: () => 'kursk',
+  });
+  await rack.prime(['Tiger', 'Willy', 'Nothing']);
+  assert.deepEqual(primed.sort(), ['eng.mp3', 'fire.mp3', 'press.mp3', 'reload.mp3', 'rel.mp3', 'turn.mp3', 'willy.mp3']
+    .map(f => `kursk/${f}`).sort());
+  rack.dispose();
 }
 
 console.log('vehicle-audio: all assertions passed');
