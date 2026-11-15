@@ -726,8 +726,8 @@ const routes: RouteRecordRaw[] = [
           name: 'sidecar',
           component: SidecarV4,
           meta: {
-            title: 'bfstats Sidecar · Early access · bfstats.io',
-            description: 'Early access to bfstats Sidecar.',
+            title: 'bfstats sidecar · Early access · bfstats.io',
+            description: 'Early access to bfstats sidecar.',
             noindex: true
           }
         },

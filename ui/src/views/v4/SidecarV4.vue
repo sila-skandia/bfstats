@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * bfstats Sidecar early access: what the app does, its downloads and how to
+ * bfstats sidecar early access: what the app does, its downloads and how to
  * install it on Windows, macOS and Linux. Early Adopters and admins only; not
  * linked from anywhere and not in the sitemap: the owner shares the link
  * (features/early-access-sidecar). Laid out like /battleview.
@@ -35,7 +35,7 @@ onMounted(async () => {
 const panel: Media = {
   kind: 'img',
   src: panelShot,
-  alt: "The Sidecar's panel: not signed in yet, the live BF1942 servers sorted by players, each with its map, mode, country, players and ping",
+  alt: "The sidecar's panel: not signed in yet, the live BF1942 servers sorted by players, each with its map, mode, country, players and ping",
   width: 768,
   height: 1280,
 }
@@ -111,7 +111,7 @@ function toInstall() {
       Early access
     </div>
     <h1 class="mm-display">
-      bfstats Sidecar
+      bfstats sidecar
     </h1>
 
     <!-- Checking who this is: nothing to show yet. -->
@@ -200,13 +200,18 @@ function toInstall() {
 
     <template v-else-if="release">
       <p class="sc__lede">
-        Play Battlefield 1942 in your browser, on the real servers. The Sidecar is a small app that joins a BF1942 server
-        for you and plays it in the bfstats viewer, in its own window. The game doesn't need to be installed.
+        This app lets you join multiplayer from the browser. It runs in your task tray and lets you browse servers.
+        Gameplay is through the browser implementation at
+        <a
+          href="https://play.bfstats.io"
+          target="_blank"
+          rel="noopener"
+        >play.bfstats.io</a>. The game doesn't need to be installed.
       </p>
       <p class="sc__lede sc__lede--more">
         Pick any live server from its list, with ping, players and the map up front, or search it like bfstats.io: a
-        player, a server, a map, a country. You're in the round with everyone else, on your bfstats.io profile. This is
-        an early build, and you're one of the first to try it: tell us what breaks.
+        player, a server, a map, a country. You're in the round with everyone else. This is an early build, and you're
+        one of the first to try it: tell us what breaks.
       </p>
 
       <div
@@ -265,7 +270,7 @@ function toInstall() {
         <figure class="sc-hero__shot">
           <MmMediaFrame
             :media="panel"
-            label="The Sidecar's panel"
+            label="The sidecar's panel"
             aspect="natural"
             :lazy="false"
             @open="lightbox = $event"
@@ -288,12 +293,12 @@ function toInstall() {
               join the server they're on.
             </li>
             <li>
-              <strong>One click to play.</strong> Pick a server, Join, and the viewer opens with you in the round, as
-              the name on your bfstats.io profile.
+              <strong>One click to play.</strong> Pick a server, Join, and the viewer opens with you in the round,
+              under your player name.
             </li>
             <li>
               <strong>Or from bfstats.io.</strong> A server's connect menu gets <em>Play in Browser</em>, which hands
-              the server to the Sidecar.
+              the server to the sidecar.
             </li>
             <li>
               <strong>Lives in the tray.</strong> On the taskbar on Windows, in the menu bar on a Mac. Closing the viewer
@@ -313,7 +318,7 @@ function toInstall() {
           id="sc-install-title"
           class="mm-eyebrow"
         >
-          Install the Sidecar
+          Install the sidecar
         </div>
 
         <div class="sc__grid">
@@ -391,7 +396,7 @@ function toInstall() {
                 </li>
                 <li>
                   <span class="mm-steps__head">Find it in the tray</span>
-                  The Sidecar lives in the system tray, at first under the <code>^</code> arrow by the clock. Drag its
+                  The sidecar lives in the system tray, at first under the <code>^</code> arrow by the clock. Drag its
                   icon onto the taskbar to keep it in view. Click it to open the panel.
                 </li>
               </ol>
@@ -527,7 +532,7 @@ function toInstall() {
                 <li>
                   <span class="mm-steps__head">Find it in the tray</span>
                   Click its tray icon to open the panel. GNOME shows tray icons only with the
-                  <strong>AppIndicator</strong> extension (Ubuntu has it built in); without it, the Sidecar opens as a
+                  <strong>AppIndicator</strong> extension (Ubuntu has it built in); without it, the sidecar opens as a
                   normal window instead.
                 </li>
               </ol>
@@ -550,10 +555,12 @@ function toInstall() {
             </h2>
             <ol class="mm-steps">
               <li>
-                <span class="mm-steps__head">Sign in</span>
-                Open the panel and click <strong>Sign in with bfstats.io</strong>. Your browser asks you to allow the app;
-                then pick the profile to play as. Its join name is the name you play under. (No account? Settings &gt;
-                Player name sets one by hand.)
+                <span class="mm-steps__head">Set your player name</span>
+                Signing in is optional. To play as your bfstats.io profile, click <strong>Sign in with bfstats.io</strong>
+                in the panel, allow the app in your browser, and pick the profile: its join name is the name you play
+                under. Or skip it: open <strong>Settings</strong> (the gear, top right), choose
+                <strong>Custom name</strong> under Player name, type your name and save. The bottom of the panel shows
+                the name you'll join as.
               </li>
               <li>
                 <span class="mm-steps__head">Pick a server</span>
@@ -563,7 +570,7 @@ function toInstall() {
               <li>
                 <span class="mm-steps__head">Leave</span>
                 Close the viewer window (or press <code>Cmd+W</code> on a Mac, <code>Ctrl+Shift+W</code> on Windows and
-                Linux) and the Sidecar leaves the server. Closing the panel doesn't quit the app:
+                Linux) and the sidecar leaves the server. Closing the panel doesn't quit the app:
                 <strong>Quit</strong> is at the bottom of the panel.
               </li>
             </ol>
@@ -578,7 +585,7 @@ function toInstall() {
                 </h3>
                 <p>
                   Adds <em>Play in Browser</em> to every server's connect menu on bfstats.io, in this browser. It opens the
-                  Sidecar and joins that server.
+                  sidecar and joins that server.
                 </p>
               </div>
               <button
