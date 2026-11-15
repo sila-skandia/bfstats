@@ -294,10 +294,6 @@ function toInstall() {
               way, and the sidecar sends them to the server on the game's own 30 Hz tick.
             </li>
             <li>
-              <strong>Your soldier is predicted with the game's own laws.</strong> The page moves your soldier by the
-              server's movement rules, so what you see is what the server decides, and corrections are close to zero.
-            </li>
-            <li>
               <strong>No game install.</strong> When the server loads a map, the sidecar fetches that level's tables
               from mesh.bfstats.io.
             </li>
