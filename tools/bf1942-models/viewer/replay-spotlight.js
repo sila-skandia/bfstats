@@ -230,8 +230,17 @@ export class ReplaySpotlight {
     fight.append(this.sides[0].node, mid, this.sides[1].node);
     this.againBtn = ui.button('rs-strip-again', null, 'Watch it again from just before the kill', () => this.again(), 'Again');
     const off = ui.button('rs-strip-off', 'close', 'Let go of this kill', () => this.release());
-    this.strip.append(el('span', 'rs-strip-k', 'SPOTLIGHT'), fight, this.againBtn, off);
+    this.stripK = el('span', 'rs-strip-k', 'SPOTLIGHT');
+    this.strip.append(this.stripK, fight, this.againBtn, off);
     for (const type of ['pointerdown', 'wheel', 'click', 'dblclick']) this.strip.addEventListener(type, e => e.stopPropagation());
+    // Used, it is kept: a pointer over the strip or a press on it holds the
+    // kill on screen, and once it has been pressed the kill plays on a loop
+    // until the cross lets it go. Without it the strip went the moment the
+    // kill's last seconds ran out, under a pointer on its way to the other
+    // side ("I click the victim and try to click again but it auto hides").
+    this.strip.addEventListener('pointerenter', () => { this.hovered = true; });
+    this.strip.addEventListener('pointerleave', () => { this.hovered = false; });
+    this.strip.addEventListener('pointerdown', () => this.hold());
   }
 
   /** The round's fights, again whenever the Accuracy rebuild has changed (a
@@ -276,6 +285,8 @@ export class ReplaySpotlight {
     if (!hasPlayer(raw, p.followPid) && Number.isInteger(kill.killerPid)) p.ui.follow(kill.killerPid);
     if (p.highlights?.auto || p.camera?.mode === 'free') p.ui.setMode('orbit');
     this.pin = { raw, kill, from: kill.t, until: kill.t + HOLD, faced: false };
+    this.stripK.textContent = 'SPOTLIGHT';
+    this.stripK.removeAttribute('title');
     this.setFight(raw, kill.t - KILL_FREEZE);
     // From before the kill, and before the round that made it.
     const killer = this.rounds.filter(r => r.kind === 'hit' && r.at === kill.victim && r.arrival <= kill.t + 0.1).at(-1);
@@ -306,6 +317,15 @@ export class ReplaySpotlight {
     this.pin.yaw = undefined;
     this.player.seek(this.pin.from);
     this.player.playing = true;
+  }
+
+  /** The kill lit kept on a loop until the cross lets it go: the strip was
+   *  used (a side picked, Again). */
+  hold() {
+    if (!this.pin || this.pin.held) return;
+    this.pin.held = true;
+    this.stripK.textContent = 'ON LOOP';
+    this.stripK.title = 'The kill plays again from the start until you close it';
   }
 
   /** Which side of the lit fight the replay follows: 'a', 'b' or null. */
@@ -375,6 +395,15 @@ export class ReplaySpotlight {
     const pin = this.pin;
     // A play or a seek past the kill's last seconds lets it go; a seek back
     // into them, or a scrub about inside, keeps it.
+    // Played past its end while held (the strip used) or under the pointer,
+    // it starts again; a seek away still lets it go.
+    const ran = pin && t > pin.until && this.lastT !== undefined && this.lastT <= pin.until && t - this.lastT < 1;
+    this.lastT = t;
+    if (ran && (pin.held || this.hovered)) {
+      this.again();
+      this.lastT = pin.from;
+      return;
+    }
     if (pin && (t > pin.until || t < pin.from - 1)) this.pin = null;
     if (!this.pin && !this.raw && this.dim === 0) return;
     if (this.pin) this.ensureEpisodes();

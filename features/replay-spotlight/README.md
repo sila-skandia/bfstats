@@ -74,7 +74,9 @@ published: no asset is involved.
   in the same place, give way to it; where the page's minimap would cover it (a
   phone, a narrow window) it keeps to the minimap's left.
 - **It lets go** 4 s after the kill, or on a seek outside that stretch; a scrub
-  about inside it keeps it.
+  about inside it keeps it. Once the strip is used (a side picked, Again) the
+  kill plays on a loop, the strip saying ON LOOP, until the cross lets it go
+  or a seek leaves it; a pointer over the strip at the end loops it too.
 
 ## How it works
 
@@ -260,6 +262,20 @@ players in the spotlight window to toggle between them."
 - **An empty hull named by its man.** A man killed beside a jeep he had left
   read "Nobody aboard / Willy"; the side now carries the kill's own man's
   name and side.
+
+## 2026-11-15: kept while it is used
+
+The owner: "it's stressful to use ... I click the victim and try to click
+again but it auto hides the menu and I can't get it back without clicking
+spotlight again. Either extend the autoclose or reset it once they interact
+with the strip." A press on the strip now holds the kill (`hold`, the strip's
+label reads ON LOOP): played past its last seconds it starts again from just
+before the kill (`again`), keeping whoever was picked; a pointer over the
+strip does the same without holding it. A seek away still lets it go, told
+apart from playing across the end by the clock's step (`lastT`). Measured
+headless on `zz4g8tz9ph`: the victim picked at 39.7 s, played to the end at
+47.3 s, back at 38.4 s still following the victim with the strip lit; a
+seek to 107.7 s let it go.
 
 ## Open
 
