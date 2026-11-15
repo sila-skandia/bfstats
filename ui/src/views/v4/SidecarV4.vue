@@ -298,9 +298,7 @@ function toInstall() {
               from mesh.bfstats.io.
             </li>
             <li>
-              <strong>A server browser.</strong> The live server list from the bfstats.io API, with players, map,
-              mode and country, and search like bfstats.io. The ping is measured from your machine: the sidecar sends
-              each server the game's GameSpy status query and times the reply.
+              <strong>A server browser.</strong> The live server list comes from bfstats.io.
             </li>
           </ul>
         </div>
