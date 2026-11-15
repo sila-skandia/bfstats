@@ -21,13 +21,15 @@ public record ShortsOptions
 
     public long MaxPosterBytes { get; init; } = 2 * MiB;
 
-    /// <summary>An action roll's video (<see cref="ShortKinds.Roll"/>): 60-90 s of 4K is
-    /// 320-450 MB (features/action-roll).</summary>
-    public long MaxRollVideoBytes { get; init; } = 600 * MiB;
+    /// <summary>A roll's or a recap's video (<see cref="ShortKinds.IsLandscape"/>): 60-90 s of
+    /// 4K is 320-450 MB (features/action-roll), a recap of up to 3 minutes up to about 900
+    /// (features/match-recap).</summary>
+    public long MaxRollVideoBytes { get; init; } = 1000 * MiB;
 
-    /// <summary>A Short's optional HD copy (<c>videoHd</c>), a roll's 1080p take of 80-110 MB.
+    /// <summary>A Short's optional HD copy (<c>videoHd</c>), a roll's 1080p take of 80-110 MB, a
+    /// recap's of up to about 250.
     /// Another kind's HD copy is held to <see cref="MaxVideoBytes"/> as well.</summary>
-    public long MaxHdVideoBytes { get; init; } = 200 * MiB;
+    public long MaxHdVideoBytes { get; init; } = 320 * MiB;
 
     /// <summary>A Short's optional link copy (<c>PUT /stats/shorts/&lt;slug&gt;/link-video</c>), the
     /// video the share link names: under what Discord embeds from a link, about 50 MB.</summary>
@@ -52,8 +54,8 @@ public record ShortsOptions
     public int RetentionMaxViews { get; init; } = 1;
 
     /// <summary>The largest video a Short of <paramref name="kind"/> may have.</summary>
-    public long VideoLimit(string? kind) => kind == ShortKinds.Roll ? MaxRollVideoBytes : MaxVideoBytes;
+    public long VideoLimit(string? kind) => ShortKinds.IsLandscape(kind) ? MaxRollVideoBytes : MaxVideoBytes;
 
     /// <summary>The largest HD copy a Short of <paramref name="kind"/> may have.</summary>
-    public long HdVideoLimit(string? kind) => kind == ShortKinds.Roll ? MaxHdVideoBytes : Math.Min(MaxHdVideoBytes, MaxVideoBytes);
+    public long HdVideoLimit(string? kind) => ShortKinds.IsLandscape(kind) ? MaxHdVideoBytes : Math.Min(MaxHdVideoBytes, MaxVideoBytes);
 }

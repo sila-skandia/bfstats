@@ -10,8 +10,14 @@
 // 4K and HD, sound) and uploads it with its link copy. A take that fails
 // moves on to the next round, three at most.
 //
-//   SHORTS_UPLOAD_KEY=... node scripts/roll-weekly.mjs [--dry-run] [--count=1]
+//   SHORTS_UPLOAD_KEY=... node scripts/roll-weekly.mjs [--recap] [--dry-run] [--count=1]
 //       [--days=7] [--channel=chrome] [--api=https://bfstats.io]
+//
+// --recap films the week's match recap instead (features/match-recap; the
+// owner, 2026-11-15: the rolls "are a bit too extreme in their panning for
+// regular players ... perhaps we pivot to generating match recaps"): its key
+// names victim -11, and a round with too few moments the recorder saw well
+// (the recap tool's exit 3) moves on to the next.
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +29,9 @@ const API = opt('api', 'https://bfstats.io');
 const DAYS = Number(opt('days', 7));
 const COUNT = Number(opt('count', 1));
 const DRY = args.includes('--dry-run');
+const RECAP = args.includes('--recap');
+const WHAT = RECAP ? 'recap' : 'roll';
+const KEY_PID = RECAP ? ':-11' : ':-10';
 const MIN_SECONDS = 300;
 const TRIES = 3;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -52,10 +61,10 @@ async function recent() {
   return found;
 }
 
-/** Whether a roll was ever made of the recording, pruned or live. */
+/** Whether a roll (or with --recap, a recap) was ever made of the recording, pruned or live. */
 async function rolled(slug) {
   const { keys } = await json(`${API}/stats/shorts/keys?recording=${encodeURIComponent(slug)}`);
-  return (keys ?? []).some(k => k.endsWith(':-10'));
+  return (keys ?? []).some(k => k.endsWith(KEY_PID));
 }
 
 /** The candidates in the order they are tried. Exported for the test. */
@@ -72,7 +81,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (fresh.length >= COUNT + TRIES) break;
     if (!(await rolled(r.slug))) fresh.push(r);
   }
-  log(`${ranked.length} rounds of ${DAYS} days long enough; ${fresh.length} without a roll looked at`);
+  log(`${ranked.length} rounds of ${DAYS} days long enough; ${fresh.length} without a ${WHAT} looked at`);
   for (const r of fresh) log(`  ${r.slug} ${r.title} (${r.playerCount} players, ${Math.round(r.durationSeconds / 60)} min)`);
   if (DRY) process.exit(0);
   if (!process.env.SHORTS_UPLOAD_KEY) throw new Error('needs SHORTS_UPLOAD_KEY');
@@ -82,12 +91,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const [i, r] of fresh.entries()) {
     if (made >= COUNT || i >= COUNT + TRIES) break;
     log(`filming ${r.slug} ${r.title}`);
-    const run = spawnSync('node', [path.join(REPO, 'scripts/action-roll.mjs'), `--recording=${r.slug}`, '--length=90', '--gpu', '--sound',
+    const run = spawnSync('node', [path.join(REPO, 'scripts/action-roll.mjs'), `--recording=${r.slug}`, ...(RECAP ? ['--recap'] : ['--length=90']), '--gpu', '--sound',
       '--upload', `--name=weekly-${week}-${r.slug}`, `--api=${API}`,
       ...(opt('channel', null) ? [`--channel=${opt('channel')}`] : [])], { stdio: 'inherit', cwd: REPO });
     if (run.status === 0) made++;
-    else log(`  ${r.slug} failed (exit ${run.status}); the next round`);
+    else log(`  ${r.slug} ${run.status === 3 ? 'has too few moments the recorder saw well' : `failed (exit ${run.status})`}; the next round`);
   }
-  log(`the week's rolls: ${made} made`);
+  log(`the week's ${WHAT}s: ${made} made`);
   process.exit(made > 0 || !fresh.length ? 0 : 1);
 }

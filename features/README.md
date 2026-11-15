@@ -255,6 +255,7 @@ folder answers.
 | [round-replay-highlights](round-replay-highlights/README.md) | build | How does the replay find battles, streaks and top plays worth watching? |
 | [replay-shorts](replay-shorts/README.md) | build | How are Shorts picked from recordings, rendered, uploaded and shown in the feed? |
 | [action-roll](action-roll/README.md) | research | Can one continuous take pass the camera from action to action across a round, for a long video set to a song? |
+| [match-recap](match-recap/README.md) | build | Can a round's key moments the recorder saw well, faded one into the next, end on its angriest chat, as a weekly video? |
 | [round-replay-fronts](round-replay-fronts/README.md) | build | How does a viewer find the fighting, roam between fronts and swap to the men in a fight? |
 | [round-replay-ux](round-replay-ux/README.md) | build | How does a viewer watch a replay: cameras, timeline, keys, layout, phones? |
 | [round-replay-resilience](round-replay-resilience/README.md) | fix | Why could the replay freeze in first person, and how does it recover now? |

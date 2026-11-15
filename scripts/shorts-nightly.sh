@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Replay Shorts, nightly (features/replay-shorts, .claude/skills/replay-shorts):
 # film the best kills of the newest shared recordings and upload them, and on
-# the first night of a week the week's Battlefield ASMR and action roll. Run by the systemd
+# the first night of a week the week's Battlefield ASMR and match recap. Run by the systemd
 # user timer bfstats-shorts.timer on Linux, or the launchd agent
 # io.bfstats.shorts on a Mac (both in deploy/shorts-nightly/), which runs it
 # from its own checkout brought up to origin/main first.
@@ -59,14 +59,32 @@ if [[ ${ASMR_WEEKLY:-0} == 1 && ! -e $STAMP ]]; then
   if grep -q 'uploaded .*Battlefield ASMR' "$ASMR_LOG"; then touch "$STAMP"; fi
 fi
 
-# The week's action roll (the owner, 2026-11-12: "for the recurring job to
-# film these, we only need them once a week"), on the first night of each ISO
-# week: one 90 s roll, 4K and HD with its link copy, of the week's busiest
-# round with no roll yet (scripts/roll-weekly.mjs). A stamp marks the week
-# done once it is uploaded; a night that uploads nothing tries again.
-# ROLL_WEEKLY=0 skips it.
+# The week's match recap (features/match-recap; the owner, 2026-11-15: the
+# rolls are "a bit too extreme in their panning for regular players ...
+# perhaps we pivot to generating match recaps"), on the first night of each
+# ISO week: the week's busiest round with no recap yet, its key moments the
+# recorder saw well faded one into the next, then its salt, 4K and HD with its
+# link copy (scripts/roll-weekly.mjs --recap). A round with too few moments
+# moves on to the next. A stamp marks the week done once one is uploaded; a
+# night that uploads nothing tries again. RECAP_WEEKLY=0 skips it.
+RECAP_STAMP=$OUT/recap-$WEEK.done
+if [[ ${RECAP_WEEKLY:-1} == 1 && ! -e $RECAP_STAMP ]]; then
+  echo "--- the week's recap ($WEEK) ---"
+  RECAP_LOG=$OUT/recap-$WEEK.log
+  RECAP_EXTRA=()
+  [[ $(uname) == Darwin ]] && RECAP_EXTRA=(--channel=chrome)
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
+    node scripts/roll-weekly.mjs --recap ${RECAP_EXTRA[@]+"${RECAP_EXTRA[@]}"} 2>&1 | tee "$RECAP_LOG" || true
+  if grep -q "the week's recaps: [1-9]" "$RECAP_LOG"; then touch "$RECAP_STAMP"; fi
+  # A week's take is ~700 MB on disk; the API has the uploaded copies.
+  find "$HOME/.cache/bfstats-recap" -maxdepth 2 -path '*/weekly-*' -name '*.mp4' -mtime +14 -delete 2>/dev/null || true
+fi
+
+# The week's action roll, kept in the arsenal but no longer weekly (the owner,
+# 2026-11-15: the recaps replace it; the rolls already live stay live).
+# ROLL_WEEKLY=1 films one as before (scripts/roll-weekly.mjs).
 ROLL_STAMP=$OUT/roll-$WEEK.done
-if [[ ${ROLL_WEEKLY:-1} == 1 && ! -e $ROLL_STAMP ]]; then
+if [[ ${ROLL_WEEKLY:-0} == 1 && ! -e $ROLL_STAMP ]]; then
   echo "--- the week's roll ($WEEK) ---"
   ROLL_LOG=$OUT/roll-$WEEK.log
   ROLL_EXTRA=()
@@ -74,7 +92,6 @@ if [[ ${ROLL_WEEKLY:-1} == 1 && ! -e $ROLL_STAMP ]]; then
   SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
     node scripts/roll-weekly.mjs ${ROLL_EXTRA[@]+"${ROLL_EXTRA[@]}"} 2>&1 | tee "$ROLL_LOG" || true
   if grep -q "the week's rolls: [1-9]" "$ROLL_LOG"; then touch "$ROLL_STAMP"; fi
-  # A week's take is ~600 MB on disk; the API has the uploaded copies.
   find "$HOME/.cache/bfstats-roll" -maxdepth 2 -path '*/weekly-*' -name '*.mp4' -mtime +14 -delete 2>/dev/null || true
 fi
 

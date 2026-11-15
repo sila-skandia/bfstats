@@ -29,6 +29,9 @@ public sealed class ShortService(
     public const int MaxPageSize = 48;
     public const int MaxTitle = 120;
     public const double MaxLengthSeconds = 120;
+    /// <summary>A take of a round (a roll, a recap: <see cref="ShortKinds.IsLandscape"/>) may run
+    /// longer than a Short: a recap is about two minutes and its ending card.</summary>
+    public const double MaxTakeLengthSeconds = 180;
 
     private const int MaxMetaBytes = 64 * 1024;
     private const int MaxName = 64;
@@ -518,16 +521,17 @@ public sealed class ShortService(
         {
             throw new RecordingRejectedException($"title must be 1 to {MaxTitle} characters.");
         }
-        if (!double.IsFinite(meta.LengthSeconds) || meta.LengthSeconds < 1 || meta.LengthSeconds > MaxLengthSeconds)
+        var maxLength = ShortKinds.IsLandscape(kind) ? MaxTakeLengthSeconds : MaxLengthSeconds;
+        if (!double.IsFinite(meta.LengthSeconds) || meta.LengthSeconds < 1 || meta.LengthSeconds > maxLength)
         {
-            throw new RecordingRejectedException($"lengthSeconds must be 1 to {MaxLengthSeconds:0}.");
+            throw new RecordingRejectedException($"lengthSeconds must be 1 to {maxLength:0}.");
         }
         if (!double.IsFinite(meta.Distance) || meta.Distance < 0)
         {
             throw new RecordingRejectedException("distance must be a number of metres, 0 or more.");
         }
-        // A roll is one take, not a kill: its key is the second it starts and the roll's pid.
-        var victimPid = kind == ShortKinds.Roll ? ShortKinds.RollVictimPid : meta.VictimPid;
+        // A roll or a recap is one take, not a kill: its key is the second it starts and its kind's pid.
+        var victimPid = ShortKinds.TakeVictimPid(kind) ?? meta.VictimPid;
         var now = clock.GetCurrentInstant();
         var killer = RecordingText.Name(meta.Killer, MaxName);
         var victim = RecordingText.Name(meta.Victim, MaxName);

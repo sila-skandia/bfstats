@@ -28,17 +28,33 @@ public static class ShortKinds
     public const string Roll = "roll";
     /// <summary>The victim pid a roll's key carries: no kill, one take.</summary>
     public const int RollVictimPid = -10;
+    /// <summary>A match recap (features/match-recap): a round's key moments, the recorder saw
+    /// them whole, faded one into the next, then the round's angriest chat (the owner,
+    /// 2026-11-15). 16:9 like a roll; its key is <c>{recordingSlug}:{start:F2}:-11</c>.</summary>
+    public const string Recap = "recap";
+    /// <summary>The victim pid a recap's key carries.</summary>
+    public const int RecapVictimPid = -11;
     /// <summary>A clip a creator cut in the studio and shared.</summary>
     public const string Creator = "creator";
     public const string Other = "other";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, TankToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Roll, Creator, Other,
+        AirToAir, TankToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Roll, Recap, Creator, Other,
     };
 
-    /// <summary>Whether a Short of this kind is 16:9 rather than 9:16.</summary>
-    public static bool IsLandscape(string kind) => kind == Roll;
+    /// <summary>Whether a Short of this kind is 16:9 rather than 9:16: a roll or a recap, one
+    /// long take of a round rather than one kill.</summary>
+    public static bool IsLandscape(string? kind) => kind is Roll or Recap;
+
+    /// <summary>The victim pid the key of a take of a round carries (a roll's, a recap's), or
+    /// null for a kind keyed by its kill.</summary>
+    public static int? TakeVictimPid(string? kind) => kind switch
+    {
+        Roll => RollVictimPid,
+        Recap => RecapVictimPid,
+        _ => null,
+    };
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>
     public static string Key(string recordingSlug, double killTime, int victimPid) =>

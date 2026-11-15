@@ -883,6 +883,26 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Upload_ARecap_IsKeyedByItsStart_IsLandscape_AndMayRunThreeMinutes()
+    {
+        var recap = await UploadAsync(new
+        {
+            recordingSlug = RecordingSlug, killTime = 40.0, victimPid = 3, kind = ShortKinds.Recap, title = "Match recap: Kursk",
+            killer = "", victim = "", weapon = "", distance = 0.0, lengthSeconds = 150.0, level = "kursk", mod = "bf1942",
+        }, Mp4Of(40));
+
+        Assert.Equal($"{RecordingSlug}:40.00:-11", recap.Key);
+        Assert.Equal(ShortKinds.RecapVictimPid, recap.VictimPid);
+        Assert.True(recap.Landscape);
+
+        // A Short of one kill is still held to two minutes.
+        var controller = Controller(UploadKey);
+        await Body(controller, new { recordingSlug = RecordingSlug, killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 150.0 });
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+    }
+
+    [Fact]
     public async Task Upload_AnHdCopyNotAnMp4_IsRefused()
     {
         var controller = Controller(UploadKey);

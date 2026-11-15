@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
@@ -43,8 +43,12 @@ const API = opt('api', 'https://bfstats.io');
 const PLAY = opt('play', 'https://play.bfstats.io');
 const SLUG = opt('recording', null);
 const FROM = opt('from', null);
-const LENGTH = Number(opt('length', 75));
-const OUT = opt('out', path.join(os.homedir(), '.cache/bfstats-roll'));
+// --recap: a match recap (features/match-recap), the round's key moments the
+// recorder saw well, faded one into the next, then its salt. --length is
+// then the most its moments may run.
+const RECAP = args.includes('--recap') || Boolean(SCRIPT?.take?.recap);
+const LENGTH = Number(opt('length', RECAP ? 140 : 75));
+const OUT = opt('out', path.join(os.homedir(), RECAP ? '.cache/bfstats-recap' : '.cache/bfstats-roll'));
 const SOUND = args.includes('--sound') || Boolean(SCRIPT?.take?.sound);
 const BPM = Number(opt('bpm', 0)) || 0;
 const SEED = Number(opt('seed', 1));
@@ -178,7 +182,11 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   let cfg = null;
   let rand = null;
   const st = { lift: 0, beat: null, prev: null, beats: [], pos: null, look: null, from: null, fromLook: null, blend: 1, blendDur: 1, arc: 0,
-    slowLeft: 0, slowUntil: -1, screen: 0, speed: 1, round: null, roundGoneAt: null, impact: null, used: new Map() };
+    slowLeft: 0, slowUntil: -1, screen: 0, speed: 1, round: null, roundGoneAt: null, impact: null, used: new Map(),
+    // A recap (features/match-recap): its moments' beats in order, the fade
+    // through black between them, the frames hidden while a seek settles,
+    // and the second camera of a split screen.
+    queue: null, qi: 0, cut: null, hide: 0, fadeInAt: null, view: 'A', posB: null, lookB: null, splitBeat: null };
 
   const name = pid => {
     const p = r.rec.players.get(pid);
@@ -569,8 +577,9 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       const pos = P.clone().addScaledVector(away, (11 + 8 * k) * big).add(new V3(0, (4 + 3 * k) * big, 0));
       return { pos, look: P.clone().add(new V3(0, 0.8, 0)), subject: P };
     }
-    // After a kill: round the man going down.
-    if (b.phase === 'down' && b.victims.length) {
+    // After a kill: round the man going down (a split screen stays on the
+    // two men: its other half is the victim's own view).
+    if (b.phase === 'down' && b.victims.length && !b.split) {
       const v = where(b.victims[0], Math.min(t, b.tAct + 0.05)) ?? where(b.victims[0], b.tAct);
       if (v) {
         const R = v.hull ? v.radius * 2.6 + 4 : 5.5;
@@ -582,7 +591,10 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       }
     }
     // On him: behind his shoulder toward where he is aiming.
-    const A = aimPoint(b, me, t);
+    return shoulderOf(me, aimPoint(b, me, t));
+  };
+  // Behind man me's shoulder, looking toward point A: { pos, look, subject }.
+  const shoulderOf = (me, A) => {
     const dir = A.clone().sub(me.eye);
     if (me.plane && me.hull) {
       // Behind a plane along its flight.
@@ -602,6 +614,57 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     // Look between him and his aim: he stays in the picture, his target too.
     const look = me.eye.clone().lerp(A, me.plane ? 0.6 : 0.4);
     return { pos, look, subject: me.eye };
+  };
+
+  // A recap's beats: each moment's kills as the acts that film them (a kill,
+  // or the heavy shot that made it), in the moments' order. A kill whose act
+  // the recording does not hold whole is left out; a moment with none goes.
+  const buildQueue = () => {
+    st.queue = [];
+    st.recapDropped = [];
+    for (const m of cfg.recap.moments) {
+      const picks = [];
+      for (const k of m.kills) {
+        const a = acts.find(x => x.kind === 'kill' && x.pid === k.killer && x.victim === k.victim && Math.abs(x.t - k.t) < 0.06)
+          ?? acts.find(x => x.kind === 'shot' && x.pid === k.killer && (x.kills ?? []).some(y => y.victim === k.victim && Math.abs(y.t - k.t) < 0.06));
+        if (!a || picks.some(q => q.a === a)) continue;
+        const w = where(a.pid, a.t - 1);
+        if (w && !w.plane && roofed(w.eye)) continue;
+        picks.push({ a, moment: m, k });
+      }
+      if (!picks.length) { st.recapDropped.push(m.label + ': ' + m.name); continue; }
+      picks.forEach((q, i) => { q.first = i === 0; q.part = i; q.parts = picks.length; });
+      st.queue.push(...picks);
+    }
+  };
+  const tagBeat = (b, q) => {
+    b.moment = q.moment; b.part = q.part; b.parts = q.parts; b.k = q.k; b.first = q.first;
+    b.split = Boolean(q.moment.split) && b.victims.length > 0;
+    const log = st.beats[st.beats.length - 1];
+    if (log) { log.moment = q.moment.label; log.momentKind = q.moment.kind; log.part = q.part; log.split = b.split; }
+  };
+  // The split screen's other half: over the victim's shoulder at his
+  // killer, and after he falls, held where it was, still on the killer.
+  const wantB = (b, t) => {
+    const killer = where(b.pid, t);
+    const v = t < b.tAct - 0.05 ? where(b.victims[0], t) : null;
+    if (v && killer) {
+      const w = shoulderOf(v, killer.eye.clone());
+      w.pos = unblock(w.subject, keepAbove(w.pos.clone(), 0.8));
+      if (cfg.clear) w.pos = clearLens(w.subject, w.pos, w.look);
+      return w;
+    }
+    if (killer && st.posB) return { pos: st.posB.clone(), look: killer.eye.clone(), subject: killer.eye };
+    return null;
+  };
+  const stepB = (b, t) => {
+    const w = wantB(b, t);
+    if (!w) return;
+    if (st.splitBeat !== b || !st.posB) { st.posB = w.pos.clone(); st.lookB = w.look.clone(); st.splitBeat = b; return; }
+    const sdt = 1 / cfg.fps;
+    st.posB.lerp(w.pos, 1 - Math.exp(-sdt * cfg.follow));
+    st.lookB.lerp(w.look, 1 - Math.exp(-sdt * cfg.aim));
+    keepAbove(st.posB, 0.6);
   };
 
   const startBeat = (pick, T, reason) => {
@@ -648,6 +711,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   // or walls on every side.
   const qa = { frames: 0, under: 0, lens: 0, boxed: 0, at: [] };
   const measure = (pos, look) => {
+    if (st.noMeasure) return;
     qa.frames++;
     const fwd = look.clone().sub(pos).normalize();
     const g = ground(pos);
@@ -686,6 +750,14 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
 
   const placeRig = {
     place(c, dt, t) {
+      if (st.view === 'B' && st.posB) {
+        c.position.copy(st.posB);
+        c.quaternion.setFromRotationMatrix(new M4().lookAt(st.posB, st.lookB, new V3(0, 1, 0)));
+        if (c.fov !== cfg.fov) { c.fov = cfg.fov; c.updateProjectionMatrix(); }
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+        return true;
+      }
       if (!st.want) return false;
       // The aim point eases rather than jumps (Arnhem, 2026-11-12: "a cut
       // that gets interrupted ... cuts to almost the same position"): the
@@ -780,8 +852,10 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       let s = c.seed >>> 0 || 1;
       rand = () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
       buildActs();
+      if (c.recap) buildQueue();
       r.camera.setRig(placeRig);
-      return { acts: acts.length, shots: acts.filter(a => a.kind === 'shot').length, kills: acts.filter(a => a.kind === 'kill').length, fire: acts.filter(a => a.kind === 'fire').length, dropped: cfg.dropped };
+      return { queue: st.queue?.length ?? null, recapDropped: st.recapDropped ?? [],
+        recapStart: st.queue?.length ? Math.max(0, st.queue[0].a.t - c.leadOf(st.queue[0].a) - 0.8) : null, acts: acts.length, shots: acts.filter(a => a.kind === 'shot').length, kills: acts.filter(a => a.kind === 'kill').length, fire: acts.filter(a => a.kind === 'fire').length, dropped: cfg.dropped };
     },
     // The busiest stretch of the round to open on: the most act weight in
     // 40 s, from someone's heavy shot.
@@ -803,6 +877,13 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       const t = r.time;
       let b = st.beat;
       let seek = null;
+      if (!b && cfg.recap) {
+        const q = st.queue[0];
+        b = startBeat({ a: q.a, near: true, d: 0 }, t, 'opening');
+        tagBeat(b, q);
+        st.qi = 1;
+        st.blend = 1;
+      }
       if (!b) {
         const ok = a => { const w = where(a.pid, t); return w && (w.plane || !roofed(w.eye)); };
         const first = acts.find(a => a.t >= t + cfg.leadOf(a) && a.kind === 'shot' && ok(a)) ?? acts.find(a => a.t >= t && a.kind !== 'fire' && ok(a));
@@ -871,8 +952,43 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         b.whiteOut = true;
         st.whiteRun = 0;
       }
+      // A recap: the next beat of this moment (glided to when it is the same
+      // man and soon), else a fade through black to the next.
+      if (cfg.recap && b.end !== null && t >= b.end && !st.cut && !st.done) {
+        const log = st.beats[st.beats.length - 1];
+        if (log) { log.landed = b.landed ?? null; log.busy = b.busy ?? 0; log.held = Math.round((st.screen - b.screenAt) * 10) / 10; }
+        let next = null;
+        while (st.qi < st.queue.length) {
+          const q = st.queue[st.qi];
+          // Shown already: a kill that came while the last beat held.
+          if (q.a === b.act || (q.moment === b.moment && q.a.t < t + 0.8)) { st.qi++; continue; }
+          next = q;
+          break;
+        }
+        if (!next) { st.done = true; st.cut = { at: st.screen, dur: cfg.recap.fadeOut, final: true }; }
+        else if (next.moment === b.moment && next.a.pid === b.pid && next.a.t - cfg.leadOf(next.a) - t < 2.2 && !b.split) {
+          st.qi++;
+          b = startBeat({ a: next.a, near: true, d: 0 }, t, 'next in the moment');
+          tagBeat(b, next);
+        } else st.cut = { at: st.screen, dur: next.moment === b.moment ? cfg.recap.dip : cfg.recap.fadeOut, next };
+      }
+      if (cfg.recap && st.cut && !st.cut.final && st.screen - st.cut.at >= st.cut.dur) {
+        const q = st.cut.next;
+        st.qi++;
+        // Seek to just before his lead, hidden frames settling the hulls and
+        // bodies there, then fade in on him.
+        const settle = cfg.recap.settle / cfg.fps;
+        const to = Math.max(0, q.a.t - cfg.leadOf(q.a) - settle);
+        seek = to;
+        b = startBeat({ a: q.a, near: true, d: 0 }, to + settle, q.first ? 'next moment' : 'cut in the moment');
+        tagBeat(b, q);
+        st.pos = null; st.look = null; st.goal = null; st.from = null; st.blend = 1; st.lift = 0; st.wallLift = 0;
+        st.slowUntil = -1; st.speed = 1; st.round = null; st.impact = null; st.posB = null;
+        st.hide = cfg.recap.settle;
+        st.cut = null;
+      }
       // Done: hand over.
-      if (b.end !== null && t >= b.end && (!cfg.bar || st.screen >= cfg.nextBar(b.screenAt + 0.5))) {
+      if (!cfg.recap && b.end !== null && t >= b.end && (!cfg.bar || st.screen >= cfg.nextBar(b.screenAt + 0.5))) {
         if (b.kind === 'fire') st.impact = where(b.act.target, t)?.eye ?? where(b.pid, t)?.eye ?? st.impact;
         const P = st.impact?.clone() ?? where(b.pid, t)?.eye ?? st.pos.clone();
         const log = st.beats[st.beats.length - 1];
@@ -903,9 +1019,45 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       }
       const since = st.screen - b.screenAt;
       const caption = { name: name(b.pid), weapon: b.act.f?.weapon ?? b.act.weapon ?? '', alpha: Math.max(0, Math.min(1, (since - 0.3) / 0.4, (3.2 - since) / 0.5)) };
-      return { seek, speed: st.speed, caption, phase: b.phase, beat: st.beats.length - 1, end: b.end, err: st.err ?? null, done: Boolean(st.done) };
+      let black = 0, hidden = false, split = null;
+      if (cfg.recap) {
+        if (b.split) {
+          stepB(b, seek ?? t);
+          split = { names: [name(b.pid), name(b.victims[0])], teams: [teamOf(b.pid, b.tAct - 0.3) ?? 0, teamOf(b.victims[0], b.tAct - 0.3) ?? 0] };
+        }
+        const m = b.moment;
+        const k = b.k;
+        let sub = '';
+        if (m.kind === 'streak' && k?.index) sub = 'Kill ' + k.index + ' of ' + k.of;
+        else if (m.kind === 'multi' && b.parts > 1) sub = 'Kill ' + (b.part + 1) + ' of ' + m.count;
+        else if (m.kind === 'revenge' && m.avenges) sub = 'Back for the one who killed them ' + Math.round(k.t - m.avenges) + ' s before';
+        else if (m.kind === 'duel') sub = 'They fired back ' + m.exchanged + ' times';
+        else if (k?.victimName) sub = 'On ' + window.__vp.decodePlayerName(k.victimName);
+        const until = b.first ? 4.4 : 2.8;
+        caption.label = b.first || m.kind === 'streak' || m.kind === 'multi' ? m.label : '';
+        caption.sub = sub;
+        caption.split = Boolean(split);
+        caption.alpha = Math.max(0, Math.min(1, (since - 0.25) / 0.35, (until - since) / 0.5));
+        if (st.cut) black = Math.min(1, (st.screen - st.cut.at) / st.cut.dur);
+        if (st.hide > 0) {
+          st.hide--;
+          hidden = true;
+          black = 1;
+          if (st.hide === 0) st.fadeInAt = st.screen;
+        } else if (st.fadeInAt !== null) {
+          const f = (st.screen - st.fadeInAt) / cfg.recap.fadeIn;
+          black = Math.max(black, 1 - f);
+          if (f >= 1) st.fadeInAt = null;
+        }
+      }
+      return { seek, speed: st.speed, caption, phase: b.phase, beat: st.beats.length - 1, end: b.end, err: st.err ?? null, done: Boolean(st.done),
+        black, hidden, split };
     },
     beats: () => st.beats,
+    view(v) { st.view = v; },
+    measuring(on) { st.noMeasure = !on; },
+    // Out of time: fade out on what is on screen and end the moments.
+    finish() { if (!st.done) { st.done = true; st.cut = { at: st.screen, dur: cfg.recap?.fadeOut ?? 0.5, final: true }; } },
     qa: () => qa,
     diverged: () => st.diverged ?? [],
     stop() { r.camera.setRig(null); },
@@ -938,14 +1090,15 @@ function audioInit({ rate, span }) {
   };
   // The render from t0, read at the pace of each frame (adv: seconds of
   // render per frame), as a 16-bit stereo WAV in base64.
-  window.__audioWav = async (t0, adv, spf) => {
+  window.__audioWav = async (t0, adv, spf, gains = null, hidden = null) => {
     const a = window.__audio;
     if (!a?.__done) return null;
     realResume.call(a);
     const buf = await a.__done;
     const L = buf.getChannelData(0);
     const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
-    const n = adv.length * spf;
+    const shown = hidden ? hidden.filter(h => !h).length : adv.length;
+    const n = shown * spf;
     const out = new DataView(new ArrayBuffer(44 + n * 4));
     const str = (o, t) => [...t].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
     str(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); str(8, 'WAVEfmt ');
@@ -957,13 +1110,20 @@ function audioInit({ rate, span }) {
     for (let j = 0; j < adv.length; j++) {
       const s0 = adv[j] * rate / spf;
       const s1 = (adv[j + 1] ?? adv[j]) * rate / spf;
+      // A frame hidden while a seek settles is not in the video: its sound
+      // is passed over. Each shown frame's gain eases into the next's.
+      if (hidden?.[j]) { x += adv[j] * rate; continue; }
+      const g0 = gains ? gains[j] : 1;
+      let g1 = g0;
+      if (gains) for (let jj = j + 1; jj < adv.length; jj++) if (!hidden?.[jj]) { g1 = gains[jj]; break; }
       for (let q = 0; q < spf; q++) {
+        const gn = g0 + (g1 - g0) * (q / spf);
         const i = Math.floor(x);
         const f = x - i;
         const l = (L[i] ?? 0) * (1 - f) + (L[i + 1] ?? 0) * f;
         const rr = (R[i] ?? 0) * (1 - f) + (R[i + 1] ?? 0) * f;
-        out.setInt16(o, Math.max(-1, Math.min(1, l)) * 32767, true);
-        out.setInt16(o + 2, Math.max(-1, Math.min(1, rr)) * 32767, true);
+        out.setInt16(o, Math.max(-1, Math.min(1, l * gn)) * 32767, true);
+        out.setInt16(o + 2, Math.max(-1, Math.min(1, rr * gn)) * 32767, true);
         o += 4;
         x += s0 + (s1 - s0) * (q / spf);
       }
@@ -1116,6 +1276,13 @@ if (LINK_TAKE) {
   process.exit(0);
 }
 const rec = await json(`${API}/stats/recordings/${SLUG}`);
+/** A level's name as a title says it: "Arnhem-1944" reads "Arnhem 1944",
+ *  "omaha_beach" "Omaha Beach". */
+function levelNameOf(r) {
+  return String(r.title ?? r.level).split(' on ')[0]
+    .replace(/[-_](\d{4})$/, ' $1').replace(/_/g, ' ')
+    .split(' ').map(w => (w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+}
 
 // --- The script (the owner, 2026-11-12: a script with each video "that
 // allows us to re-record something ... versioned ... I'm not interested in
@@ -1133,8 +1300,38 @@ const toolId = {
 };
 const recordingBytes = Buffer.from(await (await fetch(`${API}${rec.recordingUrl}`)).arrayBuffer());
 const recordingId = { slug: SLUG, title: rec.title, mod: rec.mod, level: rec.level, sha256: createHash('sha256').update(recordingBytes).digest('hex'), bytes: recordingBytes.length };
+// --- A recap's plan (features/match-recap), made here from the recording as
+// the Shorts runner makes its picks: its moments (replay-recap-pick.js) and
+// its salt. A script's plan is filmed as it was.
+const RECAP_TUNE = Object.freeze({ fadeOut: 0.55, fadeIn: 0.5, dip: 0.3, settle: 14, end: 3.4, intro: 3.6 });
+let recapPlan = null;
+if (RECAP) {
+  const viewer = path.join(REPO, 'tools/bf1942-models/viewer');
+  const mod = f => import(pathToFileURL(path.join(viewer, f)).href);
+  const [R, C, P] = await Promise.all([mod('replay-recording.js'), mod('replay-chapters.js'), mod('replay-recap-pick.js')]);
+  if (SCRIPT?.recap) recapPlan = SCRIPT.recap;
+  else {
+    const prec = R.parseRecording(recordingBytes.toString('utf8'));
+    prec.kills = C.killsOf(prec);
+    const rel = `models/mods/${String(rec.mod).toLowerCase()}/models.json`;
+    const own = path.join(viewer, rel);
+    const rows = fs.existsSync(own) ? JSON.parse(fs.readFileSync(own, 'utf8'))
+      : await json(`${PLAY}/${rel}`).catch(() => json(`${PLAY}/models/models.json`));
+    const models = new Map(rows.map(m => [String(m.name).toLowerCase(), m]));
+    const picked = P.recapMomentsOf(prec, { models, budget: Math.min(P.RECAP.budget, LENGTH - 20) });
+    const salt = P.saltOf(prec).map(sl => ({ ...sl, secs: Math.round(P.slideSeconds(sl) * 10) / 10 }));
+    recapPlan = { moments: picked.moments, salt, recorder: picked.recorder, recordedBy: C.recorderName(prec), dropped: picked.dropped.length, min: P.RECAP.min };
+  }
+  log(`recap: ${recapPlan.moments.length} moments (${recapPlan.dropped ?? 0} the recorder did not see well enough), ${recapPlan.salt.length} salt slides`);
+  for (const m of recapPlan.moments) log(`  ${m.t0.toFixed(0).padStart(5)} s  ${m.label}: ${m.name}${m.recorder ? ' (the recorder)' : ''}, ${m.kills.length} kill${m.kills.length > 1 ? 's' : ''}`);
+  for (const sl of recapPlan.salt) log(`  salt ${sl.t.toFixed(0)} s  ${sl.name}: ${sl.lines.map(l => l.text).join(' / ')}`);
+  if (recapPlan.moments.length < (recapPlan.min ?? 4)) {
+    log(`too few moments for a recap (${recapPlan.moments.length}, ${recapPlan.min ?? 4} wanted)`);
+    process.exit(3);
+  }
+}
 /** The viewer's modules the take depends on, hashed in the page. */
-const VIEWER_MODULES = ['replay.js', 'replay-camera.js', 'replay-battles.js', 'replay-recording.js', 'replay-hulls.js', 'replay-shorts-pick.js',
+const VIEWER_MODULES = ['replay.js', 'replay-camera.js', 'replay-battles.js', 'replay-recording.js', 'replay-hulls.js', 'replay-shorts-pick.js', 'replay-recap-pick.js',
   'replay-gunfire.js', 'gunfire.js', 'round-launch.js', 'map.html'];
 if (SCRIPT) {
   if (SCRIPT.format !== SCRIPT_FORMAT || SCRIPT.version !== SCRIPT_VERSION) throw new Error(`${SCRIPT_PATH} is not a version ${SCRIPT_VERSION} roll script`);
@@ -1144,14 +1341,14 @@ if (SCRIPT) {
   // The viewer is checked once the page is up (below).
   global.__scriptDiffers = differs;
 }
-const name = opt('name', `${SLUG}-${FROM ?? 'auto'}-s${SEED}${BPM ? `-${BPM}bpm` : ''}`);
+const name = opt('name', RECAP ? `${SLUG}-recap` : `${SLUG}-${FROM ?? 'auto'}-s${SEED}${BPM ? `-${BPM}bpm` : ''}`);
 const dir = path.join(OUT, name);
 const frames = path.join(dir, 'frames');
 fs.rmSync(frames, { recursive: true, force: true });
 fs.mkdirSync(frames, { recursive: true });
 const q = new URLSearchParams({ mod: rec.mod, map: rec.level, replay: rec.recordingUrl });
 const url = `${PLAY}/map.html?${q.toString().replace(/%2F/g, '/')}&shots&mute=0`;
-log('roll of', rec.title, '->', dir);
+log(RECAP ? 'recap of' : 'roll of', rec.title, '->', dir);
 
 const GPU_ARGS = process.platform === 'darwin'
   ? ['--use-angle=metal', '--ignore-gpu-blocklist']
@@ -1159,13 +1356,14 @@ const GPU_ARGS = process.platform === 'darwin'
 const browser = await chromium.launch({ channel: opt('channel', undefined), args: args.includes('--gpu') ? GPU_ARGS : [] });
 try {
   const page = await openPage(browser, url);
-  const info = await page.evaluate(async ({ src, cfg }) => {
+  const info = await page.evaluate(async ({ src, overlay, cfg }) => {
     window.__rb = await import(new URL('replay-battles.js', location.href).href);
     window.__vp = await import(new URL('vehicle-players.js', location.href).href);
     window.__pick = await import(new URL('replay-shorts-pick.js', location.href).href);
     const cm = await import(new URL('replay-camera.js', location.href).href);
     window.__hullRadius = cm.hullRadius;
     (0, eval)(src);
+    if (overlay) { (0, eval)(overlay); await window.__recapDraw.ready; }
     const r = window.replay;
     r.creator?.toggle?.(false);
     const n = window.__roll.install(cfg);
@@ -1177,10 +1375,15 @@ try {
     return { ...n, opening: window.__roll.opening(), duration: r.rec.duration, viewer };
   }, {
     src: ROLL_SRC,
-    cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0,
-      viewerModules: VIEWER_MODULES, forced: SCRIPT ? SCRIPT.beats.map(b => ({ kind: b.kind, pid: b.pid, tAct: b.tAct, how: b.how })) : null },
+    overlay: RECAP ? fs.readFileSync(path.join(REPO, 'scripts/recap-overlay.js'), 'utf8') : null,
+    cfg: { ...ROLL, recap: recapPlan ? { ...RECAP_TUNE, moments: recapPlan.moments } : null, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0,
+      viewerModules: VIEWER_MODULES, forced: SCRIPT && !RECAP ? SCRIPT.beats.map(b => ({ kind: b.kind, pid: b.pid, tAct: b.tAct, how: b.how })) : null },
   });
   log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts; ${info.dropped} dropped as out of range or stuttering); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
+  if (RECAP) {
+    log(`recap queue: ${info.queue} beats${info.recapDropped.length ? `; moments the page could not film: ${info.recapDropped.join(', ')}` : ''}`);
+    if (!info.queue) throw new Error('no moment of the recap could be filmed');
+  }
   if (SCRIPT) {
     const differs = global.__scriptDiffers;
     if (SCRIPT.viewer.sha256 !== info.viewer) differs.push('the viewer that draws it changed');
@@ -1190,7 +1393,7 @@ try {
       log('--force: filming it anyway, following its beats where it can');
     } else log('the recording, the tool and the viewer are all as they were: this is the same take');
   }
-  const start = FROM !== null ? Number(FROM) : Math.max(0, (info.opening?.t ?? 60) - 4);
+  const start = RECAP ? info.recapStart : FROM !== null ? Number(FROM) : Math.max(0, (info.opening?.t ?? 60) - 4);
   await page.evaluate(start => {
     const r = window.replay;
     r.seek(start);
@@ -1207,44 +1410,140 @@ try {
   }
   const from = await page.evaluate(() => window.__audioT?.() ?? null);
   const paces = [];
+  const gains = [];
+  const hiddenAt = [];
   const whites = [];
+  // A roll is LENGTH s; a recap runs until its last moment fades out (at most
+  // LENGTH s), then its salt and its closing card (`tail`).
   let total = Math.round(LENGTH * FPS);
+  let tail = null;
+  // A recap opens on its card: the round held still behind it.
+  const prelude = RECAP ? Math.round(RECAP_TUNE.intro * FPS) : 0;
+  total += prelude;
+  const recapInfo = RECAP ? {
+    level: levelNameOf(rec), server: String(rec.title ?? '').split(' on ').slice(1).join(' on ').replace(/\s+\|.*$/, '').trim(),
+    date: rec.createdAt ? new Date(rec.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+    recordedBy: recapPlan.recordedBy ?? '',
+  } : null;
   const t0 = Date.now();
   let last = null;
-  for (let k = 0; k < total; k++) {
-    const res = await page.evaluate(async ({ W, H, FPS, k, total }) => {
+  let w = 0;
+  for (let k = 0; ; k++) {
+    if (tail ? w >= tail.end : w >= total) break;
+    if (k > total * 3 + 3000) throw new Error('the take is not moving on (hidden frames without end)');
+    // Out of time with moments left: the director finishes on a fade.
+    if (RECAP && !tail && w >= total - Math.round(RECAP_TUNE.fadeOut * FPS) - 2) await page.evaluate(() => window.__roll.finish());
+    const res = await page.evaluate(async ({ W, H, FPS, w, total, recap, tail, info, prelude }) => {
       const r = window.replay;
       const roll = window.__roll;
-      const screen = k / FPS;
-      const tk = roll.tick(screen, { lum: window.__rollLum ?? 0 });
+      const D = window.__recapDraw;
+      // The opening card holds the round still: its screen seconds are not
+      // the moments' (the director starts its clock after it).
+      const screen = (w - prelude) / FPS;
+      const opening = recap && w < prelude;
+      const tk = roll.tick(Math.max(0, screen), { lum: window.__rollLum ?? 0 });
       if (tk.seek !== null) r.seek(tk.seek);
-      r.speed = tk.speed;
-      r.playing = true;
+      // Held still behind the card: paused, as a speed of 0 reads as 1.
+      r.speed = tail ? 1 : tk.speed;
+      r.playing = !opening;
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
-      await window.__audioStep?.(tk.speed / FPS);
+      await window.__audioStep?.((opening ? 0 : tail ? 1 : tk.speed) / FPS);
+      if (tk.hidden && !tail) return { hidden: true, speed: tk.speed, gain: 0, t: r.time, beat: tk.beat, phase: tk.phase, done: tk.done, black: 1, lum: window.__rollLum ?? 0 };
       const cv = (window.__rollCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
       const g = cv.getContext('2d');
-      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      const gl = window.__renderer.domElement;
+      const split = recap && !tail && tk.split;
+      if (split) {
+        // Each half the middle of its own camera's frame: his on the left,
+        // the man he fights on the right.
+        g.drawImage(gl, W / 4, 0, W / 2, H, 0, 0, W / 2, H);
+        roll.view('B');
+        window.__renderOnce(W, H, 0);
+        g.drawImage(gl, W / 4, 0, W / 2, H, W / 2, 0, W / 2, H);
+        roll.view('A');
+      } else g.drawImage(gl, 0, 0, W, H);
+      // The frame's share near white, for the next tick (white-out): a smoke
+      // screen or a blast covering a third of the picture.
+      {
+        const sm = (window.__rollLumCv ??= Object.assign(document.createElement('canvas'), { width: 32, height: 18 }));
+        const sg = sm.getContext('2d', { willReadFrequently: true });
+        sg.drawImage(cv, 0, 0, 32, 18);
+        const px = sg.getImageData(0, 0, 32, 18).data;
+        let white = 0;
+        for (let i = 0; i < px.length; i += 4) if (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] > 225) white++;
+        window.__rollLum = white / (px.length / 4);
+      }
       // Laid out for 1080 lines, scaled to the frame.
       const u = H / 1080;
-      // Who the camera is on, low left, as it takes him.
+      let gain = 1;
       const c = tk.caption;
-      if (c.alpha > 0 && c.name) {
+      const weapon = c?.weapon ? (window.replay.creator?.display?.(c.weapon) || c.weapon) : '';
+      if (opening) {
+        const tmp = (window.__rollBlur ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+        tmp.getContext('2d').drawImage(cv, 0, 0);
         g.save();
-        g.globalAlpha = c.alpha;
-        g.textAlign = 'left';
-        g.textBaseline = 'alphabetic';
-        g.shadowColor = 'rgba(0,0,0,0.75)';
-        g.shadowBlur = 10 * u;
-        g.fillStyle = 'rgba(246,241,226,0.95)';
-        g.font = '800 ' + 40 * u + 'px system-ui, "Segoe UI", sans-serif';
-        g.fillText(c.name, 72 * u, H - 104 * u);
-        g.font = '600 ' + 26 * u + 'px system-ui, "Segoe UI", sans-serif';
-        g.fillStyle = 'rgba(232,196,120,0.95)';
-        const w = window.replay.creator?.display?.(c.weapon) || c.weapon;
-        g.fillText(String(w).toUpperCase(), 74 * u, H - 66 * u);
+        g.filter = `blur(${16 * u}px) brightness(0.36) saturate(0.6)`;
+        g.drawImage(tmp, -40 * u, -40 * u, W + 80 * u, H + 80 * u);
         g.restore();
+        D.intro(g, W, H, u, w / FPS, info, prelude / FPS);
+        const inn = Math.min(1, w / 15);
+        if (inn < 1) { g.fillStyle = `rgba(0,0,0,${1 - inn})`; g.fillRect(0, 0, W, H); }
+        gain = 0;
+      } else if (recap && tail) {
+        // The tail: the round blurred behind the salt, then the closing card.
+        const tmp = (window.__rollBlur ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+        const tg = tmp.getContext('2d');
+        tg.drawImage(cv, 0, 0);
+        g.save();
+        g.filter = `blur(${18 * u}px) brightness(0.3) saturate(0.5)`;
+        g.drawImage(tmp, -40 * u, -40 * u, W + 80 * u, H + 80 * u);
+        g.restore();
+        const sec = (w - tail.at) / FPS;
+        const saltLen = tail.salt / FPS;
+        if (sec < saltLen) D.salt(g, W, H, u, sec, info.salt);
+        else D.end(g, W, H, u, sec - saltLen, info, (tail.end - tail.at - tail.salt) / FPS);
+        const inn = Math.min(1, sec / 0.6);
+        if (inn < 1) { g.fillStyle = `rgba(0,0,0,${1 - inn})`; g.fillRect(0, 0, W, H); }
+        const left = (tail.end - w) / FPS;
+        gain = 0.22 * Math.min(1, sec / 0.8) * Math.min(1, left / 1.2);
+      } else if (recap) {
+        if (split) D.split(g, W, H, u, tk.split, Math.max(0, Math.min(1, c.alpha * 3)));
+        D.caption(g, W, H, u, c, weapon);
+        // Out of the opening card's blur into the first moment.
+        const fromCard = Math.min(1, (w - prelude) / 15);
+        if (fromCard < 1) {
+          const tmp = (window.__rollBlur ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+          tmp.getContext('2d').drawImage(cv, 0, 0);
+          g.save();
+          g.globalAlpha = 1 - fromCard;
+          g.filter = `blur(${16 * u}px) brightness(0.36) saturate(0.6)`;
+          g.drawImage(tmp, -40 * u, -40 * u, W + 80 * u, H + 80 * u);
+          g.restore();
+        }
+        const black = Math.max(0, tk.black ?? 0);
+        if (black > 0) { g.fillStyle = `rgba(0,0,0,${black})`; g.fillRect(0, 0, W, H); }
+        gain = (1 - black) * Math.min(1, 0.15 + (w - prelude) / 20);
+      } else {
+        // Who the camera is on, low left, as it takes him.
+        if (c.alpha > 0 && c.name) {
+          g.save();
+          g.globalAlpha = c.alpha;
+          g.textAlign = 'left';
+          g.textBaseline = 'alphabetic';
+          g.shadowColor = 'rgba(0,0,0,0.75)';
+          g.shadowBlur = 10 * u;
+          g.fillStyle = 'rgba(246,241,226,0.95)';
+          g.font = '800 ' + 40 * u + 'px system-ui, "Segoe UI", sans-serif';
+          g.fillText(c.name, 72 * u, H - 104 * u);
+          g.font = '600 ' + 26 * u + 'px system-ui, "Segoe UI", sans-serif';
+          g.fillStyle = 'rgba(232,196,120,0.95)';
+          g.fillText(String(weapon).toUpperCase(), 74 * u, H - 66 * u);
+          g.restore();
+        }
+        // In from black, out to black.
+        const fade = Math.min(1, w / 18, (total - 1 - w) / 30);
+        if (fade < 1) { g.fillStyle = 'rgba(0,0,0,' + (1 - Math.max(0, fade)) + ')'; g.fillRect(0, 0, W, H); }
       }
       // The site, small, top right.
       g.save();
@@ -1253,34 +1552,35 @@ try {
       g.fillStyle = 'rgba(246,241,226,0.55)';
       g.fillText('play.bfstats.io', W - 56 * u, 64 * u);
       g.restore();
-      // In from black, out to black.
-      const fade = Math.min(1, k / 18, (total - 1 - k) / 30);
-      if (fade < 1) { g.fillStyle = 'rgba(0,0,0,' + (1 - Math.max(0, fade)) + ')'; g.fillRect(0, 0, W, H); }
-      // The frame's mean brightness, for the next tick (white-out).
-      {
-        const sm = (window.__rollLumCv ??= Object.assign(document.createElement('canvas'), { width: 32, height: 18 }));
-        const sg = sm.getContext('2d', { willReadFrequently: true });
-        sg.drawImage(window.__renderer.domElement, 0, 0, 32, 18);
-        const px = sg.getImageData(0, 0, 32, 18).data;
-        // The share of the picture near white: a smoke screen or a blast
-        // covering a third of it reads as white though the mean stays low.
-        let white = 0;
-        for (let i = 0; i < px.length; i += 4) if (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] > 225) white++;
-        window.__rollLum = white / (px.length / 4);
-      }
-      return { lum: window.__rollLum, url: cv.toDataURL('image/jpeg', 0.9), speed: tk.speed, t: r.time, phase: tk.phase, beat: tk.beat, end: tk.end, err: tk.err, done: tk.done };
-    }, { W, H, FPS, k, total });
-    fs.writeFileSync(path.join(frames, `f${String(k).padStart(5, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
+      return { hidden: false, gain, lum: window.__rollLum, url: cv.toDataURL('image/jpeg', 0.9), speed: tail ? 1 : tk.speed, t: r.time, phase: tk.phase, beat: tk.beat,
+        end: tk.end, err: tk.err, done: tk.done, black: tk.black ?? 0 };
+    }, { W, H, FPS, w, total, recap: RECAP, tail, info: recapInfo ? { ...recapInfo, salt: recapPlan.salt } : null, prelude });
     paces.push(res.speed);
-    if (res.lum > ROLL.white) whites.push(k / FPS);
-    // Nothing left the recorder saw whole: fade out here rather than hold.
-    if (res.done && total > k + 31) { total = k + 31; log(`  nothing left to film after ${(k / FPS).toFixed(1)} s: ending the take`); }
+    gains.push(res.gain);
+    hiddenAt.push(res.hidden);
+    if (!res.hidden) {
+      fs.writeFileSync(path.join(frames, `f${String(w).padStart(5, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
+      if (res.lum > ROLL.white && !tail) whites.push(w / FPS);
+      w++;
+    }
+    if (RECAP) {
+      // The last moment faded out: the salt (if the round had any) and the card.
+      if (!tail && res.done && res.black >= 1) {
+        const salt = await page.evaluate(sl => window.__recapDraw.saltPlan(sl).length, recapPlan.salt);
+        const saltFrames = Math.round(salt * FPS);
+        tail = { at: w, salt: saltFrames, end: w + saltFrames + Math.round(RECAP_TUNE.end * FPS) };
+        // Behind the blur nothing is measured: the clipping log is the moments'.
+        await page.evaluate(() => window.__roll.measuring(false));
+        log(`  moments end at ${(w / FPS).toFixed(1)} s; ${salt ? `salt ${salt.toFixed(1)} s, ` : 'no salt, '}the card ${RECAP_TUNE.end} s`);
+      }
+    } else if (res.done && total > w + 31) { total = w + 31; log(`  nothing left to film after ${(w / FPS).toFixed(1)} s: ending the take`); }
     if (args.includes('--trace') && k % FPS === 0) log(`  t ${res.t.toFixed(2)} phase ${res.phase} speed ${res.speed.toFixed(2)} beat ${res.beat} end ${res.end?.toFixed?.(2)} ${res.err ?? ''}`);
     if (res.beat !== last) {
       last = res.beat;
-      log(`  frame ${k} (${(k / FPS).toFixed(1)} s): beat ${res.beat}, round ${res.t.toFixed(1)}`);
+      log(`  frame ${w} (${(w / FPS).toFixed(1)} s): beat ${res.beat}, round ${res.t.toFixed(1)}`);
     }
   }
+  total = w;
   log(`filmed ${total} frames in ${Math.round((Date.now() - t0) / 1000)} s`);
   const beats = await page.evaluate(() => window.__roll.beats());
   const qa = await page.evaluate(() => window.__roll.qa());
@@ -1304,19 +1604,22 @@ try {
   fs.writeFileSync(path.join(dir, 'roll.script.json'), JSON.stringify({
     format: SCRIPT_FORMAT, version: SCRIPT_VERSION, made: new Date().toISOString(),
     recording: recordingId, tool: toolId, viewer: { site: PLAY, sha256: info.viewer, modules: VIEWER_MODULES },
-    take: { from: start, length: LENGTH, res: RES, fps: FPS, seed: SEED, bpm: BPM, sound: SOUND, clear: !args.includes('--no-clear') },
+    take: { from: start, length: LENGTH, res: RES, fps: FPS, seed: SEED, bpm: BPM, sound: SOUND, clear: !args.includes('--no-clear'), recap: RECAP },
+    ...(recapPlan ? { recap: recapPlan } : {}),
     beats: beats.map(b => ({ screen: b.screen, t: b.t, tAct: b.tAct, kind: b.kind, pid: b.pid, name: b.name, weapon: b.weapon, how: b.how })),
-    rerecord: `node scripts/action-roll.mjs --script=<this file> --gpu --channel=chrome`,
+    rerecord: `node scripts/action-roll.mjs --script=<this file> --gpu --channel=chrome${RECAP ? ' --sound' : ''}`,
   }, null, 2));
-  fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, clipping: { ...qa, at: undefined, runs }, beats }, null, 2));
-  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
+  fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, clipping: { ...qa, at: undefined, runs }, beats,
+    ...(recapPlan ? { salt: recapPlan.salt, tail } : {}) }, null, 2));
+  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${(RECAP ? (b.moment ?? '') + (b.split ? ' [split]' : '') + ' ' : '')}${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
   let wavPath = null;
   if (SOUND && from !== null) {
     const adv = paces.map(p => p / FPS);
     // The offline render covers the whole span first: an FHSW level's runs
     // past 5 min (Manchuria, 2026-11-11). Failing it costs the sound, never
     // the picture.
-    const wav = await page.evaluateLong(({ from, adv, spf }) => window.__audioWav(from, adv, spf), { from, adv, spf: AUDIO_RATE / FPS }, 15 * 60 * 1000)
+    const wav = await page.evaluateLong(({ from, adv, spf, gains, hidden }) => window.__audioWav(from, adv, spf, gains, hidden),
+      { from, adv, spf: AUDIO_RATE / FPS, gains: RECAP ? gains : null, hidden: RECAP ? hiddenAt : null }, 15 * 60 * 1000)
       .catch(e => { log(`  no sound: ${e.message}`); return null; });
     if (wav) {
       wavPath = path.join(dir, 'sound.wav');
@@ -1337,20 +1640,19 @@ try {
   }
   const mp4 = path.join(dir, `roll-${QUALITIES[0][0]}p.mp4`);
   log('qualities:', written.join(', '));
-  // The poster: the first hit or kill held on, else a third of the way in.
-  const landedBeat = beats.find(b => b.landed || b.kind === 'kill');
-  const posterAt = Math.min(total - 1, Math.max(0, Math.round(((landedBeat ? landedBeat.screen + (landedBeat.held ?? 4) * 0.7 : total / FPS / 3)) * FPS)));
+  // The poster: the first hit or kill held on, else a third of the way in. A
+  // recap's is its best moment's (a split screen's if it has one).
+  const best = RECAP ? [...recapPlan.moments].sort((a, b) => Number(Boolean(b.split)) - Number(Boolean(a.split)) || b.score - a.score)[0] : null;
+  const landedBeat = (best && beats.find(b => b.moment === best.label && b.tAct >= best.t0 && b.tAct <= best.t1)) ?? beats.find(b => b.landed || b.kind === 'kill');
+  const posterAt = Math.min(total - 1, Math.max(0, prelude + Math.round(((landedBeat ? landedBeat.screen + (landedBeat.held ?? 4) * 0.7 : total / FPS / 3)) * FPS)));
   const poster = path.join(dir, 'poster.jpg');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(posterAt).padStart(5, '0')}.jpg`), '-vf', 'scale=1920:-2', '-q:v', '3', poster]);
-  // The strip's meta (api/Shorts: kind "roll", keyed by the round second it
-  // starts, victim -10).
-  // "Arnhem-1944" reads "Arnhem 1944", "omaha_beach" "Omaha Beach".
-  const levelName = String(rec.title ?? rec.level).split(' on ')[0]
-    .replace(/[-_](\d{4})$/, ' $1').replace(/_/g, ' ')
-    .split(' ').map(w => (w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+  // The strip's meta (api/Shorts: kind "roll" or "recap", keyed by the round
+  // second it starts, victim -10 or -11).
+  const levelName = levelNameOf(rec);
   const meta = {
-    recordingSlug: SLUG, killTime: Number(start.toFixed(2)), victimPid: -10, kind: 'roll',
-    title: `Action roll: ${levelName}`, killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,
+    recordingSlug: SLUG, killTime: Number(start.toFixed(2)), victimPid: RECAP ? -11 : -10, kind: RECAP ? 'recap' : 'roll',
+    title: `${RECAP ? 'Match recap' : 'Action roll'}: ${levelName}`, killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,
     distance: 0, lengthSeconds: Math.round((total / FPS) * 10) / 10, level: rec.level, mod: rec.mod,
     victims: [...new Set(beats.map(b => b.name).filter(Boolean))],
   };

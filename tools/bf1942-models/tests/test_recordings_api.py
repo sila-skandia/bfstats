@@ -140,6 +140,7 @@ class RecordingsApiTests(unittest.TestCase):
             ["asmr", "asmr", "icon_fire"],
             ["creators", "creator", "icon_follow"],
             ["rolls", "roll", None],
+            ["recaps", "recap", None],
         ])
         self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
         # The owner, 2026-11-04: a filter shows in the address, to share it.
@@ -170,6 +171,8 @@ class RecordingsApiTests(unittest.TestCase):
         # 2560 device pixels across or with Save-Data, else 4K; 4K with no HD.
         roll = self.results["shorts"]["roll"]
         self.assertEqual(roll["landscape"], [True, False, True, False])
+        # A match recap (features/match-recap) is 16:9 as a roll is.
+        self.assertEqual(roll["recap"], [True, "Recap"])
         self.assertEqual(roll["label"], "Roll")
         self.assertEqual(roll["length"], ["1:12", "1:30", "", ""])
         self.assertEqual(roll["quality"], ["4k", "hd", "hd", "hd", "4k", None])

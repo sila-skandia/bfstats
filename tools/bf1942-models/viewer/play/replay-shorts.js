@@ -55,6 +55,9 @@ export const SHORT_FILTERS = Object.freeze([
   // The action rolls (features/action-roll): no radio plate says "a reel", so
   // a strip of film, drawn.
   Object.freeze({ id: 'rolls', label: 'Rolls', kinds: ['roll'], plate: null, glyph: 'reel' }),
+  // Match recaps (features/match-recap): a round's moments one after another,
+  // drawn as frames stacked behind a play mark.
+  Object.freeze({ id: 'recaps', label: 'Recaps', kinds: ['recap'], plate: null, glyph: 'recap' }),
 ]);
 /** A filter by its id; anything else is All. */
 export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_FILTERS[0];
@@ -73,12 +76,14 @@ const KINDS = {
   creator: 'Creator',
   asmr: 'ASMR',
   roll: 'Roll',
+  recap: 'Recap',
 };
 export const shortKindLabel = kind => KINDS[kind] ?? 'Kill';
 
 /** Whether `short` is a landscape item, an action roll (features/action-roll,
- *  "Rolls in the strip"): 16:9 on its card and in the player. */
-export const isLandscape = short => Boolean(short?.landscape) || short?.kind === 'roll';
+ *  "Rolls in the strip") or a match recap (features/match-recap): 16:9 on its
+ *  card and in the player. */
+export const isLandscape = short => Boolean(short?.landscape) || short?.kind === 'roll' || short?.kind === 'recap';
 
 /** A roll's length on its card, `1:12`; '' when it does not say. */
 export function shortLength(seconds) {
@@ -200,6 +205,8 @@ const ICONS = {
   arrow: '<path d="M2 8h10.2M8.8 4.6 12.2 8l-3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   // A roll: a strip of film, its sprocket holes along both edges.
   reel: '<rect x="1.6" y="3.4" width="12.8" height="9.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.4 3.4v9.2M11.6 3.4v9.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M2.4 5.2h1.2M2.4 7.4h1.2M2.4 9.6h1.2M12.4 5.2h1.2M12.4 7.4h1.2M12.4 9.6h1.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6.8 6.2v3.6L9.8 8z" fill="currentColor"/>',
+  // A recap: moments one after another, frames stacked behind a play mark.
+  recap: '<rect x="4.6" y="2.2" width="9.8" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/><rect x="1.6" y="5.6" width="10.4" height="7.6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 7.6v3.6l3-1.8z" fill="currentColor"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -773,7 +780,7 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
     a.href = shortAddress(location.href, short.slug);
     a.dataset.slug = short.slug;
     const length = wide ? shortLength(short.lengthSeconds) : '';
-    a.setAttribute('aria-label', `Play the ${wide ? 'roll' : 'Short'}: ${short.title}${length ? `, ${length}` : ''}, ${count(short.views, 'view')}`);
+    a.setAttribute('aria-label', `Play the ${short.kind === 'recap' ? 'recap' : wide ? 'roll' : 'Short'}: ${short.title}${length ? `, ${length}` : ''}, ${count(short.views, 'view')}`);
     if (short.posterUrl) {
       const img = el('img');
       img.alt = '';

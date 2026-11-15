@@ -282,6 +282,7 @@ results.shorts = {
     return {
       landscape: [roll, { kind: 'tank-to-tank', landscape: false }, { landscape: true }, null].map(shorts.isLandscape),
       label: shorts.shortKindLabel('roll'),
+      recap: [shorts.isLandscape({ kind: 'recap' }), shorts.shortKindLabel('recap')],
       length: [72.6, 90, 0, null].map(shorts.shortLength),
       quality: [
         shorts.rollQuality(roll, { screenWidth: 1440, pixelRatio: 2 }),

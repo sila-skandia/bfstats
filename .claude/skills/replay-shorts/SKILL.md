@@ -321,8 +321,16 @@ about.
   that the share link names: Discord leaves a linked video over ~50 MB as a
   bare link. A Short whose share link will not embed: check the size of
   whatever `og:video` names.
-  The nightly job films one roll a week (first night of the ISO week,
-  `scripts/roll-weekly.mjs`, `ROLL_WEEKLY=0` skips it).
+  Rolls are no longer weekly (2026-11-15); `ROLL_WEEKLY=1` films one.
+- **Match recaps replace the weekly roll** (2026-11-15: the rolls "are a bit
+  too extreme in their panning for regular players ... perhaps we pivot to
+  generating match recaps"; `features/match-recap`). Kind `recap`, 16:9, key
+  victim -11, up to 180 s: a round's key moments (streaks, multi-kills, 1 v 1s
+  split screen, tank-on-plane, long shots, bombs, revenge) that the recorder
+  saw well, faded one into the next, then the round's salt (its angriest chat)
+  as slides. `scripts/action-roll.mjs --recap`; the picker is
+  `viewer/replay-recap-pick.js`. The nightly films one on the first night of
+  each ISO week (`roll-weekly.mjs --recap`, `RECAP_WEEKLY=0` skips it).
 
 ## On the Mac (2026-11-07)
 
