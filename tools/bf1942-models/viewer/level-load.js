@@ -74,6 +74,9 @@ const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks 
  */
 // A depot's start phase (SUP-4) and the walk that finds a level's depots:
 // one copy with the room server's (`supply-collect.js`).
+/** The stages `preparing the level` names as it goes (`stage` in `loadLevel`). */
+const WORLD_STAGES = 9;
+
 export { depotStartPhase } from './supply-collect.js';
 
 export function createLevel(page) {
@@ -388,7 +391,30 @@ export function createLevel(page) {
     // warming its programs took 2.2 s on Bombing the Reich after the last
     // byte, and a full bar that waits reads as a hang.
     load.step('world', { label: 'preparing the level', weight: 6 });
-    load.hold?.(warmups.level, { step: 'world' });
+    // What the preparing is doing now, said under the bar with the seconds
+    // it has taken, and the bar moved a share per stage: one line that sat
+    // unchanged for seconds read as frozen (the owner, 2026-11-15).
+    const world = { stage: null, n: 0, since: 0 };
+    // Said at once, and given a frame to be painted in before the work it
+    // names, which is mostly the main thread's (the collision, the bots, the
+    // shaders): without it the line jumped from the ground to the effects.
+    const stage = text => {
+      world.stage = text;
+      world.n += 1;
+      world.since ||= performance.now();
+      load.refreshStatus?.();
+      return new Promise(resolve => (typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(() => setTimeout(resolve, 0)) : setTimeout(resolve, 0)));
+    };
+    load.hold?.(warmups.level, {
+      step: 'world',
+      status: () => {
+        if (!world.stage) return null;
+        const text = typeof world.stage === 'function' ? world.stage() : world.stage;
+        const secs = Math.floor((performance.now() - world.since) / 1000);
+        return { text: `Preparing the level: ${text}${secs >= 1 ? ` · ${secs} s` : ''}`, fraction: world.n / WORLD_STAGES };
+      },
+    });
     // On a server (`?relay=`) the loading screen also waits out the
     // server's world dump, as retail's does: the level loads in parallel
     // with it, and the briefing, its READY and the deploy screen behind it
@@ -493,6 +519,7 @@ export function createLevel(page) {
         throw error;
       }
     }
+    await stage('the vehicles on their pads');
     await loadPadVariants(gltf.scene, level.extras, { load: loadPadModel });
     // What the level's guns' rounds can stand up (`level-statics.js`
     // `loadRoundSpawnPool`): FH's mobile guns' static twins and back, from
@@ -505,6 +532,7 @@ export function createLevel(page) {
     // before the pool is sized, since a launcher whose round is a vehicle
     // parks one (FA-29), then what the pool added.
     applyTemplateWords(gltf.scene, level.extras.templateWords);
+    await stage('what the guns\' rounds stand up');
     const pooled = await loadRoundSpawnPool(gltf.scene, {
       load: loadPadModel,
       inMode: node => nodeInMode(node, level.extras.gameplayMode),
@@ -768,6 +796,7 @@ export function createLevel(page) {
     // level), which the bots' nav maps are taken from (`nav-baked.js`).
     // And the whole heightmap (`terrain/heightmap.png`, tens to hundreds of KB),
     // which the collider stands on where the bake drew no tile.
+    await stage('the ground, the damage tables and the bots\' maps');
     const [terrainMaterials, damageTables, collisionMeshes, searchMaps, heightmap] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
       terrain.loadSearchMaps(dir), terrain.loadHeightmap(dir),
@@ -777,6 +806,7 @@ export function createLevel(page) {
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
+    await stage('building the collision');
     const collision = terrain.buildCollider(level.currentRoot, { collisionMeshes });
     // The statics' shade from the ground under them (ledger DL-10): after the
     // collider, whose height it asks, and never in the way of the load.
@@ -795,6 +825,7 @@ export function createLevel(page) {
     level.world.setSupplyDepots(collectSupplyDepots(level.currentRoot));
     // Now that the collider exists, spawn the bots so their nav grid and spawn
     // probes see it.
+    stage('placing the soldiers');
     page.spawnBotsForLevel();
     // A new level means a new scene graph (the hulls' instances went with the
     // old one, above), and so are every cached door.
@@ -812,6 +843,7 @@ export function createLevel(page) {
     // `game.viewDistance` typed on the last level is gone.
     sky.viewOverride = null;
     sky.applyFar();
+    stage('the sky and the fog');
     if (!sky.skyRoot) await sky.loadSky(entry);
     sky.applyFog();
     // Remaster mode (features/remaster-browser): its own sky, sun, fog and
@@ -822,10 +854,17 @@ export function createLevel(page) {
     statics.applyVisibility();
     // The fog is up, so the programs this links are the ones the frame wants.
     timing.warmStart = performance.now();
+    await stage('the effects: smoke, fire and blasts');
     Promise.resolve(page.loadEffectLibrary())
-      .then(library => warm.warmLevel(library))
+      .then(library => {
+        return stage('compiling the shaders').then(() => warm.warmLevel(library));
+      })
       .then(() => {
         timing.warmCompiled = performance.now();
+        stage(() => {
+          const left = Math.max(0, tex.total - tex.loaded);
+          return left ? `the last textures, ${left} to go` : 'the last textures';
+        });
         return textureQueueDrained();
       })
       .finally(() => {

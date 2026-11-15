@@ -50,6 +50,22 @@ depth).
 - **Bodies warm ten at a time** (`WARM_AT_ONCE`), the men alive at the opening
   still first.
 
+## The loading line says what it is doing
+
+The owner, the same day: "it still does take a while - preparing level ...
+perhaps we just make the loading text a bit more verbose it will show we're
+still working on it, as right now the text may look like it's frozen."
+*Preparing the level* covered the pad vehicles, the guns' round pool, the
+ground and damage tables, the collision, the soldiers, the sky, the effects
+library, the shaders and the last textures, under one unchanging word. Each
+stage now names itself on the loading screen's status line (`stage` in
+`level-load.js`, through `hold`'s `status`), with the seconds it has taken
+ticking once it passes one, and the bar moves a ninth of the step per stage.
+A stage is said at once (`refreshStatus`) and, before the main thread's own
+work (the collision, the shaders), given a frame to be painted in. Locally on
+Bocage: "Preparing the level: the effects: smoke, fire and blasts · 3 s" ...
+"· 8 s", then "compiling the shaders · 9 s", then the briefing.
+
 ## Checked
 
 `waterfall.cjs` (a Playwright run logging every request) against the local

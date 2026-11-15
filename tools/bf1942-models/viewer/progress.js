@@ -955,6 +955,13 @@ export function createLoadOverlay(host, {
         setBriefing(data);
       },
 
+      /** Read the holds' status now rather than at the next poll: a stage
+       *  that starts just before seconds of work on the main thread is said
+       *  before it starts. */
+      refreshStatus() {
+        if (live() && holdStatus.size) pollHoldStatus();
+      },
+
       /** Keep the loading picture up, its bar full, until `promise` settles
        *  as well as the bar: work the load starts and does not wait for
        *  (the level's warm-up) and that would otherwise stall the briefing
