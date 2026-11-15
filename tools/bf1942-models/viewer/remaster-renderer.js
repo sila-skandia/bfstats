@@ -278,7 +278,13 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       m.needsUpdate = true;
       return;
     }
-    if (gain === GLOW) gain = (sprite ? spriteGlow : tsl.float(GLOW)).mul(viewGain);
+    // A particle at the eye (a gunner's own muzzle flash, half a metre to
+    // two metres off) glows at GLOW, rising to `spriteGlow` by 6 m: at 14
+    // the M3A1 Browning's flash covered the gunner's view and the line of
+    // their own rounds with it (2026-11-15). A camera over a gunner's
+    // shoulder, four metres from the muzzle, keeps most of the light.
+    const near = tsl.smoothstep(1.5, 6, tsl.positionView.length());
+    if (gain === GLOW) gain = (sprite ? tsl.mix(tsl.float(GLOW), spriteGlow, near) : tsl.float(GLOW)).mul(viewGain);
     m.remasterGlow = true;
     // Drawn after every sprite that covers (effects.js reads it): the light
     // a fire gives is not dimmed by its own dust. Sorted among them by
@@ -335,6 +341,10 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     // closing onto its line over this many metres (projectile-flight.js
     // `bendFromMuzzle`).
     fromMuzzle: 40,
+    // How long that tail stays on the muzzle, and then how long it takes to
+    // close onto the round's line, in seconds.
+    hold: 0.08,
+    fade: 0.12,
   };
   // Light from a flash, a blast or a fire (effects.js `play`): a pool of
   // point lights that is always in the scene, dark until used, since adding

@@ -580,7 +580,16 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0, lit = false) {
       _muzzleAt.applyMatrix4(eye.matrixWorld);
     }
     _muzzleAt.sub(_origin);
-    if (_muzzleAt.lengthSq() < 4) vis = { offset: _muzzleAt.clone(), over: fromMuzzle };
+    // The tail held on the muzzle for `hold` seconds, then onto the round's
+    // line over `fade` (projectile-flight.js `bendFromMuzzle`). Closed over
+    // `fromMuzzle` metres, a seat's Browning round (900 m/s, 30 m a frame)
+    // had its line from the barrel for one frame, the one its muzzle flash
+    // covers: the M3A1's gunner on Wake saw no rounds at all (2026-11-15).
+    if (_muzzleAt.lengthSq() < 4) {
+      const t = globalThis.bfRemasterHooks?.tracer ?? {};
+      vis = { offset: _muzzleAt.clone(), at: _muzzleAt.clone().add(_origin), over: fromMuzzle,
+              hold: t.hold ?? 0.08, fade: t.fade ?? 0.12 };
+    }
   }
   guns.tracers.push({
     vis,

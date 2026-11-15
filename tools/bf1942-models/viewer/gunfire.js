@@ -262,6 +262,9 @@ export class GunFire {
   clear() {
     for (const tracer of this.tracers) {
       tracer.passing?.land();
+      // Remaster mode: the beam a round fired from the eye draws from the
+      // muzzle (projectile-flight.js `bendFromMuzzle`).
+      if (tracer.beam) { this.scene.remove(tracer.beam); (this.beamPool ??= []).push(tracer.beam); tracer.beam = null; }
       this.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       // Cylinders go back to the shared pool; baked streaks go back to the

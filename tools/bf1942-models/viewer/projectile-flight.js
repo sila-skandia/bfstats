@@ -19,7 +19,7 @@ import { dragAcceleration, entersWater } from './bomb-release.js';
 import { TorpedoRun, runParts } from './torpedo-run.js';
 import { detonate, impact } from './round-impact.js';
 import { burstsAtEndOfLife } from './projectile-damage.js';
-import { spawnPuff } from './round-visuals.js';
+import { spawnPuff, tracerGeometry, tracerMaterial } from './round-visuals.js';
 import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 import { wingPush } from './rocket-motor.js';
 // Every projectile template is in `c_CGProjectiles` (ledger FF-2), and the
@@ -605,23 +605,71 @@ function recycle(guns, shot, index) {
  */
 const _visTail = new THREE.Vector3();
 const _visDir = new THREE.Vector3();
-function bendFromMuzzle(tracer) {
+const _visMid = new THREE.Vector3();
+const _visEye = new THREE.Vector3();
+/** The beam a bent round draws from its tail to its head, off the scene. */
+function dropBeam(guns, tracer) {
+  if (!tracer.beam) return;
+  guns.scene.remove(tracer.beam);
+  (guns.beamPool ??= []).push(tracer.beam);
+  tracer.beam = null;
+}
+function bendFromMuzzle(guns, tracer, metresPerPxAt1m) {
   const unit = tracer.tail > 0 ? tracer.tail : 1;
   const back = Math.min(tracer.mesh.scale.z * unit, tracer.travelled);
   const tailAt = tracer.travelled - back;
-  const k = Math.max(0, 1 - tailAt / tracer.vis.over);
+  // Held on the muzzle `hold` seconds, then onto the round's line over
+  // `fade` (round-launch.js): from behind the gun the line from the barrel
+  // to the round projects onto the barrel and the crosshair, and closed by
+  // distance a 900 m/s round's line was gone in a frame, the frame its
+  // muzzle flash covers. Held, a burst is a stream from the gun.
+  const v = tracer.vis;
+  const k = v.hold != null
+    ? (tracer.age < v.hold ? 1 : Math.max(0, 1 - (tracer.age - v.hold) / v.fade))
+    : Math.max(0, 1 - tailAt / v.over);
   _visDir.copy(tracer.velocity).normalize();
   if (k === 0) {
     tracer.vis = null;
+    dropBeam(guns, tracer);
     tracer.mesh.lookAt(_visTail.copy(tracer.mesh.position).sub(_visDir));
     return;
   }
-  _visTail.copy(tracer.mesh.position).addScaledVector(_visDir, -back)
-    .addScaledVector(tracer.vis.offset, k);
+  // The tail is the muzzle at first and slides onto the round's own line as
+  // the round flies out. Shifted by the muzzle's offset instead, a seat
+  // gun's 32 m streak had left the muzzle by the first frame: its tail was
+  // three metres out, just under the crosshair, and the line was a dot.
+  _visTail.copy(tracer.mesh.position).addScaledVector(_visDir, -back);
+  if (tracer.vis.at) _visTail.lerp(tracer.vis.at, k);
+  else _visTail.addScaledVector(tracer.vis.offset, k);
   const length = _visTail.distanceTo(tracer.mesh.position);
   // The tail is the mesh's +Z (`spawnTracer` aims it a step back).
   tracer.mesh.lookAt(_visTail);
   tracer.mesh.scale.z = Math.max(1e-3, length / unit);
+  // The streak is a spike, wide at the round and a point at its tail: with
+  // the tail at the gun its near end was a point and the line from the barrel
+  // a hairline. A beam of even width runs beside it from the tail to the
+  // round, `px` across at the tail end, narrowing with distance as a real
+  // stream of fire does, and thinning as the tail closes onto the line.
+  // The shooter's own view only: the muzzle within a few metres of the eye
+  // (the player's own gun). Sized at a far gun, a bot's beam coming at the
+  // camera was a laser bar a hundred pixels across at its near end.
+  const eye = guns.camera.getWorldPosition(_visEye);
+  const near = _visTail.distanceTo(eye);
+  if (!(metresPerPxAt1m > 0) || !(length > 0.5) || !tracer.vis.at || tracer.vis.at.distanceTo(eye) > 4) {
+    dropBeam(guns, tracer);
+    return;
+  }
+  if (!tracer.beam) {
+    tracer.beam = guns.beamPool?.pop() ?? new THREE.Mesh(tracerGeometry, tracerMaterial);
+    tracer.beam.visible = true;
+    guns.scene.add(tracer.beam);
+  }
+  const px = (tracer.lit ? 2.5 : 4) * k;
+  const across = (near * metresPerPxAt1m * px) / 0.02;
+  _visMid.copy(_visTail).add(tracer.mesh.position).multiplyScalar(0.5);
+  tracer.beam.position.copy(_visMid);
+  tracer.beam.lookAt(tracer.mesh.position);
+  tracer.beam.scale.set(across, across, length);
 }
 
 export function advanceTracers(guns, dt) {
@@ -691,6 +739,7 @@ export function advanceTracers(guns, dt) {
                    tracer.velocity, tracer.travelled - step + struck.t, tracer.origin, tracer.stamp);
       // Its passing crack flies no farther than the round did.
       tracer.passing?.land();
+      dropBeam(guns, tracer);
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);
@@ -726,7 +775,8 @@ export function advanceTracers(guns, dt) {
         fade.material.opacity = fade.opacity * coverage;
       }
     }
-    if (tracer.vis) bendFromMuzzle(tracer);
+    if (tracer.vis) bendFromMuzzle(guns, tracer, metresPerPxAt1m);
+    else if (tracer.beam) dropBeam(guns, tracer);
     if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
       // A round whose `timeToLive` ran out bursts there when it says
       // `hasOnTimeEffect` (`Projectile::handleMessage` -> `detonate`, PROX-7,
@@ -741,6 +791,7 @@ export function advanceTracers(guns, dt) {
           .multiplyScalar(tracer.lead).add(tracer.mesh.position);
         detonate(guns, tracer.group, tracer.group.stats.projectile, _head, tracer.travelled, tracer.stamp);
       }
+      dropBeam(guns, tracer);
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);

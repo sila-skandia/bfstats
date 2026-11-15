@@ -70,6 +70,8 @@ export function installVehicleHooks(page) {
       lit: !!tracer.lit,
       visible: tracer.mesh.visible,
       vis: tracer.vis ? tracer.vis.offset.toArray() : null,
+      // Where the drawn streak's tail is (the mesh's +Z, `tail` metres a unit).
+      tailAt: (tracer.mesh.updateMatrixWorld(), tracer.mesh.localToWorld(new THREE.Vector3(0, 0, tracer.tail > 0 ? tracer.tail : 1)).toArray()),
       age: tracer.age,
       ttl: tracer.ttl,
       // What the width floor settled on this frame, against the streak's own

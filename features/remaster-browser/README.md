@@ -71,6 +71,7 @@ wins", below).
 | The showreel: the remaster's features first with captions, the pairs last; a staged gunner held on the gun in shot | done (2026-11-15) |
 | Effects that looked like retail or worse: a muffled blast, the MG's flash, flak, a pink first-person flash | fixed (2026-11-15) |
 | The reel's title and end cards in the bfstats brand | done (2026-11-15) |
+| A seat gunner's own rounds drawn from the barrel (the M3A1's Browning), and their flash no longer over the view | fixed (2026-11-15) |
 
 ## How to turn it on
 
@@ -992,6 +993,40 @@ comes up first, the badge and credit after it. "Remaster | BF1942 in the
 browser" opens it; "Remaster | play it at play.bfstats.io" closes it.
 
 ![The title card](marketing/card_intro.jpg)
+
+### No rounds from the M3A1's Browning (owner, 2026-11-15)
+
+"I mounted the M3A1 browning and there are no tracers." Not a deploy: the
+same on this checkout. The seat fires from its camera (`cameraLaunch`), so a
+round leaves along the line of sight at 900 m/s, 30 m a frame, and its
+streak points straight away from the gunner: a dot at the crosshair, in
+retail and remaster alike. The muzzle bend made for hand weapons ("The
+player's own rounds") applied, but closed onto the round's line over 40 m,
+so the line from the barrel lasted one frame, the frame the muzzle flash
+covers. And today's particle gain (14) made that flash, half a metre from the
+eye, a blob over the middle of the view.
+
+- The tail is held on the muzzle for `hold` (0.08 s) and closes onto the
+  round's line over `fade` (0.12 s), timed by the round's age, not its
+  distance (`remasterHooks.tracer`, `bendFromMuzzle`). From behind the gun
+  that line projects from the barrel's tip to the crosshair; at ten rounds a
+  second they run together into a stream from the gun.
+- It is drawn by the bend itself, not by moving the streak's tail by the
+  muzzle's offset: the streak is 32 m long and had already left the muzzle
+  by the first frame, three metres out under the crosshair.
+- Beside it a beam of even width runs from the tail to the round (the
+  fallback cylinder and the tracer material), 4 px across at the gun and
+  narrowing with distance: the streak is a spike, a point at its tail, so
+  with the tail at the gun the line was a hairline. Only for a muzzle within
+  4 m of the eye: sized at a far gun, a bot's beam coming at the camera was a
+  bar a hundred pixels across.
+- A particle within 1.5 m of the eye glows at the old gain (3), rising to 14
+  by 6 m: the gunner's own flash is retail's size again, and an
+  over-the-shoulder camera four metres off keeps most of the light.
+
+`tests/test_muzzle_bend.py` steps a camera-fired round frame by frame: the
+tail on the muzzle while held, back on the line after, the beam only while it
+is bent and only for the shooter's own gun.
 
 ## Bugs found on the way
 
