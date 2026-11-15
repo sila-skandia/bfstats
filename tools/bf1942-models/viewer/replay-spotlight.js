@@ -22,6 +22,7 @@ import { motionAt, poseAt } from './replay-kinematics.js';
 import { prettyTank } from './tank-arena.js';
 import { TRACER_HIT, TRACER_LIFE, TRACER_MISS, Tracers } from './replay-tracers.js';
 import { decodePlayerName } from './vehicle-players.js';
+import { nameAt, teamAt } from './replay-recording.js';
 
 /** How far the rest of the view is dulled, at full strength. */
 const DIM = 0.66;
@@ -43,6 +44,14 @@ const POP = 1.4;
 const MAX_ROUNDS = 240;
 /** Seconds between looks at whether the Accuracy rebuild has changed. */
 const BOARD_EVERY = 1;
+/** Pixels a side of the strip's portraits; seconds between their renders. */
+const PORTRAIT = 128;
+const PORTRAIT_EVERY = 0.12;
+/** The portrait's camera: its field of view (degrees), and how far off the
+ *  line to the other one it stands and above it (radians). */
+const PORTRAIT_FOV = 30;
+const PORTRAIT_YAW = 0.6;
+const PORTRAIT_PITCH = 0.32;
 
 const STYLE = `
 .rs-root { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
@@ -53,11 +62,27 @@ const STYLE = `
 .rs-strip.lit { display: flex; }
 .rs-strip-k { flex: none; color: var(--rp-khaki); font: 800 9px/1.2 var(--rp-font); letter-spacing: .22em; }
 .rs-strip-fight { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.rs-strip-side { min-width: 0; max-width: 190px; padding-left: 7px; border-left: 2px solid var(--rp-edge-strong); }
-.rs-strip-side.right { padding: 0 7px 0 0; border-left: 0; border-right: 2px solid var(--rp-edge-strong); text-align: right; }
-.rs-strip-side.is-axis { border-color: var(--rp-axis); }
-.rs-strip-side.is-allies { border-color: var(--rp-allies); }
-.rs-strip-side b { display: block; font: 700 12px/1.25 var(--rp-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Each side is a button: its portrait, its name and hit points. A click
+   follows that one; the one followed is lit in its side's colour. */
+.rs-strip-side { --rs-team: var(--rp-edge-strong); display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 230px;
+  margin: 0; padding: 3px 8px 3px 3px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--rp-ink);
+  font: inherit; text-align: left; cursor: pointer; transition: background-color .15s, border-color .15s, opacity .15s; opacity: .72; }
+.rs-strip-side.right { flex-direction: row-reverse; padding: 3px 3px 3px 8px; text-align: right; }
+.rs-strip-side.is-axis { --rs-team: var(--rp-axis); }
+.rs-strip-side.is-allies { --rs-team: var(--rp-allies); }
+.rs-strip-side:hover { opacity: 1; background: rgba(255, 255, 255, .06); }
+.rs-strip-side:focus-visible { outline: 2px solid var(--rp-khaki); outline-offset: 1px; }
+.rs-strip-side.is-on { opacity: 1; border-color: var(--rs-team); background: color-mix(in srgb, var(--rs-team) 16%, transparent); }
+.rs-strip-text { min-width: 0; }
+.rs-face { position: relative; flex: none; width: 44px; height: 44px; border-radius: 6px; overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, rgba(255, 255, 255, .16), rgba(0, 0, 0, .35) 72%), color-mix(in srgb, var(--rs-team) 30%, #16171a);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.rs-strip-side.is-on .rs-face { box-shadow: inset 0 0 0 2px var(--rs-team), 0 0 12px color-mix(in srgb, var(--rs-team) 55%, transparent); }
+.rs-face canvas { position: static; display: block; width: 100%; height: 100%; }
+.rs-role { display: block; color: var(--rs-team); font: 800 8px/1.2 var(--rp-font); letter-spacing: .2em; text-transform: uppercase; }
+.rs-role:empty { display: none; }
+.rs-strip-swap { flex: none; display: block; margin: 2px auto 0; color: var(--rp-muted); }
+.rs-strip-side b { display: block; max-width: 150px; font: 700 12px/1.25 var(--rp-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rs-strip-side small { display: block; color: var(--rp-muted); font: 700 9px/1.3 var(--rp-font); letter-spacing: .08em; text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rs-strip-hp { display: block; width: 110px; max-width: 100%; height: 4px; margin-top: 3px; border-radius: 2px; background: rgba(255, 255, 255, .14);
@@ -96,13 +121,14 @@ const STYLE = `
   .rs-strip { top: 8px; left: 8px; right: 8px; transform: none; width: auto; max-width: none; flex-wrap: wrap; gap: 4px 8px; }
   .rs-strip-k { display: none; }
   .rs-strip-fight { flex: 1 1 100%; justify-content: space-between; }
-  .rs-strip-side { max-width: 38vw; }
-  .rs-strip-hp { width: 72px; }
+  .rs-strip-side { max-width: 42vw; }
+  .rs-face { width: 36px; height: 36px; }
+  .rs-strip-hp { width: 64px; }
   .rs-strip .rp-btn { flex: 1 1 0; }
   .rs-strip .rp-btn.rs-strip-off { flex: none; }
   .rs-strip.is-left { left: 8px; right: auto; }
 }
-@media (prefers-reduced-motion: reduce) { .rs-strip-hp em { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rs-strip-hp em, .rs-strip-side { transition: none; } }
 `;
 
 const el = (tag, className, text) => {
@@ -118,6 +144,23 @@ const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
+
+/** The box round what `roots` draw: their shown meshes' own bounds, world
+ *  frame. Not `Box3.expandByObject`, which counts hidden helpers too (a
+ *  hull's group sits at the origin, and boxed it the portrait framed the
+ *  whole level). */
+const _mb = new THREE.Box3();
+function visibleBox(roots, box) {
+  box.makeEmpty();
+  for (const root of roots) {
+    root.traverseVisible(o => {
+      if (!o.isMesh || !o.geometry) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box.union(_mb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+    });
+  }
+  return box;
+}
 
 export class ReplaySpotlight {
   constructor(player) {
@@ -137,9 +180,9 @@ export class ReplaySpotlight {
     this.litAt = -Infinity;
     this.edge = null;
     this.gl = null;
-    if (!document.getElementById('rs-style')) {
+    if (!document.getElementById('rs-spot-style')) {
       const style = el('style');
-      style.id = 'rs-style';
+      style.id = 'rs-spot-style';
       style.textContent = STYLE;
       document.head.appendChild(style);
     }
@@ -157,19 +200,32 @@ export class ReplaySpotlight {
     this.strip = el('div', 'rs-strip');
     this.strip.setAttribute('role', 'status');
     this.sides = ['a', 'b'].map((key, i) => {
-      const node = el('div', `rs-strip-side${i ? ' right' : ''}`);
+      const node = el('button', `rs-strip-side${i ? ' right' : ''}`);
+      node.type = 'button';
+      node.setAttribute('aria-pressed', 'false');
+      const face = el('span', 'rs-face');
+      const canvas = el('canvas');
+      canvas.width = canvas.height = PORTRAIT;
+      face.append(canvas);
+      const text = el('span', 'rs-strip-text');
+      const role = el('span', 'rs-role');
       const name = el('b');
       const what = el('small');
       const hp = el('span', 'rs-strip-hp');
       const bar = el('em');
       hp.append(bar);
-      node.append(name, what, hp);
-      return { node, name, what, hp, bar };
+      text.append(role, name, what, hp);
+      node.append(face, text);
+      node.addEventListener('click', () => this.followSide(key));
+      return { key, node, face, canvas, role, name, what, hp, bar };
     });
     const mid = el('div', 'rs-strip-mid');
     this.score = el('b', '', '0 : 0');
     this.midLine = el('small', '', 'HITS');
     mid.append(this.score, this.midLine);
+    // Between the two, what a click on either does.
+    mid.insertAdjacentHTML('beforeend', '<svg class="rs-strip-swap" width="18" height="10" viewBox="0 0 18 10" aria-hidden="true">'
+      + '<path d="M1 3h14l-3-2.5M17 7H3l3 2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
     const fight = el('div', 'rs-strip-fight');
     fight.append(this.sides[0].node, mid, this.sides[1].node);
     this.againBtn = ui.button('rs-strip-again', null, 'Watch it again from just before the kill', () => this.again(), 'Again');
@@ -252,6 +308,40 @@ export class ReplaySpotlight {
     this.player.playing = true;
   }
 
+  /** Which side of the lit fight the replay follows: 'a', 'b' or null. */
+  followedSide(t = this.player.time) {
+    const fight = this.fight;
+    const pid = this.player.followPid;
+    if (!fight || !Number.isInteger(pid)) return null;
+    for (const key of ['a', 'b']) if (peopleOf(this.player.rec, fight[key], t).includes(pid)) return key;
+    const k = fight.kill;
+    if (k && pid === k.killerPid) return fight.a === k.killer ? 'a' : 'b';
+    if (k && pid === k.victimPid) return fight.a === k.killer ? 'b' : 'a';
+    return null;
+  }
+
+  /** The one on `key`'s side of the strip followed (the shooter or the
+   *  victim, a click on their portrait), the orbit turned to the other. */
+  followSide(key) {
+    const fight = this.fight;
+    if (!fight || !fight[key]) return;
+    const p = this.player;
+    const life = fight[key];
+    const k = fight.kill;
+    let pid = peopleOf(p.rec, life, p.time)[0];
+    if (!Number.isInteger(pid) && k) pid = life === k.killer ? k.killerPid : k.victimPid;
+    if (!Number.isInteger(pid)) return;
+    if (p.camera?.mode === 'free') p.ui.setMode('orbit');
+    p.ui.follow(pid);
+    if (this.pin) {
+      this.pin.faced = false;
+      this.pin.faceIn = 2;
+      this.pin.steered = false;
+      this.pin.yaw = undefined;
+    }
+    this.portraitAt = -Infinity;
+  }
+
   /** Let go of the kill: the view comes back up. */
   release() {
     this.pin = null;
@@ -326,6 +416,7 @@ export class ReplaySpotlight {
       this.fight = { ...f, a: f.b, b: f.a, hits: { a: f.hits.b, b: f.hits.a } };
     }
     this.stripKey = null;
+    this.portraitAt = -Infinity;
     this.rounds = [];
     if (!this.fight) {
       this.tagsEl.textContent = '';
@@ -363,9 +454,11 @@ export class ReplaySpotlight {
       pin.steered = true;
       return;
     }
-    if (!peopleOf(p.rec, fight.a, t).includes(p.followPid)) return;
-    const a = this.placeOf(fight.a, t, new THREE.Vector3());
-    const b = a ? this.placeOf(fight.b, t, new THREE.Vector3()) : null;
+    // From whichever of the two is followed, to the other.
+    const own = this.followedSide(t);
+    if (!own) return;
+    const a = this.placeOf(fight[own], t, new THREE.Vector3());
+    const b = a ? this.placeOf(fight[own === 'a' ? 'b' : 'a'], t, new THREE.Vector3()) : null;
     if (!b) return;
     const dx = a.x - b.x;
     const dz = a.z - b.z;
@@ -436,10 +529,27 @@ export class ReplaySpotlight {
       for (const [i, key] of ['a', 'b'].entries()) {
         const life = fight[key];
         const label = labelOf(p.rec, life, fight.first, prettyTank);
+        // A hull with nobody aboard (a man killed beside an empty jeep): the
+        // kill's own man on that side, by name and side.
+        const k = fight.kill;
+        const own = k && !peopleOf(p.rec, life, fight.first).length ? (life === k.killer ? k.killerPid : k.victimPid) : null;
+        if (Number.isInteger(own)) label.who = nameAt(p.rec, own, k.t) || label.who;
+        const team = sideOf(p.rec, life, fight.first) || (Number.isInteger(own) ? teamAt(p.rec, own, k.t) : 0);
         const side = this.sides[i];
-        side.node.className = `rs-strip-side${i ? ' right' : ''} ${teamClass(sideOf(p.rec, life, fight.first))}`;
+        side.node.className = `rs-strip-side${i ? ' right' : ''} ${teamClass(team)}`;
+        side.soldier = label.soldier;
         side.name.textContent = shown(label.who);
         side.what.textContent = label.what;
+        side.role.textContent = fight.kill ? (life === fight.kill.killer ? 'Shooter' : 'Victim') : '';
+        side.node.title = `Follow ${shown(label.who)}`;
+      }
+    }
+    const own = this.followedSide(t);
+    for (const side of this.sides) {
+      const on = side.key === own;
+      if (side.node.classList.contains('is-on') !== on) {
+        side.node.classList.toggle('is-on', on);
+        side.node.setAttribute('aria-pressed', String(on));
       }
     }
     const hits = { a: 0, b: 0 };
@@ -639,24 +749,32 @@ export class ReplaySpotlight {
 
   /** What the two are drawn as: their hulls, and every soldier in them. */
   rootsOf(fight, t) {
+    return [...this.rootsOfSide(fight, fight.a, t), ...this.rootsOfSide(fight, fight.b, t)];
+  }
+
+  /** What one of the two (`life`) is drawn as: its hull and everyone in it,
+   *  and on the victim's side the victim, still drawn falling for a moment
+   *  after the kill. */
+  rootsOfSide(fight, life, t) {
     const p = this.player;
     const roots = [];
     const pids = new Set();
-    for (const life of [fight.a, fight.b]) {
-      if (!life.soldier) {
-        const hull = p.hulls?.get(life);
-        if (hull?.group) roots.push(hull.group);
-      }
-      for (const pid of peopleOf(p.rec, life, t)) pids.add(pid);
+    if (!life.soldier) {
+      const hull = p.hulls?.get(life);
+      if (hull?.group) roots.push(hull.group);
     }
-    // Whoever died in the fight is still drawn falling for a moment after.
+    for (const pid of peopleOf(p.rec, life, t)) pids.add(pid);
     const k = fight.kill;
-    if (k && Number.isInteger(k.victimPid) && hasPlayer(fight.raw, k.victimPid)) pids.add(k.victimPid);
-    const visuals = p.soldiers?.bodies?.botVisuals;
+    if (k && life !== k.killer && Number.isInteger(k.victimPid) && hasPlayer(fight.raw, k.victimPid)) pids.add(k.victimPid);
+    const bodies = p.soldiers?.bodies;
+    const visuals = bodies?.botVisuals;
     for (const pid of pids) {
+      // A dead man lies as a corpse of his own, apart from the living bodies.
+      const corpse = bodies?.corpseOf?.(`replay:${pid}`);
+      if (corpse && !roots.includes(corpse)) roots.push(corpse);
       const vis = visuals?.get(`replay:${pid}`);
       if (!vis) continue;
-      if (vis.group) roots.push(vis.group);
+      if (vis.group && vis.group !== corpse) roots.push(vis.group);
       if (vis.seat?.scene) roots.push(vis.seat.scene);
       if (vis.canopy?.scene) roots.push(vis.canopy.scene);
     }
@@ -711,6 +829,14 @@ export class ReplaySpotlight {
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = false;
       renderer.render(spot, camera);
+      // The strip's two portraits, from the same lights; a nicety.
+      try {
+        this.renderPortraits(renderer, gl, fight);
+      } catch (error) {
+        if (!this.portraitWarned) console.warn('replay: the spotlight portraits', error);
+        this.portraitWarned = true;
+        this.portraitsOff = true;
+      }
     } finally {
       spot.children = [];
       renderer.shadowMap.autoUpdate = saved.shadowAuto;
@@ -721,8 +847,156 @@ export class ReplaySpotlight {
     return true;
   }
 
+  /**
+   * Each side's portrait on the strip: that one alone (`rootsOfSide`), lit as
+   * the page lit it, from a little aside of the line to the other one and
+   * above, so a shooter is seen facing his victim and the victim facing him.
+   * Drawn into a small target of its own every `PORTRAIT_EVERY` and read back
+   * into the side's canvas; the page's frame is untouched.
+   */
+  renderPortraits(renderer, gl, fight) {
+    if (this.portraitsOff || !this.strip.classList.contains('lit')) return;
+    const now = performance.now() / 1000;
+    if (now - (this.portraitAt ?? -Infinity) < PORTRAIT_EVERY || this.portraitBusy) return;
+    this.portraitAt = now;
+    const t = this.player.time;
+    const webgpu = Boolean(renderer.isWebGPURenderer);
+    gl.portraits ??= ['a', 'b'].map(() => {
+      const Target = webgpu ? THREE.RenderTarget : THREE.WebGLRenderTarget;
+      const target = new Target(PORTRAIT, PORTRAIT, { depthBuffer: true, samples: webgpu ? 1 : 4 });
+      target.texture.colorSpace = THREE.SRGBColorSpace;
+      return target;
+    });
+    gl.portraitCam ??= new THREE.PerspectiveCamera(PORTRAIT_FOV, 1, 0.05, 4000);
+    gl.portraitPixels ??= new Uint8Array(PORTRAIT * PORTRAIT * 4);
+    const cam = gl.portraitCam;
+    const spot = gl.spot;
+    const lights = this.lightsOf(this.player.ctx.scene);
+    const box = gl.portraitBox ??= new THREE.Box3();
+    const centre = _a;
+    const size = _b;
+    const savedTarget = renderer.getRenderTarget();
+    const savedColour = renderer.getClearColor(new THREE.Color());
+    const savedAlpha = renderer.getClearAlpha();
+    const reads = [];
+    const shown = [];
+    try {
+      spot.fog = null;
+      renderer.setClearColor(0x000000, 0);
+      ['a', 'b'].forEach((key, i) => {
+        const side = this.sides[i];
+        const life = fight[key];
+        // Hidden ones too: the one followed in first person is hidden from
+        // the page's view, and one off the screen culled. Shown for this
+        // render only.
+        let roots = this.rootsOfSide(fight, life, t);
+        // An empty hull beside the kill's man (killed by a jeep he had left):
+        // the man, not the jeep.
+        const hull = !life.soldier ? this.player.hulls?.get(life)?.group : null;
+        if (hull && roots.length > 1 && !peopleOf(this.player.rec, life, t).length) roots = roots.filter(r => r !== hull);
+        for (const root of roots) {
+          if (root.visible) continue;
+          root.visible = true;
+          shown.push(root);
+        }
+        visibleBox(roots, box);
+        if (!roots.length || box.isEmpty()) {
+          this.paintFigure(side);
+          return;
+        }
+        box.getCenter(centre);
+        box.getSize(size);
+        // A man on foot by his drawn pelvis, a man's height around it (his
+        // mesh's bounds are its bind pose, not where his limbs are); a box
+        // past any hull's size has caught something else, and is framed on
+        // where the one is instead.
+        const footPid = life.soldier ? life.pid : null;
+        const pelvis = Number.isInteger(footPid) ? this.player.soldiers?.pelvisOf?.(footPid, _w) : null;
+        const own = pelvis ?? (size.length() > 60 ? this.placeOf(life, t, _w)?.setY(_w.y + 0.9) : null);
+        if (own) centre.copy(own).setY(own.y + 0.15);
+        const radius = own ? 1.25 : Math.max(0.6, size.length() / 2);
+        // Towards the other one, swung aside (each its own way) and up.
+        const other = this.placeOf(fight[key === 'a' ? 'b' : 'a'], t, _v);
+        let yaw = other ? Math.atan2(other.x - centre.x, other.z - centre.z) : 0;
+        yaw += key === 'a' ? PORTRAIT_YAW : -PORTRAIT_YAW;
+        const dist = radius / Math.sin(THREE.MathUtils.degToRad(PORTRAIT_FOV) / 2) * 1.05;
+        const flat = Math.cos(PORTRAIT_PITCH) * dist;
+        cam.position.set(centre.x + Math.sin(yaw) * flat, centre.y + Math.sin(PORTRAIT_PITCH) * dist, centre.z + Math.cos(yaw) * flat);
+        cam.lookAt(centre);
+        cam.near = Math.max(0.05, dist - radius * 2);
+        cam.far = dist + radius * 4;
+        cam.updateProjectionMatrix();
+        cam.updateMatrixWorld();
+        spot.children = [...lights, ...roots];
+        const target = gl.portraits[i];
+        renderer.setRenderTarget(target);
+        renderer.clear();
+        renderer.render(spot, cam);
+        if (webgpu) {
+          reads.push(renderer.readRenderTargetPixelsAsync(target, 0, 0, PORTRAIT, PORTRAIT)
+            .then(pixels => this.paintPortrait(side, pixels, false)));
+        } else {
+          renderer.readRenderTargetPixels(target, 0, 0, PORTRAIT, PORTRAIT, gl.portraitPixels);
+          this.paintPortrait(side, gl.portraitPixels, true);
+        }
+      });
+    } finally {
+      for (const root of shown) root.visible = false;
+      spot.children = [];
+      renderer.setRenderTarget(savedTarget);
+      renderer.setClearColor(savedColour, savedAlpha);
+    }
+    if (reads.length) {
+      this.portraitBusy = true;
+      Promise.all(reads).catch(() => { this.portraitsOff = true; }).finally(() => { this.portraitBusy = false; });
+    }
+  }
+
+  /** Read-back pixels into a side's canvas, bottom row first where `flip`. */
+  paintPortrait(side, pixels, flip) {
+    const ctx = side.canvas.getContext('2d');
+    if (!ctx || !pixels) return;
+    side.image ??= ctx.createImageData(PORTRAIT, PORTRAIT);
+    const out = side.image.data;
+    const row = PORTRAIT * 4;
+    for (let y = 0; y < PORTRAIT; y++) {
+      const from = (flip ? PORTRAIT - 1 - y : y) * row;
+      out.set(pixels.subarray(from, from + row), y * row);
+    }
+    // The page's shaders do not all write alpha: anything drawn is opaque,
+    // and only what the clear left is the plate behind.
+    for (let i = 0; i < out.length; i += 4) {
+      out[i + 3] = out[i] || out[i + 1] || out[i + 2] || out[i + 3] ? 255 : 0;
+    }
+    ctx.putImageData(side.image, 0, 0);
+    side.figure = false;
+  }
+
+  /** A side with nothing drawn to portray (the recorder's own soldier is
+   *  drawn as his arms, a body not yet in): a figure in its side's colour. */
+  paintFigure(side) {
+    const kind = side.soldier === false ? 'hull' : 'soldier';
+    if (side.figure === kind) return;
+    side.figure = kind;
+    const ctx = side.canvas.getContext('2d');
+    if (!ctx) return;
+    const s = PORTRAIT / 48;
+    ctx.clearRect(0, 0, PORTRAIT, PORTRAIT);
+    ctx.save();
+    ctx.scale(s, s);
+    ctx.fillStyle = getComputedStyle(side.node).getPropertyValue('--rs-team').trim() || '#a8a58c';
+    ctx.globalAlpha = 0.85;
+    ctx.fill(new Path2D(kind === 'hull'
+      // A hull: a tank's body, turret and gun.
+      ? 'M6 30h36l-3 7H9z M10 24h24l3 6H8z M17 17h12l3 7H15z M29 19h14v2H29z'
+      // A soldier: head, helmet brim, shoulders and chest.
+      : 'M24 9a6 6 0 1 1 0 12a6 6 0 1 1 0-12z M15 15h18v2H15z M11 40c0-8 6-13 13-13s13 5 13 13z'));
+    ctx.restore();
+  }
+
   dispose() {
     this.end();
+    for (const target of this.gl?.portraits ?? []) target.dispose();
     if (this.gl) {
       this.gl.quad.geometry.dispose();
       this.gl.quad.material.dispose();

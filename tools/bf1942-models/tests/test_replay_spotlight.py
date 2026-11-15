@@ -199,10 +199,20 @@ class WiringTests(unittest.TestCase):
         self.assertIn("spot.children = [...this.lightsOf(scene), ...this.rootsOf(fight, this.player.time), gl.tracers.group];", live)
         self.assertIn("spot.matrixWorldAutoUpdate = false;", live)
         self.assertNotIn(".add(gl.tracers.group)", live)
-        block = live[live.index("    } finally {"):live.index("    return true;\n  }\n\n  dispose()")]
+        block = live[live.index("    } finally {"):live.index("    return true;\n  }\n\n  /**\n   * Each side's portrait")]
         for restore in ("spot.children = []", "renderer.shadowMap.autoUpdate = saved.shadowAuto", "renderer.shadowMap.needsUpdate = saved.shadowNeeds",
                         "renderer.autoClear = saved.autoClear", "renderer.info.autoReset = saved.infoReset"):
             self.assertIn(restore, block)
+        # The strip's portraits draw into targets of their own, from inside
+        # the pass, and put back the target, the clear colour and every body
+        # they showed for the one render (features/replay-spotlight
+        # 2026-11-15).
+        self.assertIn("this.renderPortraits(renderer, gl, fight);", live[live.index("  render() {"):live.index("  renderPortraits(")])
+        portraits = live[live.index("  renderPortraits("):live.index("  paintPortrait(")]
+        tail = portraits[portraits.rindex("    } finally {"):]
+        for restore in ("for (const root of shown) root.visible = false;", "spot.children = [];",
+                        "renderer.setRenderTarget(savedTarget);", "renderer.setClearColor(savedColour, savedAlpha);"):
+            self.assertIn(restore, tail)
 
 
 if __name__ == "__main__":

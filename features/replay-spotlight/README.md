@@ -65,8 +65,11 @@ published: no asset is involved.
   towards them. Whether they are behind the camera is read from the camera's
   own frame: a point past the far plane projects past 1 in depth too, and the
   M6's victims, dead ahead, were first sent to the bottom edge.
-- **The strip** at the top while a kill is lit: both sides, their hit points as
-  they fall, the hits each has landed and the range between them. *Again* plays
+- **The strip** at the top while a kill is lit: both sides, each a live
+  portrait with SHOOTER or VICTIM over the name, their hit points as they
+  fall, the hits each has landed and the range between them. A click on either
+  side follows that one, lit in their side's colour, and the camera turns to
+  look at the other: flick between the shooter and the victim. *Again* plays
   it once more from the start; the cross lets go. The fronts' tabs, which sit
   in the same place, give way to it; where the page's minimap would cover it (a
   phone, a narrow window) it keeps to the minimap's left.
@@ -212,6 +215,51 @@ be wanted again.
 - **Spotlight behind a switch** (`548fcf741`): the kill's button, opt-in from
   the menu, with *Break it down* on its strip. Then the breakdown went and
   Spotlight became the default.
+
+## 2026-11-15: styled on the live site, and the shooter or the victim at a click
+
+The owner: "the spotlight appears broken. It highlights the player nicely, but
+there's this little thing that appears at the top left that is plain text,
+with again button, but it appears unstyled", and "make it easy to flick
+between the shooter and the victim. Maybe a styled little model of the two
+players in the spotlight window to toggle between them."
+
+- **Why it was bare.** The strip's CSS goes in once, under the id `rs-style`,
+  guarded by `getElementById`. The comments panel (`replay-social.js`) uses
+  the same id and loads first wherever the real API answers, so on
+  play.bfstats.io the spotlight found "its" style already there and never
+  added it: the strip drew as bare text at the top left. On :5273 there is no
+  API, so it looked right. The id is now `rs-spot-style` (and the Shorts
+  strip's, which shared it too, `rs-shorts-style`);
+  `tests/test_viewer_style_ids.py` fails while two modules inject one id.
+  Reproduced headless on the live site (`rgba(0, 0, 0, 0)` background,
+  `display: block`, `is-left`), and the fixed strip checked on :5273.
+- **Each side is a button.** A live portrait of that one, a SHOOTER or VICTIM
+  tag, the name, what they are in and their hit points. A click follows that
+  one (`followSide`); the one followed is lit in their side's colour
+  (`is-on`, `aria-pressed`), and the orbit turns from whichever is followed
+  to the other (`faceOther` reads `followedSide`, no longer side a alone).
+  Measured headless on `zz4g8tz9ph` (kill at 43.3 s): follow 1 -> 7 -> 1 on
+  the two clicks, the lit side moving with it, the orbit's yaw turning
+  1.22 -> 4.36 -> 7.44 rad.
+- **The portraits** (`renderPortraits`): each side's own roots
+  (`rootsOfSide`) drawn alone into a 128 px target of its own, lit by the
+  page's lights, from a little aside of the line to the other one and above,
+  every 0.12 s, read back into the side's canvas. A man on foot is framed on
+  his drawn pelvis (his mesh's bounds are its bind pose), a hull on its shown
+  meshes (`visibleBox`: `Box3.expandByObject` counted hidden helpers at the
+  origin and framed the whole level). Hidden bodies (the one followed in
+  first person, one culled off screen) are shown for that render only. The
+  page's shaders do not all write alpha, so whatever was drawn is made
+  opaque. One with nothing drawn yet (the recorder's own soldier, a body
+  still loading) shows a soldier or hull figure in their side's colour.
+  WebGPU (remaster) reads back with `readRenderTargetPixelsAsync`.
+- **Corpses lit too.** The pass asked only for living bodies; a dead man
+  lies as a corpse of his own (`corpseOf`), so the victim falling after the
+  kill was not lit. `rootsOfSide` takes the corpse as well.
+- **An empty hull named by its man.** A man killed beside a jeep he had left
+  read "Nobody aboard / Willy"; the side now carries the kill's own man's
+  name and side.
 
 ## Open
 

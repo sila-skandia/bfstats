@@ -485,9 +485,9 @@ function rememberPlayer(name) {
  *        a level's title as the feed says it, for a roll's card
  */
 export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
-  if (!document.getElementById('rs-style')) {
+  if (!document.getElementById('rs-shorts-style')) {
     const style = el('style');
-    style.id = 'rs-style';
+    style.id = 'rs-shorts-style';
     style.textContent = STYLE;
     document.head.append(style);
   }
