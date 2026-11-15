@@ -128,4 +128,32 @@ public class AdminDataControllerUsersAndCommentsTests : IDisposable
         _dbContext.Dispose();
         _connection.Dispose();
     }
+
+    [Theory]
+    [InlineData("EarlyAdopter")]
+    [InlineData("Support")]
+    [InlineData("User")]
+    public async Task SetUserRole_GivesAnAssignableRole(string role)
+    {
+        var user = await AddUserAsync("tester@example.com", "Tester", T0.ToDateTimeUtc(), T0.ToDateTimeUtc());
+
+        var result = await BuildController().SetUserRole(user.Id, new SetUserRoleRequest(role));
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal(role, (await _dbContext.Users.FindAsync(user.Id))!.Role);
+    }
+
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("earlyadopter")]
+    [InlineData("Early Adopter")]
+    public async Task SetUserRole_RefusesAnythingElse(string role)
+    {
+        var user = await AddUserAsync("tester@example.com", "Tester", T0.ToDateTimeUtc(), T0.ToDateTimeUtc());
+
+        var result = await BuildController().SetUserRole(user.Id, new SetUserRoleRequest(role));
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Null((await _dbContext.Users.FindAsync(user.Id))!.Role);
+    }
 }

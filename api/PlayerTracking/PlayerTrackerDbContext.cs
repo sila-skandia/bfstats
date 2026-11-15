@@ -1886,7 +1886,7 @@ public class User
     public string? PasswordHash { get; set; }
     /// <summary>"discord" or "password". Existing rows backfilled to discord.</summary>
     public string AuthProvider { get; set; } = "discord";
-    /// <summary>Assigned role: User (default) or Support. Admin is determined by email only, not stored here.</summary>
+    /// <summary>Assigned role: User (default), EarlyAdopter or Support. Admin is determined by email only, not stored here.</summary>
     public string? Role { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastLoggedIn { get; set; }

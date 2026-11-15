@@ -436,6 +436,12 @@ try
     // Register Auth services
     builder.Services.AddScoped<api.Auth.IDiscordAuthService, api.Auth.DiscordAuthService>();
 
+    // The Sidecar's downloads for Early Adopters (features/early-access-sidecar): files
+    // on the stats volume, behind signed links.
+    builder.Services.Configure<api.Sidecar.SidecarDownloadsOptions>(
+        builder.Configuration.GetSection(api.Sidecar.SidecarDownloadsOptions.Section));
+    builder.Services.AddDataProtection();
+
     // Shared gameplay recordings: the REPLAY feed (features/replay-feed). The view counter
     // and the file check are request-driven upkeep, not data jobs, so they run whatever
     // DISABLE_BACKGROUND_PROCESSING says.
@@ -527,6 +533,9 @@ try
                 c.User.IsInRole(api.Authorization.AppRoles.Admin) ||
                 c.User.IsInRole(api.Authorization.AppRoles.Support) ||
                 api.Authorization.AppRoles.HasAdminEmail(c.User)));
+        // Early access: an Early Adopter or an admin; Support is not let in (features/early-access-sidecar)
+        options.AddPolicy(api.Authorization.AppRoles.EarlyAccessPolicy, policy =>
+            policy.RequireAssertion(c => api.Authorization.AppRoles.HasEarlyAccess(c.User)));
     });
 
     // DI for auth services

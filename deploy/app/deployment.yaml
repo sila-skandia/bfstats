@@ -72,6 +72,9 @@ spec:
             # and never below max(8 GiB, 15%) free on the node's root disk.
             - name: Recordings__Path
               value: "/mnt/recordings"
+            # bfstats Sidecar's installers for Early Adopters (features/early-access-sidecar).
+            - name: SidecarDownloads__Path
+              value: "/mnt/data/sidecar"
             - name: ASPNETCORE_URLS
               value: "http://+:8080"
             - name: ASPNETCORE_ENVIRONMENT

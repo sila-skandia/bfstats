@@ -281,8 +281,8 @@ public class AdminDataController(
     {
         if (string.IsNullOrEmpty(request?.Role))
             return BadRequest("role is required");
-        if (request.Role != AppRoles.User && request.Role != AppRoles.Support)
-            return BadRequest("role must be User or Support");
+        if (!AppRoles.Assignable.Contains(request.Role))
+            return BadRequest("role must be User, EarlyAdopter or Support");
 
         var user = await dbContext.Users.FindAsync(userId);
         if (user == null)

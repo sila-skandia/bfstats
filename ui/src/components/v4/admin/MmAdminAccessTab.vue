@@ -16,7 +16,7 @@
 
     <div class="mm-admin-card__body mm-admin-access__body">
       <p class="mm-admin-access__desc">
-        Assign User or Support. Admin is fixed. Only admins can change roles.
+        Assign User, Early Adopter or Support. Early Adopters get the early access pages. Admin is fixed. Only admins can change roles.
       </p>
 
       <div v-if="error" class="mm-admin-alert mm-admin-alert--err">
@@ -69,6 +69,7 @@
                     @change="onRoleChange(u.userId, ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="User">User</option>
+                    <option value="EarlyAdopter">Early Adopter</option>
                     <option value="Support">Support</option>
                     <option value="Admin" disabled>Admin (fixed)</option>
                   </select>
@@ -116,7 +117,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { adminDataService, type UserWithRoleResponse } from '@/services/adminDataService'
-import { ROLE_USER, ROLE_SUPPORT } from '@/constants/roles'
+import { ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT } from '@/constants/roles'
 import { formatDate, formatLocalTooltip, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
 
 const users = ref<UserWithRoleResponse[]>([])
@@ -129,7 +130,7 @@ const resettingId = ref<number | null>(null)
 const generated = ref<{ userId: number; username: string; temporaryPassword: string } | null>(null)
 const copied = ref(false)
 
-const ALLOWED_ROLES = [ROLE_USER, ROLE_SUPPORT]
+const ALLOWED_ROLES = [ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT]
 
 /**
  * A signed-in browser refreshes its session without a new sign-in, so the

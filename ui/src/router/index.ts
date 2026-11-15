@@ -46,6 +46,7 @@ const TermsV4 = () => import('../views/v4/TermsV4.vue')
 const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
 const BattleViewV4 = () => import('../views/v4/BattleViewV4.vue')
 const BattleViewThanksV4 = () => import('../views/v4/BattleViewThanksV4.vue')
+const SidecarV4 = () => import('../views/v4/SidecarV4.vue')
 const BlogIndexV4 = () => import('../views/v4/BlogIndexV4.vue')
 const BlogPostV4 = () => import('../views/v4/BlogPostV4.vue')
 
@@ -715,6 +716,19 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'Thank you · BattleView · bfstats.io',
             description: 'The people who helped make the BattleView replay system.'
+          }
+        },
+        // bfstats Sidecar early access (features/early-access-sidecar): Early Adopters
+        // and admins only, shared by link. Not linked from the site, not in the
+        // sitemap, and noindex.
+        {
+          path: '/sidecar',
+          name: 'sidecar',
+          component: SidecarV4,
+          meta: {
+            title: 'bfstats Sidecar · Early access · bfstats.io',
+            description: 'Early access to bfstats Sidecar.',
+            noindex: true
           }
         },
         // Posts are markdown under src/content/blog/ (features/blog/README.md).

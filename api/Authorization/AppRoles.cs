@@ -11,6 +11,21 @@ public static class AppRoles
     public const string User = "User";
     public const string Support = "Support";
     public const string Admin = "Admin";
+    /// <summary>
+    /// Testers of an app before it is public: the early access page and its downloads
+    /// (features/early-access-sidecar). Admin has the same access; Support does not.
+    /// </summary>
+    public const string EarlyAdopter = "EarlyAdopter";
+
+    /// <summary>The policy for early access: an Early Adopter or an admin.</summary>
+    public const string EarlyAccessPolicy = "EarlyAccess";
+
+    /// <summary>The roles an admin can give a user on the Access tab. Admin is the configured email, never given.</summary>
+    public static readonly IReadOnlyList<string> Assignable = [User, EarlyAdopter, Support];
+
+    /// <summary>True for an Early Adopter or an admin (the role, or the configured email).</summary>
+    public static bool HasEarlyAccess(ClaimsPrincipal user) =>
+        user.IsInRole(Admin) || user.IsInRole(EarlyAdopter) || HasAdminEmail(user);
 
     /// <summary>The one email always treated as Admin (can delete rounds, manage user roles); null when unset.</summary>
     public static string? AdminEmail { get; private set; }
