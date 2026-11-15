@@ -283,24 +283,27 @@ function toInstall() {
           </div>
           <ul class="sc-points">
             <li>
-              <strong>Every live server.</strong> The whole BF1942 server list, vanilla and mods, with players, map,
-              mode, country and your ping to each. Sort by players or ping.
+              <strong>A BF1942 client, to the server.</strong> The sidecar speaks the retail game's own UDP protocol.
+              It joins like the game does and takes a player slot, so the server sees an ordinary player. Nothing is
+              installed on the server: any retail server works, vanilla or modded.
             </li>
             <li>
-              <strong>Search like bfstats.io.</strong> Type a player, a server, a map or a country. Find a friend and
-              join the server they're on.
+              <strong>The browser connects to the sidecar over a WebSocket.</strong> The sidecar decodes the server's
+              world state (soldiers, vehicles, projectiles and the game's events) and streams it to the viewer from
+              play.bfstats.io over a local WebSocket on <code>127.0.0.1</code>. Your keys and mouse go back the same
+              way, and the sidecar sends them to the server on the game's own 30 Hz tick.
             </li>
             <li>
-              <strong>One click to play.</strong> Pick a server, Join, and the viewer opens with you in the round,
-              under your player name.
+              <strong>Your soldier is predicted with the game's own laws.</strong> The page moves your soldier by the
+              server's movement rules, so what you see is what the server decides, and corrections are close to zero.
             </li>
             <li>
-              <strong>Or from bfstats.io.</strong> A server's connect menu gets <em>Play in Browser</em>, which hands
-              the server to the sidecar.
+              <strong>No game install.</strong> When the server loads a map, the sidecar fetches that level's tables
+              from mesh.bfstats.io.
             </li>
             <li>
-              <strong>Lives in the tray.</strong> On the taskbar on Windows, in the menu bar on a Mac. Closing the viewer
-              leaves the server.
+              <strong>A server browser.</strong> The live server list, pinged from your machine with the game's own
+              GameSpy query, with players, map, mode and country, and search like bfstats.io.
             </li>
           </ul>
         </div>
