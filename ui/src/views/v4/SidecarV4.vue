@@ -209,9 +209,7 @@ function toInstall() {
         >play.bfstats.io</a>. The game doesn't need to be installed.
       </p>
       <p class="sc__lede sc__lede--more">
-        Pick any live server from its list, with ping, players and the map up front, or search it like bfstats.io: a
-        player, a server, a map, a country. You're in the round with everyone else. This is an early build, and you're
-        one of the first to try it: tell us what breaks.
+        This is an early build, and you're one of the first to try it: tell us what breaks.
       </p>
 
       <div
