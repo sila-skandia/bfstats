@@ -24,9 +24,9 @@ public class RecordingEditsController(IRecordingEditService edits) : ControllerB
         if (Actor() is not { } actor) return Unauthorized();
         try
         {
-            return await edits.ShareAsync(slug, actor, request, ct) is { } edit
-                ? CreatedAtAction(nameof(Get), new { code = edit.Code }, edit)
-                : NotFound();
+            if (await edits.ShareAsync(slug, actor, request, ct) is not { } edit) return NotFound();
+            ReplayUsage.Record(HttpContext, ReplayUsage.EditShare, slug.ToLowerInvariant());
+            return CreatedAtAction(nameof(Get), new { code = edit.Code }, edit);
         }
         catch (RecordingRejectedException ex)
         {

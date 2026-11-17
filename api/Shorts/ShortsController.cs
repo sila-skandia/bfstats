@@ -100,6 +100,7 @@ public class ShortsController(
             return Redirect($"{play}/play/index.html?tab=replay&gone=1");
         }
         Response.Headers.CacheControl = "public, max-age=300";
+        ReplayUsage.Record(HttpContext, ReplayUsage.ShortLink, found.Slug);
         return Content(
             ShortLink.Page(found, play, recordingOptions.Value.ShortLinkOrigin.TrimEnd('/')),
             "text/html; charset=utf-8");
@@ -182,6 +183,7 @@ public class ShortsController(
         try
         {
             var result = await shorts.ShareAsync(Request.ContentType, Request.Body, Request.ContentLength, userId, ct);
+            ReplayUsage.Record(HttpContext, ReplayUsage.ShortShare, result.Short.Slug, "studio");
             return CreatedAtAction(nameof(Get), new { slug = result.Short.Slug }, result.Short);
         }
         catch (RecordingRejectedException ex)
@@ -283,6 +285,7 @@ public class ShortsController(
             return NotFound();
         }
         views.Enqueue(found.Id, ViewerKey());
+        ReplayUsage.Record(HttpContext, ReplayUsage.ShortView, clean);
         return Ok(new ShortViewsDto(found.Views));
     }
 

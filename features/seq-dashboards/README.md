@@ -1,4 +1,4 @@
-# Seq dashboards — traffic + process health
+# Seq dashboards — traffic, replay usage + process health
 
 Seq is the only observability backend in the cluster (there is no Prometheus
 operator running, so the `/metrics` scrape endpoint and the `ServiceMonitor` in
@@ -154,6 +154,114 @@ from stream
 where Has(PageType)
 group by PageType
 order by Views desc
+```
+
+---
+
+## Dashboard: Replay
+
+Who watches and uses the replay system on play.bfstats.io
+([replay-usage-metrics](../replay-usage-metrics/README.md)). The play front end
+is not the SPA, so these come from the `ReplayUsage` event the API writes, not
+from `PageView`. Create a signal **Replay usage** with filter
+`Has(ReplayAction)` and attach it to the dashboard. Every query uses `from
+stream`, and the time-grouped ones carry the `@Timestamp` bound the HTTP API
+needs (the dashboard's own picker replaces it).
+
+`ReplayViewerId` is `u:<account id>` for a signed-in visitor and a keyed hash
+for anyone else, the same for one visitor across every action, so
+`count(distinct(ReplayViewerId))` is people, not events.
+
+**Audience per day** — chart type: **line**
+
+```
+select count(distinct(ReplayViewerId)) as Viewers
+from stream
+where ReplayAction = 'view' and @Timestamp >= Now() - 14d
+group by time(1d)
+```
+
+**Everything people do** — chart type: **line**, one series per action
+
+```
+select count(*) as Events
+from stream
+where Has(ReplayAction) and @Timestamp >= Now() - 14d
+group by ReplayAction, time(1d)
+```
+
+**Signed in versus anonymous audience** — chart type: **pie**
+
+```
+select count(distinct(ReplayViewerId)) as Viewers
+from stream
+where Has(ReplayAction)
+group by ReplaySignedIn
+```
+
+**Most-watched recordings** — chart type: **bar**. `ReplaySlug` is the
+recording's public slug.
+
+```
+select count(*) as Views, count(distinct(ReplayViewerId)) as Viewers
+from stream
+where ReplayAction = 'view'
+group by ReplaySlug
+order by Views desc
+limit 15
+```
+
+**Where visitors come from** — chart type: **bar**. Host of the request's
+`Origin`/`Referer`: `play.bfstats.io` is the REPLAY tab, `replay.bfstats.io`
+a shared link, `localhost` someone's own viewer.
+
+```
+select count(*) as Events
+from stream
+where Has(ReplayAction)
+group by ReplaySurface
+order by Events desc
+```
+
+**Shared links opened** — chart type: **line**
+
+```
+select count(*) as Opens
+from stream
+where ReplayAction in ['link_open', 'short_link_open'] and @Timestamp >= Now() - 14d
+group by time(1d)
+```
+
+**Creators and commenters** — chart type: **line**, one series per action.
+Only signed-in accounts can do these.
+
+```
+select count(*) as Events
+from stream
+where ReplayAction in ['comment', 'reaction', 'upload', 'edit_share', 'short_share'] and @Timestamp >= Now() - 14d
+group by ReplayAction, time(1d)
+```
+
+**Most active visitors** — chart type: **table**
+
+```
+select count(*) as Actions, count(distinct(ReplaySlug)) as Recordings
+from stream
+where Has(ReplayAction)
+group by ReplayViewerId
+order by Actions desc
+limit 15
+```
+
+**How the feed is used** — chart type: **bar**. `ReplayDetail` is the sort word
+and any filters that were on (`views+server`), never the names typed.
+
+```
+select count(*) as Opens
+from stream
+where ReplayAction = 'feed'
+group by ReplayDetail
+order by Opens desc
 ```
 
 ---

@@ -52,8 +52,27 @@ public class RecordingsController(
         [FromQuery] string? sort, [FromQuery] string? server, [FromQuery] string? uploader,
         [FromQuery] string? player, [FromQuery] string? source,
         [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
-        CancellationToken ct = default) =>
-        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader, player, source), Actor(), ct));
+        CancellationToken ct = default)
+    {
+        var filter = RecordingFilter.From(server, uploader, player, source);
+        var feed = await recordings.ListAsync(sort, page, pageSize, filter, Actor(), ct);
+        // Someone opening or re-sorting the feed, not every page of it they scroll.
+        if (page <= 1) ReplayUsage.Record(HttpContext, ReplayUsage.Feed, detail: FeedDetail(sort, server, uploader, player, source));
+        return Ok(feed);
+    }
+
+    /// <summary>The sort word and which filters were on, for the usage event: what the visitor
+    /// asked the feed for, never the names they typed.</summary>
+    private static string FeedDetail(string? sort, string? server, string? uploader, string? player, string? source)
+    {
+        var filters = new List<string>();
+        if (!string.IsNullOrWhiteSpace(server)) filters.Add("server");
+        if (!string.IsNullOrWhiteSpace(uploader)) filters.Add("uploader");
+        if (!string.IsNullOrWhiteSpace(player)) filters.Add("player");
+        if (!string.IsNullOrWhiteSpace(source)) filters.Add("source");
+        var by = string.IsNullOrWhiteSpace(sort) ? "default" : sort.Trim().ToLowerInvariant();
+        return filters.Count == 0 ? by : $"{(by.Length <= 20 ? by : "other")}+{string.Join('+', filters)}";
+    }
 
     /// <summary>The servers and uploaders the feed can be narrowed to, each with how many
     /// recordings it would show beside the other filter (and the source, when one is asked).</summary>
@@ -101,6 +120,7 @@ public class RecordingsController(
             };
         }
         Response.Headers.CacheControl = "public, max-age=300";
+        ReplayUsage.Record(HttpContext, ReplayUsage.Link, detail: edit is null ? null : "edit");
         // An edit of another recording, or none by that code, is the recording's own link.
         var shared = edits is not null && RecordingEditService.CleanCode(edit) is { } code
             ? await edits.GetAsync(code, ct)
@@ -163,6 +183,7 @@ public class RecordingsController(
         try
         {
             var detail = await uploads.UploadAsync(Request.ContentType, Request.Body, Request.ContentLength, actor, ct);
+            ReplayUsage.Record(HttpContext, ReplayUsage.Upload, detail.Slug);
             return CreatedAtAction(nameof(Get), new { slug = detail.Slug }, detail);
         }
         catch (RecordingRejectedException ex)
@@ -248,6 +269,7 @@ public class RecordingsController(
     {
         if (await recordings.WatchableIdAsync(slug, ct) is not { } id) return NotFound();
         views.Enqueue(id, ViewerKey());
+        ReplayUsage.Record(HttpContext, ReplayUsage.View, slug.ToLowerInvariant());
         return Accepted();
     }
 
@@ -267,9 +289,9 @@ public class RecordingsController(
         if (Actor() is not { } actor) return Unauthorized();
         try
         {
-            return await recordings.AddCommentAsync(slug, actor, request, ct) is { } comment
-                ? CreatedAtAction(nameof(Comments), new { slug }, comment)
-                : NotFound();
+            if (await recordings.AddCommentAsync(slug, actor, request, ct) is not { } comment) return NotFound();
+            ReplayUsage.Record(HttpContext, ReplayUsage.Comment, slug.ToLowerInvariant());
+            return CreatedAtAction(nameof(Comments), new { slug }, comment);
         }
         catch (RecordingRejectedException ex)
         {
@@ -314,9 +336,10 @@ public class RecordingsController(
         if (Actor() is not { } actor) return Unauthorized();
         try
         {
-            return await recordings.ReactAsync(slug, commentId, kind, on, actor, ct) is { } reactions
-                ? Ok(reactions)
-                : NotFound();
+            if (await recordings.ReactAsync(slug, commentId, kind, on, actor, ct) is not { } reactions) return NotFound();
+            // Giving one is use; taking one back is not.
+            if (on) ReplayUsage.Record(HttpContext, ReplayUsage.Reaction, slug.ToLowerInvariant(), kind.Length <= 20 ? kind.ToLowerInvariant() : "other");
+            return Ok(reactions);
         }
         catch (RecordingRejectedException ex)
         {

@@ -381,6 +381,7 @@ folder answers.
 ### Production incidents and monitoring
 
 - [seq-dashboards](seq-dashboards/README.md): Seq dashboards — traffic + process health
+- [replay-usage-metrics](replay-usage-metrics/README.md): Replay usage metrics in Seq (who watches and uses the replay system), and where Seq keeps its data
 - [seq-exception-api-recreate-connection-refused](seq-exception-api-recreate-connection-refused/README.md): Seq Exceptions: notifications connection refused during API Recreate
 - [seq-exception-bflist-404-banner](seq-exception-bflist-404-banner/README.md): Seq Exceptions page from banner BFList 404s
 - [seq-exception-collection-shutdown](seq-exception-collection-shutdown/README.md): Seq Exceptions: stats collection MemoryCache dispose on Recreate

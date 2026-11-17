@@ -8,8 +8,8 @@ Hardware: arm64, 4 vCPU, 7.6GiB RAM, no swap, Debian 13 / k3s
 
 | device | role |
 |---|---|
-| `/dev/sda` | 76GB OS disk (local). Also holds `/var/lib/bfstats/recordings`, the REPLAY feed's shared recordings (a hostPath PV, `deploy/app/recordings-storage.yaml`, features/replay-feed): up to 20 GiB, not backed up, and the API keeps max(8 GiB, 15%) of this disk free |
-| `/dev/sdb` | 80GB Hetzner Cloud Volume, ext4, mounted `/mnt/bfstats-data` — holds SQLite + Neo4j |
+| `/dev/sda` | 76GB OS disk (local SSD). Holds everything disposable, by hostPath: `/var/lib/bfstats/recordings`, the REPLAY feed's shared recordings (a hostPath PV, `deploy/app/recordings-storage.yaml`, features/replay-feed): up to 20 GiB, not backed up, and the API keeps max(8 GiB, 15%) of this disk free; and `/opt/seq`, Seq's event store (`deploy/app/seq-deployment.yaml`): 776 MB on 2026-11-17, no quota of its own, so it is bounded only by its retention policies (features/replay-usage-metrics) |
+| `/dev/sdb` | 300GB Hetzner Cloud Volume, ext4, mounted `/mnt/bfstats-data` (`df` 2026-11-17: 295G, 181G used) — holds SQLite + Neo4j, through the local-path PVCs, which k3s points here and which cannot move. Nothing disposable belongs on it: Seq, the recordings and the search index use hostPath on `/dev/sda` instead |
 
 ---
 
