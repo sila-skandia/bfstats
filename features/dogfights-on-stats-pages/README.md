@@ -85,7 +85,10 @@ hover, with a small kind glyph on each, then "+N" linking to the server page.
 Each frame opens its Short, replay or fight on play.bfstats.io. The strip
 shows three frames on a desktop and two on a phone, and it does not make a
 row taller. A failed request leaves the strip out, and the list loads as
-before. The media request goes out after the server list.
+before. The media request starts beside the list's, not after it, and
+neither waits on the other. The list's own request starts earlier, from
+`index.html`. The table draws as soon as the list arrives; the thumbnails
+fill in whenever the media answer comes, and their pictures load lazily.
 
 Pictures: a Short's poster, a replay's thumbnail, and otherwise (dogfights
 and replays without one) the level's art from `/stats/assets/maps`.
