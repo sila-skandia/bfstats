@@ -11,6 +11,9 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmServerMediaStrip from '@/components/v4/MmServerMediaStrip.vue'
+import { fetchServerMedia, type ServerMedia } from '@/services/dogfightsService'
+import { serverNameFromRecording } from '@/services/recordingsService'
 import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import { BfGameLoader } from '@/components/common'
@@ -585,6 +588,22 @@ const noteAttempt = () => {
     : CHASE_MIN_INTERVAL_MS
 }
 
+/**
+ * A few Shorts, replays and dogfights per server, beside its name (features/dogfights-on-stats-pages).
+ * One request for the whole list, after the servers: finding a server comes first, and a failure
+ * only leaves the thumbnails out. Keyed by the site's form of the name, as the list has it.
+ */
+const serverMedia = ref(new Map<string, ServerMedia>())
+const mediaOf = (name: string) => serverMedia.value.get(serverNameFromRecording(name))
+async function loadServerMedia() {
+  try {
+    const list = await fetchServerMedia(3)
+    serverMedia.value = new Map(list.map(m => [serverNameFromRecording(m.serverName), m]))
+  } catch (e) {
+    console.warn('landing: server media request failed', e)
+  }
+}
+
 const load = async (showSpinner = false) => {
   if (isRefreshing.value) return
   isRefreshing.value = true
@@ -659,6 +678,7 @@ watch([trendOpen, filtersOpen], () => {
 onMounted(() => {
   applyUrlState()
   void load(servers.value.length === 0)
+  void loadServerMedia()
   tickTimer = window.setInterval(tick, 1000)
   // Coming back to a backgrounded tab: the interval was throttled while hidden, so
   // catch up immediately rather than waiting out the next tick.
@@ -1382,10 +1402,19 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
                             {{ $pn(s.name) }}
                           </RouterLink>
                         </div>
-                        <div class="lb-server-subline">
+                        <div class="lb-server-subline" :class="{ 'lb-server-subline--media': mediaOf(s.name) }">
+                          <span class="lb-server-subline__text">
                           <span>{{ s.ip }}:{{ s.port }}</span>
                           <template v-if="s.country"> · <span class="lb-flag" :title="friendlyCountry(s.country)">{{ countryCodeToFlag(s.country) }}</span> {{ friendlyCountry(s.country) }}</template>
                           <template v-if="s.mapName"> · {{ s.mapName }}</template>
+                          </span>
+                          <!-- The server's Shorts, replays and dogfights: on the address line, so the name keeps its width. -->
+                          <MmServerMediaStrip
+                            v-if="mediaOf(s.name)"
+                            :media="mediaOf(s.name)!"
+                            :server-href="`/v4/servers/detail/${encodeURIComponent(s.name)}`"
+                            :max="isNarrow ? 2 : 3"
+                          />
                         </div>
                         </div>
                       </div>
@@ -2391,6 +2420,21 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* With media: the address truncates, the thumbnails keep their size at the end of the line. */
+.lb-server-subline--media {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -4px;
+}
+
+.lb-server-subline--media .lb-server-subline__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lb-online-dot {

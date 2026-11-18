@@ -269,6 +269,7 @@ folder answers.
 | [replay-load-batching](replay-load-batching/README.md) | fix | Why did a replay keep fetching small files for minutes after it showed, and how does it ask for them up front now? |
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [replay-on-stats-pages](replay-on-stats-pages/README.md) | build | Where do shared replays show on bfstats.io's server and player pages, and how are they matched to them? |
+| [dogfights-on-stats-pages](dogfights-on-stats-pages/README.md) | build | How do recorded dogfights show in full on bfstats.io's server and player pages, and how does the landing page's server list show a few Shorts, replays and dogfights per server without pushing the list down? |
 | [recording-stats-round](recording-stats-round/README.md) | build | How is a shared recording tied to the bfstats.io round it was recorded in, and where do round reports and session lists show it? |
 | [recording-source](recording-source/README.md) | build | How does the replay feed tell server recordings (the whole battlefield) from player recordings (one client), mark them and filter to either? |
 | [gameplay-recordings](gameplay-recordings/README.md) | pipeline | How do I publish a recording and share a link that opens the replay? |

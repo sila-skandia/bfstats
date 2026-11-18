@@ -142,7 +142,7 @@ export async function fetchRoundRecordings(roundId: string, signal?: AbortSignal
 }
 
 /** A query string whose paths keep their slashes, as the replay page writes its own. */
-function readableQuery(pairs: [string, string | null | undefined][]): string {
+export function readableQuery(pairs: [string, string | null | undefined][]): string {
   return pairs
     .filter(([, v]) => v !== null && v !== undefined && v !== '')
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string).replace(/%2F/g, '/')}`)

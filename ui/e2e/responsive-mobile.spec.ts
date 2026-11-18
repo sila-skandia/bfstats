@@ -1,4 +1,5 @@
 import { test, expect, devices } from '@playwright/test';
+import { stubServerMedia, serverMediaItem } from './helpers/serverMedia';
 
 // Configure all tests in this file to use mobile viewport
 test.use({ ...devices['Pixel 5'] });
@@ -360,5 +361,27 @@ test.describe('Responsive Design - Mobile (Pixel 5)', () => {
 
     await expect(page).toHaveURL(new RegExp(`/v4/players/${encodeURIComponent(playerName)}`));
     await expect(page).not.toHaveURL(/\/v4\/servers\/bf1942\/?$/);
+  });
+
+  test('landing media beside a server stays two small frames and adds no page scroll', async ({ page }) => {
+    const { first } = await stubServerMedia(page, [
+      serverMediaItem('short', 'shortaaaaa'),
+      serverMediaItem('replay', 'recaaaaaaa'),
+      serverMediaItem('dogfight', 'recaaaaaaa-2'),
+    ]);
+    await page.goto('/servers/bf1942');
+    const name = await first;
+    const row = page.locator('.lb-row').filter({ has: page.locator(`a.lb-server-link[href="/v4/servers/detail/${encodeURIComponent(name)}"]`) }).first();
+    const strip = row.getByTestId('server-media');
+    await expect(strip).toBeVisible({ timeout: 15_000 });
+    await expect(strip.locator('a[data-testid^="server-media-"]:not([data-testid="server-media-more"])')).toHaveCount(2);
+    await expect(strip.getByTestId('server-media-more')).toHaveText('+7');
+    const box = await strip.boundingBox();
+    expect(box!.height).toBeLessThanOrEqual(26);
+    // The strip sits inside the name cell.
+    const cell = await row.locator('.lb-name-cell').boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(cell!.x + cell!.width + 1);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

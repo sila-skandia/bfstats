@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { stubServerMedia, serverMediaItem } from './helpers/serverMedia';
 
 test.describe('Landing Page - Server Browser', () => {
   test('should load the servers page', async ({ page }) => {
@@ -630,3 +631,43 @@ test.describe('Landing Page - Server Browser', () => {
     await expect(row(page, 'Woken Up Server')).toBeVisible({ timeout: 10_000 });
   });
 });
+
+test.describe('Landing Page - media beside a server', () => {
+  test('a server with Shorts, replays and dogfights shows a few small thumbnails by its name', async ({ page }) => {
+    const { first } = await stubServerMedia(page, [
+      serverMediaItem('short', 'shortaaaaa'),
+      serverMediaItem('replay', 'recaaaaaaa', { imageUrl: '/stats/recordings/recaaaaaaa.jpg?v=1' }),
+      serverMediaItem('dogfight', 'recaaaaaaa-2'),
+    ])
+
+    await page.goto('/servers/bf1942')
+    const name = await first
+    const row = page.locator('.lb-row').filter({ has: page.locator(`a.lb-server-link[href="/v4/servers/detail/${encodeURIComponent(name)}"]`) }).first()
+    const strip = row.getByTestId('server-media')
+    await expect(strip).toBeVisible({ timeout: 15_000 })
+
+    await expect(strip.getByTestId('server-media-short')).toHaveAttribute('href', 'https://play.bfstats.io/play/?tab=replay&short=shortaaaaa')
+    await expect(strip.getByTestId('server-media-replay')).toHaveAttribute('href', 'https://play.bfstats.io/play/?tab=replay&rec=recaaaaaaa')
+    await expect(strip.getByTestId('server-media-dogfight')).toHaveAttribute('href', 'https://play.bfstats.io/dogfight.html?fight=recaaaaaaa-2')
+    // 9 in all, 3 shown: the rest are on the server's page.
+    await expect(strip.getByTestId('server-media-more')).toHaveText('+6')
+    await expect(strip.getByTestId('server-media-more')).toHaveAttribute('href', `/v4/servers/detail/${encodeURIComponent(name)}`)
+
+    // Compact: no taller than the name and its subline, and it does not open the roster.
+    const [stripBox, rowBox] = await Promise.all([strip.boundingBox(), row.boundingBox()])
+    expect(stripBox!.height).toBeLessThanOrEqual(26)
+    expect(stripBox!.width).toBeLessThanOrEqual(110)
+    expect(stripBox!.y).toBeGreaterThanOrEqual(rowBox!.y)
+    expect(stripBox!.y + stripBox!.height).toBeLessThanOrEqual(rowBox!.y + rowBox!.height)
+
+    // Only that server has any.
+    await expect(page.getByTestId('server-media')).toHaveCount(1)
+  })
+
+  test('no media, no strip, and the list still loads when the media request fails', async ({ page }) => {
+    await page.route(/\/stats\/server-media/, route => route.fulfill({ status: 500, body: '' }))
+    await page.goto('/servers/bf1942')
+    await expect(page.locator('.lb-row').first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('server-media')).toHaveCount(0)
+  })
+})

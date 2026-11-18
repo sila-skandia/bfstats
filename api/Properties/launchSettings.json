@@ -9,6 +9,7 @@
             "environmentVariables": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASSETS_STORAGE_PATH": "../tournament-images",
+                "Dogfights__IndexUrl": "https://play.bfstats.io/replays/dogfights/index.json",
                 "REDIS_CONNECTION_STRING": "localhost:6379",
                 "SEQ_URL": "http://localhost:5341",
                 "DISABLE_BACKGROUND_PROCESSING": "false",

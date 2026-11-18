@@ -460,6 +460,13 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<api.Recordings.RecordingViewCounter>());
     builder.Services.AddHostedService<api.Recordings.RecordingFileReconciler>();
 
+    // Recorded dogfights and the landing page's media per server (features/dogfights-on-stats-pages).
+    builder.Services.Configure<api.Dogfights.DogfightsOptions>(
+        builder.Configuration.GetSection(api.Dogfights.DogfightsOptions.Section));
+    builder.Services.AddHttpClient(api.Dogfights.DogfightIndex.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15));
+    builder.Services.AddSingleton<api.Dogfights.DogfightIndex>();
+    builder.Services.AddScoped<api.Dogfights.IDogfightService, api.Dogfights.DogfightService>();
+    builder.Services.AddScoped<api.ServerMedia.IServerMediaService, api.ServerMedia.ServerMediaService>();
     // Replay Shorts (features/replay-shorts): clips of notable kills, on the recordings volume.
     builder.Services.Configure<api.Shorts.ShortsOptions>(
         builder.Configuration.GetSection(api.Shorts.ShortsOptions.Section));
