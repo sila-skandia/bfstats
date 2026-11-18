@@ -414,7 +414,7 @@ export class CreatorPanel {
     const who = pid => nameAt(creator.player.rec, pid, take?.f?.t ?? creator.player.time);
     this.shotNote.textContent = !take
       ? 'No kill on the bench: Kill shot, or the bullet cam on a kill row, marks one and loops it.'
-      : creator.takeHeld
+      : creator.handHeld
         ? 'Your camera: the clip loops in it. K makes the view a camera of the clip; Clip camera puts the clip\'s cameras back.'
         : `${who(take.f.pid)}${take.kill?.victim !== null && take.kill?.victim !== undefined ? ` kills ${who(take.kill.victim)}` : ''}: `
           + `${creator.camList().map(c => camLabel(c.cam)).join(', then ')}. Click a camera on the strip to change it.`;

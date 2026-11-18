@@ -292,6 +292,7 @@ export class ReplayCreator {
     this.range = { in: null, out: null, loop: true };
     this.take = null;             // { f, kill }: the kill the clip is a shot of, re-armed each time round
     this.takeHeld = false;        // ... the camera taken by hand: the clip loops in it, the shot is not re-armed
+    this.roaming = false;         // ... in the studio, roamed by hand: the clip keeps its take and cameras, only the view is yours
     this.suggestions = null;      // { list, thumbs, job }: angles worth trying on the take (replay-shotstyle.js)
     this.editing = null;          // the clip editor open: { t, playing, pid, mode } to go back to (replay-clipbar.js)
     this.leadT = null;            // the clock at the last frame: the loop goes round when it crosses the out point
@@ -1113,7 +1114,17 @@ export class ReplayCreator {
    *  until a shot style is picked again. */
   stopRigs() {
     this.queue = null;
-    if ((this.take || this.editing) && !this.takeHeld) {
+    // In the studio a camera taken by hand roams (2026-11-18, the owner:
+    // "you can think of it as roaming around to find a place to set the
+    // camera, then using the controls to set it. Not every interaction in
+    // the studio is to frame something"): the clip keeps its take, its
+    // cameras and its clock on the strip, ready to be set from the view.
+    if (this.studio?.open && this.editing && !this.recorder) {
+      if (!this.roaming && !this.takeHeld) {
+        this.roaming = true;
+        this.ui.flash('Roaming · the clip\'s cameras stay on the strip · set one from here with its icon or K · Clip camera goes back', 3200);
+      }
+    } else if ((this.take || this.editing) && !this.takeHeld) {
       this.takeHeld = true;
       this.ui.flash('Your camera · the clip keeps looping · K makes the view a camera of the clip', 2600);
     }
@@ -1350,6 +1361,7 @@ export class ReplayCreator {
     this.stopTrack();
     this.take = { f, kill };
     this.takeHeld = false;
+    this.roaming = false;
     this.suggestions = null;
     // Each kill is filmed fresh: its own three cameras until changed, and
     // nothing pinned.
@@ -1649,6 +1661,7 @@ export class ReplayCreator {
     this.rangePlaying = false;
     this.take = null;
     this.takeHeld = false;
+    this.roaming = false;
     this.suggestions = null;
     this.stopRecording(false);
     this.rounds.stop(false);
@@ -1742,6 +1755,7 @@ export class ReplayCreator {
     this.stopTrack(false);
     this.take = null;
     this.takeHeld = false;
+    this.roaming = false;
     this.action = null;
     this.suggestions = null;
     this.cams = null;
@@ -1761,13 +1775,20 @@ export class ReplayCreator {
   loopClip() {
     const span = this.span;
     if (!span) return;
-    if (this.takeLive) this.armTake(true);
+    if (this.takeLive && !this.roaming) this.armTake(true);
     else {
       this.player.seek(span.t0);
       this.rangePlaying = true;
-      // Round again with A to B, from A.
-      if (this.movesCamera && !this.track) this.flyShot(span);
+      // Round again with A to B, from A; not over a camera taken by hand
+      // (Free fly roaming the clip keeps its view round the loop).
+      if (this.movesCamera && !this.track && !this.handHeld) this.flyShot(span);
     }
+  }
+
+  /** The camera is the viewer's, not the clip's: taken by hand, or roamed
+   *  in the studio. */
+  get handHeld() {
+    return this.takeHeld || this.roaming;
   }
 
   /** Whether the clip is a take its cameras film round: marked round its
@@ -2149,6 +2170,7 @@ export class ReplayCreator {
       this.armShot(take.f, take.kill, { again: true });
     }
     this.takeHeld = false;
+    this.roaming = false;
     this.leadInto(span);
     this.player.playing = true;
     this.rangePlaying = true;
@@ -2233,11 +2255,16 @@ export class ReplayCreator {
     let cams = this.camList(span);
     let list = resolveCams(cams, m);
     const before = this.cams;
+    // Flown there by hand (Free fly, the clip's cameras let go): the camera
+    // starts from where the view was roamed to, not from its own view
+    // (2026-11-18: "roaming around to find a place to set the camera, then
+    // using the controls to set it").
+    const roamed = this.roamedView();
     let t;
     let start;
     if (at !== null) {
       t = at;
-      start = this.poseOfCam(list, camIndexAt(list, at), at) ?? this.viewOnScreen();
+      start = roamed ?? this.poseOfCam(list, camIndexAt(list, at), at) ?? this.viewOnScreen();
       if (!start) return;
       cams = insertCam(cams, at, 'placed', m, { view: start, motion: 'still' });
       list = resolveCams(cams, m);
@@ -2253,7 +2280,7 @@ export class ReplayCreator {
       const pad = Math.min(0.1, (s1 - s0) / 4);
       t = tm.clock.toRound(which === 'end' ? s1 - pad : s0 + pad);
       const own = c.cam === 'placed' ? (which === 'end' ? c.end ?? c.view : c.view) : null;
-      start = own ? { ...own } : this.poseOfCam(list, i, t) ?? this.viewOnScreen();
+      start = roamed ?? (own ? { ...own } : this.poseOfCam(list, i, t) ?? this.viewOnScreen());
       if (!start) return;
       if (c.cam !== 'placed') cams = setPlaced(cams, i, { view: start, motion: 'still' });
       if (which === 'end') {
@@ -2276,6 +2303,15 @@ export class ReplayCreator {
     this.freeAt(new THREE.Vector3().fromArray(start.pos), new THREE.Quaternion().fromArray(start.quat));
     this.camsChanged({ replay: false });
     this.syncPlacing();
+  }
+
+  /** The view on screen while the creator roams it by hand (the studio's
+   *  roaming, or Free fly with no rig filming), nothing being placed; else
+   *  null. */
+  roamedView() {
+    const camera = this.player.camera;
+    if (this.placing || camera.rig || (camera.mode !== 'free' && !this.roaming)) return null;
+    return this.viewOnScreen();
   }
 
   /** What camera `i` of `list` shows at `t`, as a view, or null where the
@@ -2311,6 +2347,7 @@ export class ReplayCreator {
     this.saveKept();
     this.syncPlacing();
     this.takeHeld = false;
+    this.roaming = false;
     this.camsChanged({ replay: false });
     this.ui.flash(p.which === 'end' ? `Camera ${p.i + 1} moves to its end camera` : `Camera ${p.i + 1}'s camera is set`, 2000);
     this.loopPart({ kind: 'cam', i: p.i });
@@ -2326,6 +2363,7 @@ export class ReplayCreator {
     this.camsChanged({ replay: false });
     if (quiet) return;
     this.takeHeld = false;
+    this.roaming = false;
     this.leadInto();
     this.ui.flash('Placing given up', 1200);
   }
@@ -2864,13 +2902,13 @@ export class ReplayCreator {
     this.player.seek(t);
     this.player.playing = true;
     this.rangePlaying = true;
-    if (this.movesCamera && !this.track) this.flyShot(span);
+    if (this.movesCamera && !this.track && !this.handHeld) this.flyShot(span);
   }
 
   /** A press on the strip: the clip's cameras on the view as it is scrubbed
    *  (paused, the stand-in round cam lays the take out). */
   scrubPreview() {
-    if (this.track || this.placing || this.takeHeld || !this.movesCamera) return;
+    if (this.track || this.placing || this.handHeld || !this.movesCamera) return;
     this.leadInto();
   }
 
@@ -2923,6 +2961,7 @@ export class ReplayCreator {
     this.take ??= this.takeInside(span);
     if (!this.take) return false;
     this.takeHeld = false;
+    this.roaming = false;
     const i = this.flightStretch(span)?.i ?? 0;
     const next = cam === 'placed'
       ? setPlaced(this.camList(span), i, { view, motion: this.prefs.angleAim === 'lock' ? 'still' : 'track' })
@@ -3434,6 +3473,7 @@ export class ReplayCreator {
     // A clip round one kill is a take: its shot style films it up to the
     // clip's first keyframe, and the keyframes from there.
     this.takeHeld = false;
+    this.roaming = false;
     if (this.autoFilms(span)) {
       this.take = this.takeInside(span);
       this.armTake();
@@ -3686,6 +3726,7 @@ export class ReplayCreator {
       if (hit?.round?.f) this.take = { f: hit.round.f, kill: hit.kill };
     }
     this.takeHeld = false;
+    this.roaming = false;
     this.suggestions = null;
     // Its cameras; one kept with keyframes before cameras has them turned
     // into cameras of its own.
@@ -3757,6 +3798,7 @@ export class ReplayCreator {
     this.clipAround(f.t, kill?.t ?? row.t ?? f.t);
     this.take = { f, kill };
     this.takeHeld = false;
+    this.roaming = false;
     this.armShot(f, kill);
     this.recordTake();
   }
@@ -3790,6 +3832,7 @@ export class ReplayCreator {
     this.clipAround(f.t, kill?.t ?? f.t);
     this.take = { f, kill };
     this.takeHeld = false;
+    this.roaming = false;
     this.armShot(f, kill);
     this.recordTake({ short });
   }
@@ -3850,6 +3893,8 @@ export class ReplayCreator {
     }
     if (this.recorder) return;
     this.stopPart({ quiet: true });
+    // The file is the clip as cut: roaming's view is let go.
+    this.roaming = false;
     if (!recorderMime(false)) {
       this.ui.flash('This browser cannot record video', 2400);
       return;
@@ -4312,7 +4357,7 @@ export class ReplayCreator {
       // a replay that slows down on its own is a mystery otherwise.
       kind = 'clip';
       const span = this.span;
-      text = `${this.take ? (this.takeHeld ? 'TAKE · YOUR CAMERA' : 'TAKE') : 'CLIP'} ${fmt(Math.max(0, this.player.time - span.t0))} / ${fmt(span.t1 - span.t0)}${slowly}${this.range.loop ? ' · LOOP' : ''}`;
+      text = `${this.take ? (this.handHeld ? 'TAKE · YOUR CAMERA' : 'TAKE') : 'CLIP'} ${fmt(Math.max(0, this.player.time - span.t0))} / ${fmt(span.t1 - span.t0)}${slowly}${this.range.loop ? ' · LOOP' : ''}`;
     }
     const show = this.on && text !== null;
     this.plate.hidden = !show;
@@ -4332,7 +4377,7 @@ export class ReplayCreator {
     this.plateStyle.hidden = Boolean(this.recorder) || !(this.take || this.movesCamera);
     // The button cycles the camera on the round's flight (G): it names that one.
     const flight = this.flightStretch();
-    const label = flight ? camLabel(flight.cam) : this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
+    const label = flight ? camLabel(flight.cam) : this.handHeld ? 'Your camera' : styleLabel(this.rounds.style);
     if (this.plateStyle.textContent !== label) this.plateStyle.textContent = label;
   }
 
@@ -4489,7 +4534,7 @@ export class ReplayCreator {
     }
     // The clip open on the strip is filmed by its cameras, paused or not,
     // unless the camera was taken by hand or one is being placed.
-    if (this.editing && !this.track && !this.recorder && !this.placing && !this.takeHeld && !this.rounds.active && this.movesCamera) {
+    if (this.editing && !this.track && !this.recorder && !this.placing && !this.handHeld && !this.rounds.active && this.movesCamera) {
       quietly('the clip\'s cameras', () => this.leadInto());
     }
     this.syncPlacing();

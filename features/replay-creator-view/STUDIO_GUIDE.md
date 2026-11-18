@@ -72,10 +72,12 @@ follow the same rules:
   clip's camera there, the bullet drawn where it would be.
 - The playhead (the white line, with a handle on the time ruler) always
   scrubs: grab it anywhere along its line, even where it crosses a camera,
-  a slow motion or a text bar, and the drag moves the time, never the thing
-  under it. A click on it still opens the camera under it, and a
-  right-click still opens the lane's menu there. The clip's gold edges,
-  the camera icons and the hand-over lines keep their own drags.
+  a hand-over line, a camera icon, a slow motion or a text bar, and the
+  drag moves the time, never the thing under it. A paused clip stays
+  paused. A click on it still does what a click on the thing under it
+  does (a camera's chooser, a hand-over's menu, setting a camera from its
+  icon), and a right-click still opens the lane's menu there. The clip's
+  gold edges and the pin keep their own drags.
 - Dragging a thing moves it. The clip's gold edges trim it, and the gold
   rail along its top slides the whole clip. Slow motion and text bars move
   by their middle and resize by their ends.
@@ -203,6 +205,18 @@ Click the camera to choose how it gets there: Glide (eases across), Orbit
 (swings round the action), 360 (a full turn round the action on the way) or
 Whip (holds, then whips across at the last moment). No end camera holds the
 first view again. Click either icon to set that view again.
+
+### Roaming
+
+Not everything in the studio is framing a shot: sometimes you look round
+the round to see what happens and where a camera would go. Press W, A, S,
+D, Q or E (or Free fly, or Orbit) and the monitor's view is yours: the
+clip's cameras stay on the strip as they are, with its slow motion and
+its length, and the clip plays, scrubs and loops under your view without
+taking it back. When you have found the spot, click a camera's icon (or
+Your camera, or press K): it is set from where you roamed to, not from
+its own view. Clip camera puts the clip's cameras back on the monitor;
+Record always records the clip as cut.
 
 ### Loop a part
 

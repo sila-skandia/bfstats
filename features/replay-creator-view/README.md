@@ -2448,3 +2448,46 @@ monitor, the minimap the 100 px disk; off, both hid and the log went back
 to the stage's 483 x 860. Tests: `hudRect` (scaled, cropped, right-pinned,
 no size), `commsBox` at 16:9, 4:3, 9:16 and 1:1, `hud` kept by `editsOf`.
 
+### A paused scrub, and roaming the studio (2026-11-18)
+
+The owner, on the same day's edits: "when I drag the scrubber, don't
+auto-play the video if it was paused, it's very useful to scrub to a
+timeline and set a camera", and: "when I'm in studio mode, I notice I can't
+free camera around ... roaming around to find a place to set the camera,
+then using the controls to set it. Not every interaction in the studio is
+to frame something".
+
+- **The scrub that played.** A plain scrub never played; a drag from the
+  playhead where it stood on a hand-over line went to the line (the
+  playhead's priority left hand-over lines and camera icons theirs), moved
+  the hand-over, and the edit looped its part, playing. The playhead now
+  takes those too; a click on it that does not move is passed on to them
+  (`ClipBar.clickUnder`: the hand-over's menu, setting a camera from its
+  icon or its end camera's). Icons carry their camera's index.
+- **Roaming.** In the studio a camera taken by hand (Free fly, Orbit, a
+  follow by hand) sets `roaming`, not `takeHeld`: the clip keeps its take,
+  its cameras and its clock on the strip (before, the strip fell back to
+  one Replay camera block and the clip lost its bullet time). Play, the
+  loop going round (`loopClip`), play from the playhead (`playFrom`), the
+  scrub preview and the per-frame filming leave the clip's cameras off
+  while it roams (`handHeld`); everything that puts them back (Clip
+  camera, Use this view, Kill shot, Record) ends it; leaving the studio
+  turns it into `takeHeld`. WASD, Q or E in any other camera switches to
+  Free fly from the view on screen (`Studio.key`); in the orbit they turned
+  an orbit the clip's rig overrode, so they did nothing.
+- **Set from the roam.** `placeCam` starts from the roamed view
+  (`roamedView`) instead of the camera's own, so a camera's icon, Your
+  camera or the tray after roaming keeps where you flew to.
+
+Measured in headless Chromium on the live recording (`7bfqhefjjq`, Minnie's
+edit trimmed to 9:46-9:56, a kill shot): paused with the playhead on the
+first hand-over line, a drag from it left the cameras as they were and the
+clip paused; a click there opened "Over the shoulder to Bullet chase · On
+the shot". W held a second with the clip's cameras filming went to Free
+fly and moved 36.2 m; the strip still had Over the shoulder, Bullet chase
+and Circle the victim and the clip 15.36 s. Space played on (588.6 s) with
+the view held to 0.00 m, and round the loop (587.5 s) too. Camera 3's icon
+started placing at the roamed view (0.00 m) and Use this view made it
+yours there (0.08 m), ending the roam. The kill-shot probe (Bocage) ran
+clean through to its recording.
+

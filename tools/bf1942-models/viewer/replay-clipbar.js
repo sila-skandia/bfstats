@@ -1189,6 +1189,28 @@ export class ClipBar {
     });
   }
 
+  /** A click that went to the playhead, done to the hand-over line or the
+   *  camera icon under it, as a click on them does: how the hand-over takes
+   *  over, or setting that camera (its start, or its end camera). True when
+   *  there was one. */
+  clickUnder(target, clientX) {
+    const creator = this.creator;
+    const cut = target?.closest?.('.rc-cb-cut');
+    if (cut && Number.isFinite(Number(cut.dataset.i))) {
+      const menu = this.handOverMenu(Number(cut.dataset.i));
+      if (menu) this.openMenu(menu, clientX);
+      return true;
+    }
+    const icon = target?.closest?.('.rc-cb-camicon');
+    if (icon && Number.isFinite(Number(icon.dataset.i))) {
+      this.closePop();
+      creator.placeCam(Number(icon.dataset.i), { which: icon.classList.contains('end') ? 'end' : 'start' });
+      this.sync(creator.player.time, true);
+      return true;
+    }
+    return false;
+  }
+
   /** Whether a press at `clientX` is on the playhead: its line and the
    *  handle on the ruler, HEAD_GRAB px either side. */
   onHead(clientX) {
@@ -1246,6 +1268,8 @@ export class ClipBar {
         this.sync(creator.player.time, true);
         return;
       }
+      // A click on the playhead over a hand-over line or a camera icon: theirs.
+      if (!p.moved && p.head && this.clickUnder(p.target, e.clientX)) return;
       // A click on a mark goes exactly there.
       timeline.scrubTo = !p.moved && p.mark !== null ? p.mark : this.timeAt(e.clientX);
       // A click on a camera: its chooser.
@@ -1268,7 +1292,7 @@ export class ClipBar {
       const markEl = target.closest('.rc-cb-mk[data-t]');
       press = {
         x: e.clientX, y: e.clientY, mode: paint ? 'paint' : 'scrub', t0: t, t1: null, moved: false,
-        cam: camEl ? Number(camEl.dataset.i) : null,
+        cam: camEl ? Number(camEl.dataset.i) : null, head: onHead, target,
         mark: markEl ? Number(markEl.dataset.t) : null,
       };
       if (e.pointerType === 'touch') {
@@ -1297,11 +1321,14 @@ export class ClipBar {
     // on it scrubs, before a camera block, a bar, a mark or the song under it
     // can take it. A click that does not move is still a click on the camera
     // under it (its chooser), and a right-click still reaches the lane's
-    // menu. The clip's trim handles and rail, the camera icons, the
-    // hand-over lines and the pin keep their own presses.
+    // menu. A hand-over line or a camera icon under it is the playhead's too
+    // (2026-11-18: a drag from the playhead moved a hand-over, whose edit
+    // played its part, "don't auto-play the video if it was paused"); a
+    // click on it is still theirs (`clickUnder`). The clip's trim handles and
+    // rail and the pin keep their own presses.
     this.strip.addEventListener('pointerdown', e => {
       if (e.button !== 0 || this.dragging || !this.onHead(e.clientX)) return;
-      if (e.target.closest('.rc-cb-h, .rc-cb-grip, .rc-cb-camicon, .rc-cb-cut, .rc-cb-pin, .rc-cb-pop')) return;
+      if (e.target.closest('.rc-cb-h, .rc-cb-grip, .rc-cb-pin, .rc-cb-pop')) return;
       e.stopPropagation();
       start(e, true);
     }, true);
@@ -1898,6 +1925,7 @@ export class ClipBar {
       const g = moveIcon(glyph);
       if (g) b.append(g);
     }
+    b.dataset.i = String(i);
     b.addEventListener('pointerdown', e => e.stopPropagation());
     if (which === 'end') return b;
     b.addEventListener('click', e => {

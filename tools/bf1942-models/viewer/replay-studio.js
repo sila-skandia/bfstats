@@ -218,6 +218,11 @@ export class Studio {
     if (creator.recorder) creator.stopRecording(false);
     if (this.tour?.running) this.withTour(tour => tour.end(false));
     this.open = false;
+    // Roaming is the studio's; out of it, the camera is simply taken by hand.
+    if (creator.roaming) {
+      creator.roaming = false;
+      creator.takeHeld = true;
+    }
     this.setRecording(false);
     document.documentElement.classList.remove('replay-studio', 'st-gamehud');
     this.syncHudBox();
@@ -370,6 +375,13 @@ export class Studio {
       case 'End':
         if (once) { player.playing = false; player.seek(span.t1); }
         return true;
+      case 'KeyW': case 'KeyA': case 'KeyS': case 'KeyD': case 'KeyQ': case 'KeyE':
+        // The studio roams (2026-11-18, the owner: "roaming around to find a
+        // place to set the camera, then using the controls to set it"): a
+        // move key in any other camera is Free fly from the view on screen,
+        // and the replay's own handler flies with it.
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && !creator.placing && player.camera.mode !== 'free') this.camBtns?.free?.click();
+        return false;
       default:
         return false;
     }
@@ -383,6 +395,13 @@ export class Studio {
       creator.rangePlaying = false;
     } else if (creator.part) {
       creator.startPart();
+    } else if (creator.roamedView() && creator.span) {
+      // Roaming in Free fly: the clip plays on under the view as it is, the
+      // clip's cameras left off (Clip camera puts them back).
+      const span = creator.span;
+      if (player.time < span.t0 || player.time >= span.t1 - 0.05) player.seek(span.t0);
+      player.playing = true;
+      creator.rangePlaying = true;
     } else {
       const span = creator.span;
       const t = player.time;
@@ -616,6 +635,7 @@ export class Studio {
         try {
           if (id === 'clip') {
             creator.takeHeld = false;
+            creator.roaming = false;
             creator.playRange();
           } else if (id === 'game') this.nextGameView();
           else creator.ui.modeBtns?.[id]?.click();
@@ -901,7 +921,8 @@ export class Studio {
       ]),
       col('The timeline', [
         'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',
-        'Click goes there; drag scrubs. The playhead always scrubs: grab its white handle or its line, even over a camera or a bar.',
+        'Click goes there; drag scrubs. The playhead always scrubs, and a paused clip stays paused: grab its white handle or its line, even over a camera, a hand-over or a bar.',
+        'WASD roams: the view is yours, the clip\'s cameras stay on the strip; a camera\'s icon or K then sets it from where you are. Clip camera goes back.',
         'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
         'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
         'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',
@@ -945,7 +966,7 @@ export class Studio {
     if (!this.open || !this.el) return;
     const creator = this.creator;
     const sig = [creator.snapshot(), creator.prefs.pace, creator.prefs.thirds, creator.lens.fov, creator.lens.roll, creator.timing()?.sig,
-      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, this.momentMode, creator.player.followPid, creator.placing?.i].join('|');
+      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, creator.roaming, this.momentMode, creator.player.followPid, creator.placing?.i].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
     // The game's HUD over the monitor while the clip has it: the monitor is
