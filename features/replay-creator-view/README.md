@@ -2521,3 +2521,75 @@ four arrow presses from Export landed where they should with the focus,
 nothing roamed and the followed player held. The tour walked every step,
 each moved on by the studio's own state.
 
+### Follow cameras, chases on any kill, and whose clip (2026-11-18)
+
+The owner, on Minnie's 9:35-11:24 cut: a strip to "choose the player ...
+click a player in the frame ... follow player 1, pause then select the other
+player in the battle ... so it chases between them", and "if there's a kill
+in the clip it would be nice to place a bullet chase easily". Then: "it'll
+also be framed from one player's POV ... if you were following a player when
+you created the clip it auto adds the kills, or if you don't have a player
+selected yet - once you're in the studio you can choose one ... players will
+likely be interested in themselves and the kills they made".
+
+A clip had at most one take: a kill shot round exactly one kill, else no
+round cam at all, and the replay's camera on whoever it happened to follow.
+
+- **Follow cameras** (replay-cuts.js `follow`, `FOLLOW_HOW`, `followAt`):
+  `{ cam: 'follow', pid, how }`, how being behind them (the orbit), their
+  eyes or the game's chase. Filmed by the page's camera like the Replay
+  camera: `CutRig.place` hands it the camera as the part starts
+  (`ReplayCreator.replayViewOn(c, into)`: the mode, the player, and a Cut
+  snapping where a glide lets the orbit carry the view across).
+- **Chases on any kill** (`on`, the kill's time; hand-overs kept by that
+  kill's moments, `at.k`; `chaseOnKill`, `killAnchor`, `chasedKills`,
+  `camChoices`, `KILL_CAMS`): the chase from 0.6 s before the shot, the
+  camera that filmed there back 0.25 s after the victim goes down. The
+  clock runs each kill's bullet time in turn (replay-clipclock.js `bullet`
+  as a list, `downs`); `timing` keeps every kill's moments by key
+  (`moments.kills`). The rig tracks each kill's round apart (`seenBy`,
+  `running(take)`, `reached(..., take)`, `roundPose(..., take)`), so no
+  chase leaves its round early. The creator arms the round cam for the next
+  chase 2.5 s of the round ahead (`armChases`, `CHASE_ARM`) and gives the
+  camera straight back to the clip's rig, with no early follow of the
+  shooter; a chase the clock jumps away from lets go.
+- **Whose clip** (`clipPlayer`, `clipPlayers`, `playerKills`,
+  `directClip`, `chasePlayerKills`): a stretch of the round opened with no
+  cameras set (and Clear on one) is laid out round its player, Follow on
+  them and a chase on each of their kills, as the opening state (undo's
+  starting point, not a step). The Camera tab's Whose clip picks another
+  player (one undo step; the player is in the undo snapshot now); Chase
+  their kills fills in the missing chases. The Kills tab lists In this clip
+  first, the player's kills tagged theirs, and a click chases rather than
+  leaving the clip; the Clip lane marks their kills gold.
+- **In the studio a click directs**: a player on the monitor is a Follow
+  camera from the playhead (a double click, their eyes), a round that kills
+  is a chase on its kill; the hover label says which.
+- The Replay camera is allowed in a kill shot now: a stretch trimmed down
+  to one kill turns into that kill's kill shot, and its Replay camera parts
+  were dropped with no word.
+
+Measured in headless Chromium on the live recording (`7bfqhefjjq`) with
+Minnie's edit (`d45667qh`, no cameras, player 3): it opened as Following
+Minnie, a chase on "Minnie kills One and Done · K 98" (9:47.3), Following
+Minnie, a chase on her knife kill of Lt Chet Morton (11:20.4), Following
+Minnie, 116.5 s of video, her two kills gold on the Clip lane; Whose clip
+listed Minnie (2 kills, lit) first, then Agent Orange, OopsIDied and Tolif
+(2 each); the Kills tab "In this clip · 16 kills", hers first, tagged theirs
+and chased. Played through, each chase armed the round cam 2 s ahead with
+the clip's rig kept, rode the round (the K 98's clock down to 0.04x), held,
+and handed back to Minnie at the laid-out moment. Agent Orange clicked by
+the mouse laid it out round their two kills; undo put Minnie's back. A
+player clicked on the monitor (hover: "Urgo · click to follow from here")
+added Following Urgo from the playhead; one picked from the Camera lane's
+menu added Following McSqueezy, the camera gliding across (4.3 m on the
+frame of the switch, easing to 0.7 m half a second on). A chase added from
+the Clip lane's menu on a 270 m No4 sniper kill rode the round, and a
+recording of the stretch trimmed round it (20.9 s) shows the follow, the
+glide to the shooter, the round in flight and the victim held. Tests: the
+chase placed and handed back, swapped not doubled, kept by its kill's
+moments when dragged and when the kill's round lands later, read back,
+two kills' bullet time in turn, and the rig following, riding the chase's
+own round through its hold and gliding back. The kill-shot probe and the
+tour run as before.
+

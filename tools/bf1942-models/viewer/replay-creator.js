@@ -41,6 +41,7 @@ import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
   CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, moveEnd, removeCam, resolveCams,
   camIndexAt, sameCams, setCam, setHandOver, setPlaced, handOverLabel, motionLabel,
+  FOLLOW_HOW, KILL_CAMS, chaseOnKill, chasedKills, followAt, followHowOf, killKey,
 } from './replay-cuts.js';
 import { clipClock } from './replay-clipclock.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
@@ -121,6 +122,9 @@ const ANY_TAKE = Object.freeze({ kill: Object.freeze({ victim: 0 }) });
 /** A recording starts this long before its in point, so the bodies a seek
  *  rebuilds and the rounds it refires are settled when the clip begins. */
 const SETTLE = 0.8;
+/** How long before a chased kill's shot the round cam is armed for it,
+ *  seconds of the round: its held shot fires early to land on time. */
+const CHASE_ARM = 2.5;
 /** A pointer that moves less than this, pixels, between down and up is a
  *  click on the view, not a drag of the camera; one held longer is a hold. */
 const CLICK_SLOP = 5;
@@ -299,7 +303,9 @@ export class ReplayCreator {
     this.keyShots = new Map();    // a view's pose -> a small picture of it (`keyShot`): your cameras' pictures
     this.shotWanted = null;       // the pose whose picture the next frame takes
     this.cams = null;             // the clip's cameras (replay-cuts.js); null is the clip's own default
-    this.freeFrom = null;         // the page camera before the creator took it into Free fly (`freeAt`): { mode, yaw, pitch, zoom }
+    this.freeFrom = null;
+    this.armedChase = null;       // the chase on a kill the round cam was last armed for, and when
+    this.armedAt = null;         // the page camera before the creator took it into Free fly (`freeAt`): { mode, yaw, pitch, zoom }
     this.placing = null;          // { i, before, t }: a camera of your own being placed (`placeCam`)
     this.seen = new Map();        // a take's shot -> { hit, down } as the page flew it: lays the clip out (`timing`)
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
@@ -417,7 +423,7 @@ export class ReplayCreator {
   snapshot() {
     return JSON.stringify({
       range: { in: this.range.in, out: this.range.out }, cams: this.cams, ramp: this.ramp, edits: this.edits, sync: this.sync,
-      pace: this.prefs.pace, frame: this.prefs.frame,
+      pace: this.prefs.pace, frame: this.prefs.frame, pid: this.rangePid ?? null,
     });
   }
 
@@ -474,6 +480,8 @@ export class ReplayCreator {
     try {
       this.range.in = s.range?.in ?? null;
       this.range.out = s.range?.out ?? null;
+      // Whose clip it was: a player changed is undone with the cameras.
+      if (Object.hasOwn(s, 'pid')) this.rangePid = Number.isInteger(s.pid) ? s.pid : null;
       this.cams = camsOf(s.cams, ANY_TAKE);
       this.placing = null;
       this.ramp = rampOf(s.ramp);
@@ -999,7 +1007,14 @@ export class ReplayCreator {
     this.reticle.style.transform = `translate(${(hit.x - d / 2).toFixed(1)}px, ${(hit.y - d / 2).toFixed(1)}px)`;
     this.reticle.style.width = `${d}px`;
     this.reticle.style.height = `${d}px`;
-    const { text, team } = this.labelOf(hit.cand);
+    const label = this.labelOf(hit.cand);
+    const { team } = label;
+    let { text } = label;
+    // In the studio a click directs the clip: say so.
+    if (this.studio?.open && this.editing && !this.placing) {
+      if (hit.cand.kind === 'round') text += hit.cand.kill && this.killTakeAt(hit.cand.kill.t) ? ' · click to chase this kill' : '';
+      else if (hit.cand.kind === 'soldier' || hit.cand.crew?.length) text += ' · click to follow from here';
+    }
     if (this.reticleLabel.textContent !== text) this.reticleLabel.textContent = text;
     this.reticle.className = `rc-reticle show k-${hit.cand.kind} t${team}${hit.cand.kill ? ' kills' : ''}`;
   }
@@ -1036,6 +1051,31 @@ export class ReplayCreator {
 
   /** What a click on `cand` does. */
   act(cand, double) {
+    // In the studio a click directs the clip (features/replay-creator-view,
+    // "Follow cameras and chases on any kill"): a player is a Follow camera
+    // on them from the playhead (their eyes on a double click), a round that
+    // kills is a chase on its kill.
+    if (this.studio?.open && this.editing && this.span && !this.placing && !this.recorder) {
+      const t = this.player.time;
+      if (cand.kind === 'round') {
+        const kill = cand.kill ?? null;
+        if (kill && this.killTakeAt(kill.t)) {
+          this.chaseKill(kill.t);
+          return;
+        }
+      } else {
+        const pid = cand.kind === 'hull' ? (cand.crew.find(c => c.seat === 0) ?? cand.crew[0])?.pid : cand.pid;
+        if (pid !== null && pid !== undefined && t >= this.span.t0 - 1e-3 && t <= this.span.t1) {
+          // A double click: the first click put a Follow camera here, which
+          // the second makes their eyes.
+          const list = this.camStretches();
+          const i = list.findIndex(c => c.cam === 'follow' && c.pid === pid && Math.abs(c.t0 - t) < 0.05);
+          if (double && i >= 0) this.setFollowHow(i, 'pov');
+          else this.followFrom(t, pid, double ? 'pov' : 'orbit');
+          return;
+        }
+      }
+    }
     if (cand.kind === 'round') {
       this.chaseRound(cand.obj, cand.shot || shotOfRound(this.player.rec.fires ?? [], cand.obj, this.player.time));
       return;
@@ -1462,14 +1502,302 @@ export class ReplayCreator {
     const take = this.autoFilms(span) ? this.takeInside(span) : null;
     const f = take?.f ?? null;
     const own = this.ownSlow();
+    const chases = this.chaseTakes(span, take);
     const sig = [span.t0, span.t1, f?.t, take?.kill?.t, f ? this.seen.get(f)?.hit : null, own ? JSON.stringify(this.ramp) : '',
-      this.prefs.pace, this.edits.freeze, JSON.stringify(this.edits.fx), JSON.stringify(this.cams)].join('|');
+      this.prefs.pace, this.edits.freeze, JSON.stringify(this.edits.fx), JSON.stringify(this.cams),
+      chases.map(c => `${c.f.t}:${this.seen.get(c.f)?.hit ?? ''}`).join(',')].join('|');
     if (this.timed?.sig === sig) return this.timed;
     const { hit, bullet, freeze } = this.clockInputs(span);
-    const clock = clipClock({ span, ramp: own ? this.ramp : null, bullet, freeze });
-    const moments = { start: span.t0, end: span.t1, shot: f?.t ?? null, hit, down: take ? clock.down ?? span.t1 : null };
+    // The kill shot's bullet time and each chase's, played out in turn by
+    // their shots (replay-clipclock.js): each one's moments from its own.
+    const runs = [];
+    if (bullet) runs.push({ take, bullet });
+    for (const c of chases) runs.push({ take: c, bullet: this.bulletFor(c, span, this.hitOf(c, span), false) });
+    runs.sort((a, b) => a.bullet.shot - b.bullet.shot);
+    const clock = clipClock({ span, ramp: own ? this.ramp : null, bullet: runs.map(r => r.bullet), freeze });
+    const downOf = r => clock.downs?.[runs.indexOf(r)] ?? span.t1;
+    const mine = runs.find(r => r.take === take);
+    const moments = { start: span.t0, end: span.t1, shot: f?.t ?? null, hit, down: take ? (mine ? downOf(mine) : clock.down ?? span.t1) : null };
+    // Every kill on the clock by its own key, the kill shot's too: a chase
+    // kept by a kill the clip was then trimmed down to (and so made its kill
+    // shot) keeps its moments.
+    if (runs.length) {
+      moments.kills = {};
+      for (const r of runs) {
+        if (r.take?.kill) moments.kills[killKey(r.take.kill.t)] = { shot: r.bullet.shot, hit: r.bullet.hit, down: downOf(r) };
+      }
+    }
     this.timed = { sig, clock, moments };
     return this.timed;
+  }
+
+  /**
+   * The kills the clip's cameras ride besides its kill shot (features/
+   * replay-creator-view, "Follow cameras and chases on any kill"): each a
+   * `{ f, kill }` take, inside the clip, in the order of their shots.
+   */
+  chaseTakes(span = this.span, take = span && this.autoFilms(span) ? this.takeInside(span) : null) {
+    if (!span) return [];
+    const out = [];
+    for (const k of chasedKills(this.cams ?? [])) {
+      const tk = this.killTakeAt(k);
+      if (!tk || tk.f === take?.f || tk.f.t < span.t0 - 5 || tk.f.t > span.t1) continue;
+      out.push(tk);
+    }
+    return out;
+  }
+
+  /** The kill at round time `k` as a take, `{ f, kill }`, where the
+   *  recording ties a round to it; null where it does not. */
+  killTakeAt(k) {
+    if (!Number.isFinite(k)) return null;
+    this.killTakes ??= new Map();
+    const key = killKey(k);
+    if (this.killTakes.has(key)) return this.killTakes.get(key);
+    let found = null;
+    for (const [kill, fact] of this.killFacts()) {
+      if (kill.kind !== 'kill' || Math.abs(kill.t - k) > 1e-3) continue;
+      const f = fact?.round?.f;
+      if (f) {
+        found = { f, kill };
+        break;
+      }
+    }
+    this.killTakes.set(key, found);
+    return found;
+  }
+
+  /**
+   * The round cam armed for the next kill a chase rides, as the clip plays
+   * up to it (CHASE_ARM seconds of the round before its shot), the clip's
+   * own rig kept on the camera: the round cam's `begin` takes the rig, the
+   * clip's cameras film round it as they do the kill shot's. Nothing of the
+   * kill shot's own changes. A chase the clock jumped away from lets go.
+   */
+  armChases(t) {
+    const span = this.span;
+    if (!span) return;
+    const take = this.autoFilms(span) ? this.takeInside(span) : null;
+    const chases = this.chaseTakes(span, take);
+    if (!chases.length) return;
+    const r = this.rounds;
+    const now = r.target?.f ?? null;
+    const mine = now && chases.find(c => c.f === now);
+    if (r.active && mine) {
+      // Scrubbed or looped away from it: let go.
+      const m = this.timing(span).moments.kills?.[killKey(mine.kill.t)];
+      if (t < mine.f.t - CHASE_ARM - 1 || (m && t > m.down + 2)) {
+        r.stop(false);
+        this.player.camera.setRig(this.track);
+      }
+      return;
+    }
+    if (r.active || !this.player.playing) return;
+    const next = chases.find(c => c.f.t > t + 0.05 && c.f.t - t <= CHASE_ARM);
+    if (!next || this.armedChase === next.f && this.armedAt !== null && Math.abs(this.armedAt - t) < 0.05) return;
+    r.holdTurns = null;
+    if (!r.arm(next.f, { kill: next.kill })) return;
+    this.armedChase = next.f;
+    this.armedAt = t;
+    // The clip's cameras keep the camera: the round cam is ridden through
+    // them (replay-camtrack.js `roundPose`).
+    this.player.camera.setRig(this.track);
+  }
+
+  /** The kills inside the clip a chase can ride: `[{ t, take, label }]`. */
+  chaseableKills(span = this.span) {
+    if (!span) return [];
+    const rec = this.player.rec;
+    const out = [];
+    for (const m of this.moments()) {
+      if (m.t < span.t0 || m.t > span.t1) continue;
+      const take = this.killTakeAt(m.t);
+      if (take && take.f.t >= span.t0 - 0.5) out.push({ t: m.t, take, label: `${m.killerName} kills ${m.victimName}${m.weapon ? ` · ${m.weapon}` : ''}` });
+    }
+    return out.sort((a, b) => a.t - b.t);
+  }
+
+  /** The chaseable kill nearest round time `t` in the clip, within `within`
+   *  seconds of the round; null with none. */
+  chaseableNear(t, within = Infinity, span = this.span) {
+    let best = null;
+    for (const k of this.chaseableKills(span)) {
+      const d = Math.abs(k.t - t);
+      if (d <= within && (!best || d < Math.abs(best.t - t))) best = k;
+    }
+    return best;
+  }
+
+  /** A bullet chase (or `cam`, another camera that rides a round) on the
+   *  kill at `k`: over the shooter's shoulder as the clock slows for the
+   *  trigger, the round chased to the player it kills, and back to whatever
+   *  filmed as they go down. One undo step; the part loops. */
+  chaseKill(k, cam = 'chase') {
+    const span = this.span;
+    const take = this.killTakeAt(k);
+    if (!span || !take) {
+      this.ui.flash('That kill has no round to chase', 1800);
+      return;
+    }
+    if (!KILL_CAMS.has(cam)) cam = 'chase';
+    const next = this.withChase(this.camList(span), take.kill.t, cam);
+    const rec = this.player.rec;
+    this.setCams(next, `${camLabel(cam)} on ${nameAt(rec, take.f.pid, take.f.t)}'s kill of ${nameAt(rec, take.kill.victim, take.kill.t)}`, { replay: false });
+    const i = this.camStretches(span).findIndex(c => c.on === take.kill.t);
+    if (i >= 0) this.loopPart({ kind: 'cam', i });
+  }
+
+  /** `cams` with a chase (`cam`) on the kill at `k`, laid out by its own
+   *  moments: chased once to lay out the bullet time it brings (which moves
+   *  when its victim goes down), then placed by them. */
+  withChase(cams, k, cam = 'chase') {
+    const span = this.span;
+    const take = this.killTakeAt(k);
+    if (!span || !take) return cams;
+    const saved = this.cams;
+    try {
+      this.cams = cams;
+      const probe = chaseOnKill(cams, k, { shot: take.f.t, hit: take.f.t, down: k }, this.timing(span).moments, cam);
+      this.cams = probe;
+      const m = this.timing(span).moments;
+      const km = m.kills?.[killKey(k)] ?? { shot: take.f.t, hit: this.hitOf(take, span), down: k };
+      return chaseOnKill(cams, k, km, m, cam);
+    } finally {
+      this.cams = saved;
+      this.timed = null;
+    }
+  }
+
+  // --- whose clip (features/replay-creator-view, "Whose clip") -----------------------------
+
+  /** Whether the clip is a stretch of the round rather than one kill's
+   *  kill shot: its player is followed and their kills chased. */
+  isLongClip(span = this.span) {
+    return Boolean(span) && !(this.autoFilms(span) && this.takeInside(span));
+  }
+
+  /** The clip's player: whom the replay followed when it was made, or whom
+   *  it was given to since. Null for nobody yet. */
+  get clipPlayer() {
+    return Number.isInteger(this.rangePid) ? this.rangePid : null;
+  }
+
+  /** `pid`'s kills inside the clip that a chase can ride. */
+  playerKills(pid, span = this.span) {
+    return this.chaseableKills(span).filter(k => k.take.kill.killer === pid);
+  }
+
+  /** The players worth a clip of this stretch: `[{ pid, name, team, kills }]`,
+   *  those with kills in it first, the clip's player always among them. */
+  clipPlayers(span = this.span) {
+    if (!span) return [];
+    const rec = this.player.rec;
+    const by = new Map();
+    for (const k of this.chaseableKills(span)) {
+      const pid = k.take.kill.killer;
+      if (!Number.isInteger(pid)) continue;
+      const row = by.get(pid) ?? { pid, name: nameAt(rec, pid, k.t), team: teamAt(rec, pid, k.t), kills: 0 };
+      row.kills++;
+      by.set(pid, row);
+    }
+    const own = this.clipPlayer;
+    if (own !== null && !by.has(own)) by.set(own, { pid: own, name: nameAt(rec, own, span.t0), team: teamAt(rec, own, span.t0), kills: 0 });
+    return [...by.values()].sort((a, b) => (b.pid === own) - (a.pid === own) || b.kills - a.kills || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * The clip made `pid`'s (2026-11-18, the owner: "players will likely be
+   * interested in themselves and the kills they made"): a Follow camera on
+   * them, and a bullet chase on each of their kills in the clip, every one an
+   * ordinary camera on the strip. `initial` is the clip's opening default
+   * (no undo step); otherwise one undo step, the cameras made before gone.
+   */
+  directClip(pid, { initial = false } = {}) {
+    const span = this.span;
+    if (!span || !Number.isInteger(pid) || !this.isLongClip(span)) return;
+    this.rangePid = pid;
+    let cams = [{ cam: 'follow', pid, how: 'orbit' }];
+    const kills = this.playerKills(pid, span);
+    for (const k of kills) cams = this.withChase(cams, k.t, 'chase');
+    const name = nameAt(this.player.rec, pid, span.t0);
+    if (initial) {
+      this.cams = cams;
+      this.timed = null;
+      this.writeKept();
+      // The clip as it opens is where undo goes back to, not a step of its own.
+      this.history.cur = this.snapshot();
+      this.camsChanged({ replay: false });
+      return;
+    }
+    this.setCams(cams, `${name}'s clip · following them${kills.length ? `, a chase on each of their ${kills.length} kill${kills.length === 1 ? '' : 's'}` : ''} · Ctrl+Z takes it back`, { replay: false });
+    this.followQuietly(pid);
+    this.leadInto();
+  }
+
+  /** A chase added on each of `pid`'s kills in the clip that has none,
+   *  every other camera kept. One undo step. */
+  chasePlayerKills(pid = this.clipPlayer) {
+    const span = this.span;
+    if (!span || pid === null) return;
+    let cams = this.camList(span);
+    const have = new Set(chasedKills(cams).map(killKey));
+    const todo = this.playerKills(pid, span).filter(k => !have.has(killKey(k.t)));
+    if (!todo.length) {
+      this.ui.flash('Every one of their kills in the clip is chased', 1800);
+      return;
+    }
+    for (const k of todo) cams = this.withChase(cams, k.t, 'chase');
+    this.setCams(cams, `A chase on ${todo.length} more of ${nameAt(this.player.rec, pid, span.t0)}'s kills · Ctrl+Z takes it back`, { replay: false });
+  }
+
+  /** A Follow camera on `pid` from round time `t` (a player clicked on the
+   *  monitor in the studio): one undo step, seen at once. */
+  followFrom(t, pid, how = 'orbit') {
+    const span = this.span;
+    if (!span || pid === null || pid === undefined) return;
+    const at = Math.min(span.t1 - 0.05, Math.max(span.t0, t));
+    const next = followAt(this.camList(span), at, pid, this.timing(span).moments, how);
+    this.roaming = false;
+    this.takeHeld = false;
+    this.setCams(next, `Following ${nameAt(this.player.rec, pid, at)} from ${fmt(Math.max(0, this.screenAt(at) - this.screenAt(span.t0)))}`, { replay: false });
+    this.leadInto();
+  }
+
+  /** Camera `i`, a Follow camera, on `pid` instead. */
+  setFollowPid(i, pid) {
+    const cams = this.camList();
+    if (cams[i]?.cam !== 'follow' || !Number.isInteger(pid)) return;
+    this.setCams(cams.map((c, j) => (j === i ? { ...c, pid } : c)), `Camera ${i + 1} follows ${nameAt(this.player.rec, pid, this.player.time)}`, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
+  /** Camera `i`, a Follow camera, filming its player `how`. */
+  setFollowHow(i, how) {
+    const cams = this.camList();
+    if (cams[i]?.cam !== 'follow') return;
+    this.setCams(cams.map((c, j) => (j === i ? { ...c, how: followHowOf(how) } : c)), null, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
+  /** A Follow camera's player's name, as the clip has them. */
+  followName(pid) {
+    return nameAt(this.player.rec, pid, this.span?.t0 ?? this.player.time);
+  }
+
+  /** The players a Follow camera can be on at `t`, nearest the action
+   *  first: `[{ pid, name, team }]`, alive there. */
+  followable(t = this.player.time) {
+    const rec = this.player.rec;
+    const kills = this.player.kills ?? rec.kills;
+    const here = this.ctx.camera.position;
+    const out = [];
+    for (const pid of rec.players?.keys?.() ?? []) {
+      const w = whereIs(rec, pid, t, kills);
+      if (!w?.pos || (w.state !== 'foot' && w.state !== 'vehicle')) continue;
+      const d = Math.hypot(w.pos[0] - here.x, w.pos[2] - here.z);
+      out.push({ pid, name: nameAt(rec, pid, t), team: teamAt(rec, pid, t), d });
+    }
+    return out.sort((a, b) => a.d - b.d);
   }
 
   /** What the clip's clock is run with but its slow motion
@@ -1481,20 +1809,24 @@ export class ReplayCreator {
     const hit = take ? this.hitOf(take, span) : null;
     const turns = take ? this.holdTurns(span, take, hit) : false;
     const freeze = freezesOf(this.edits, span, take?.kill ? hit : null);
-    let bullet = null;
-    if (take) {
-      const g = this.takeGeometry(take);
-      const dist = g ? Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2]) : null;
-      const preset = this.rounds.bulletTime;
-      const flight = hit - f.t;
-      bullet = {
-        shot: f.t, hit, kill: take.kill?.t ?? null, preset, melee: isMelee(f.weapon), orbitHold: turns,
-        hull: Boolean(victimHullLife(this.player.rec, take.kill)),
-        armedSlow: slowFor(guessSpeed(f.weapon), preset, dist),
-        flightSlow: flight > 0 ? slowFor((dist ?? 0) / flight, preset, dist) : 1,
-      };
-    }
+    const bullet = take ? this.bulletFor(take, span, hit, turns) : null;
     return { take, hit, bullet, freeze };
+  }
+
+  /** How `take`'s bullet time plays (replay-clipclock.js `bullet`): its
+   *  trigger, landing, kill line and the clock's speeds for its weapon. */
+  bulletFor(take, span, hit = this.hitOf(take, span), turns = false) {
+    const f = take.f;
+    const g = this.takeGeometry(take);
+    const dist = g ? Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2]) : null;
+    const preset = this.rounds.bulletTime;
+    const flight = hit - f.t;
+    return {
+      shot: f.t, hit, kill: take.kill?.t ?? null, preset, melee: isMelee(f.weapon), orbitHold: turns,
+      hull: Boolean(victimHullLife(this.player.rec, take.kill)),
+      armedSlow: slowFor(guessSpeed(f.weapon), preset, dist),
+      flightSlow: flight > 0 ? slowFor((dist ?? 0) / flight, preset, dist) : 1,
+    };
   }
 
   /** Seconds of the video the clip runs, its slow motion and bullet time
@@ -1514,23 +1846,37 @@ export class ReplayCreator {
       line = d.map(v => v / n);
     }
     const tm = () => this.timing() ?? this.timing(span);
+    // A chase on a kill besides the kill shot rides the round cam too.
+    const rounds = Boolean(take) || this.chaseTakes(span, take).length > 0;
+    const momentsOf = tk => (!tk || tk.f === take?.f ? tm().moments : tm().moments.kills?.[killKey(tk.kill.t)] ?? null);
+    const lineOf = tk => {
+      const gg = tk ? this.takeGeometry(tk) : null;
+      if (!gg) return null;
+      const d = [gg.to[0] - gg.from[0], gg.to[1] - gg.from[1], gg.to[2] - gg.from[2]];
+      const n = Math.hypot(...d) || 1;
+      return d.map(v => v / n);
+    };
     return {
-      live: take ? this.rounds : null,
-      ghost: take ? this.ghost : null,
+      live: rounds ? this.rounds : null,
+      ghost: rounds ? this.ghost : null,
+      takeOf: k => this.killTakeAt(k),
+      momentsOf,
+      lineOf,
       take,
       line,
       centre: g?.to ?? null,
       moments: () => tm().moments,
       screen: t => tm().clock.toScreen(t),
-      real: t => {
+      real: (t, tk = take) => {
         const m = tm();
-        return Math.max(0, m.clock.toScreen(t) - m.clock.toScreen(m.moments.hit ?? t));
+        const hit = momentsOf(tk)?.hit ?? m.moments.hit ?? t;
+        return Math.max(0, m.clock.toScreen(t) - m.clock.toScreen(hit));
       },
-      victimAt: t => this.victimPoint(take, t),
+      victimAt: (t, tk = take) => this.victimPoint(tk, t),
       subjectAt: t => this.subjectPoint(take, t),
       eyes: () => this.eyesOn(take),
       gameView: mode => this.gameViewOn(take, mode),
-      replayView: () => this.replayViewOn(),
+      replayView: (c, into) => this.replayViewOn(c, into),
       keepAbove: v => this.rounds.keepAbove(v),
       baseFov: () => this.player.camera.pageLens?.fov ?? 60,
     };
@@ -1591,9 +1937,20 @@ export class ReplayCreator {
    *  the clip follows, in the mode the page had before the creator took it
    *  into Free fly to place a camera (it would hold the placed view: "it
    *  gets stuck in the free camera I put"). False while a camera is placed. */
-  replayViewOn() {
+  replayViewOn(c = null, into = 'cut') {
     if (this.placing) return false;
     const camera = this.player.camera;
+    // A Follow camera: its player, filmed its way; a Cut into it snaps
+    // there, a glide lets the orbit carry the view across (replay-camera.js
+    // `updateOrbit`).
+    if (c?.cam === 'follow' && Number.isInteger(c.pid)) {
+      const want = FOLLOW_HOW.find(([h]) => h === followHowOf(c.how))[2];
+      if (camera.mode !== want && !camera.setMode(want)) camera.setMode('orbit');
+      if (into === 'cut') camera.valid = false;
+      this.ui.syncMode?.();
+      this.followQuietly(c.pid);
+      return true;
+    }
     if (camera.mode === 'free') {
       const was = this.freeFrom;
       const back = [was?.mode, this.editing?.mode].find(m => m && m !== 'free') ?? 'orbit';
@@ -1616,7 +1973,8 @@ export class ReplayCreator {
   noteFlight() {
     const r = this.rounds;
     const f = r.target?.f;
-    if (!f || r.state !== 'impact' || !r.impact || r.impact.centre || f !== this.take?.f) return;
+    if (!f || r.state !== 'impact' || !r.impact || r.impact.centre) return;
+    if (f !== this.take?.f && !this.chaseTakes().some(c => c.f === f)) return;
     const hit = r.impact.t;
     const was = this.seen.get(f);
     if (was && Math.abs(was.hit - hit) < 1e-3) return;
@@ -1631,6 +1989,11 @@ export class ReplayCreator {
    *  panel to the Clip tab. Where the round was is kept for `closeEditor`. */
   openEditor() {
     if (!this.span || !this.clipbar) return false;
+    // A stretch of the round opened with nothing set: its player followed
+    // and their kills chased, as cameras on the strip to change.
+    if (this.cams === null && this.clipPlayer !== null && !this.placing && this.isLongClip(this.span)) {
+      quietly('whose clip', () => this.directClip(this.clipPlayer, { initial: true }));
+    }
     if (!this.editing) {
       const player = this.player;
       // The clip loops while it is open: the shot is tried again and again.
@@ -1852,12 +2215,18 @@ export class ReplayCreator {
 
   /** Camera `i` swapped for `cam`, and its part played over and over. One
    *  of your own is placed first. */
-  setCamAt(i, cam) {
+  setCamAt(i, cam, extra = {}) {
     if (cam === 'placed') {
       this.placeCam(i);
       return;
     }
-    this.setCams(setCam(this.camList(), i, cam), `Camera ${i + 1}: ${camLabel(cam)}`, { replay: false });
+    // A Follow camera named no player: the one the replay follows.
+    if (cam === 'follow' && extra.pid === undefined && this.camList()[i]?.cam !== 'follow') {
+      const pid = this.player.followPid ?? this.rangePid;
+      if (!Number.isInteger(pid)) return;
+      extra = { pid, how: 'orbit' };
+    }
+    this.setCams(setCam(this.camList(), i, cam, extra), `Camera ${i + 1}: ${cam === 'follow' ? `Following ${nameAt(this.player.rec, extra.pid ?? this.camList()[i].pid, this.player.time)}` : camLabel(cam)}`, { replay: false });
     this.loopPart({ kind: 'cam', i });
   }
 
@@ -1869,6 +2238,19 @@ export class ReplayCreator {
     const at = clamp(t, span.t0, span.t1 - 0.05);
     if (cam === 'placed') {
       this.placeCam(null, { at });
+      return;
+    }
+    // A Follow camera from the tray: the player the replay follows there.
+    if (cam === 'follow') {
+      this.followFrom(at, this.player.followPid ?? this.rangePid);
+      return;
+    }
+    // A round camera on a clip with no kill shot: a chase on the kill
+    // nearest where it was let go.
+    if (KILL_CAMS.has(cam) && !(this.autoFilms(span) && this.takeInside(span))) {
+      const near = this.chaseableNear(at, Infinity, span);
+      if (near) this.chaseKill(near.t, cam);
+      else this.ui.flash('No kill in the clip has a round to chase', 1800);
       return;
     }
     const m = this.timing(span).moments;
@@ -2848,6 +3230,22 @@ export class ReplayCreator {
     return t1 > t0 ? { t0, t1, pace: this.prefs.pace } : null;
   }
 
+  /** Each chase on a kill's bullet time, as the Speed lane draws it:
+   *  `[{ t0, t1, k }]`, none under slow motion of the clip's own. */
+  chaseSlows(span = this.span) {
+    if (!span || this.ownSlow() || !this.rounds.bulletTime) return [];
+    const out = [];
+    for (const c of this.chaseTakes(span)) {
+      const at = bulletTimeSpan(c.f, c.kill);
+      const m = this.timing(span).moments.kills?.[killKey(c.kill.t)];
+      if (!at) continue;
+      const t0 = Math.max(span.t0, at.t0);
+      const t1 = Math.min(span.t1, Math.max(at.t1, m?.down ?? at.t1));
+      if (t1 > t0) out.push({ t0, t1, k: c.kill.t });
+    }
+    return out;
+  }
+
   /** How the take slows, from the speed lane: a BULLET_TIME preset or 'off'. */
   setBulletTime(pace) {
     this.setPref('pace', pace);
@@ -3027,9 +3425,12 @@ export class ReplayCreator {
    *  frame: `{ from, to }`, or null. */
   takeGeometry(take = this.take ?? this.takeInside()) {
     const f = take?.f;
-    if (this.geoFound?.take === take && this.geoFound?.f === f) return this.geoFound.g;
+    if (!f) return null;
+    // Kept per shot: a clip's kill shot and every kill a chase rides.
+    this.geoBy ??= new Map();
+    if (this.geoBy.has(f)) return this.geoBy.get(f);
     const g = this.findGeometry(take);
-    this.geoFound = { take, f, g };
+    this.geoBy.set(f, g);
     return g;
   }
 
@@ -4536,6 +4937,9 @@ export class ReplayCreator {
     // unless the camera was taken by hand or one is being placed.
     if (this.editing && !this.track && !this.recorder && !this.placing && !this.handHeld && !this.rounds.active && this.movesCamera) {
       quietly('the clip\'s cameras', () => this.leadInto());
+    }
+    if ((this.editing || this.recorder) && this.track instanceof CutRig && !this.placing && !this.handHeld) {
+      quietly('a chase on a kill', () => this.armChases(t));
     }
     this.syncPlacing();
     if (this.editing && this.sync) quietly('the hit pin', () => this.keepSync());

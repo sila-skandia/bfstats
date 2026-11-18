@@ -397,7 +397,9 @@ export class CutRig {
     this.lastT = null;
     this.index = -1;
     this.since = [];                 // the clock each camera took over at, this time round
-    this.seen = { hit: null, down: null, prev: null }; // the take's round as the page flew it this time round
+    this.seenBy = new Map();         // each kill's round as the page flew it this time round: f -> { hit, down }
+    this.lastF = null;               // the round cam's shot the frame before, and its state
+    this.lastState = 'idle';
     this.cut = null;                 // the view on screen as the camera handed over: { i, pos, quat }
     this.scratch = new THREE.PerspectiveCamera();
     this.active = null;              // the camera filming now (resolveCams's)
@@ -412,36 +414,68 @@ export class CutRig {
     return [];
   }
 
-  /** Whether the take's round cam rides this take this time round: riding
-   *  it now, or rode it to the hit already (it lets go of its target when
-   *  the hold is over). */
-  running() {
-    const live = this.scene.live;
-    const take = this.scene.take;
-    if (!live || !take) return false;
-    if (live.target?.f === take.f && live.state !== 'idle') return true;
-    return this.seen.hit !== null;
+  /** What `take`'s round did this time round: `{ hit, down }`. */
+  seenOf(take) {
+    const f = take?.f;
+    if (!f) return { hit: null, down: null };
+    let r = this.seenBy.get(f);
+    if (!r) {
+      r = { hit: null, down: null };
+      this.seenBy.set(f, r);
+    }
+    return r;
   }
 
-  /** The take's round as it flies this time round: when it landed and when
+  /** The clip's own kill shot's (`scene.take`). */
+  get seen() {
+    return this.seenOf(this.scene.take);
+  }
+
+  /** The kill camera `c` rides: its own (`on`, a chase on another kill in
+   *  the clip), else the clip's kill shot. */
+  takeOf(c) {
+    return Number.isFinite(c?.on) ? this.scene.takeOf?.(c.on) ?? null : this.scene.take;
+  }
+
+  /** The kill a hand-over is kept by: its own (`at.k`), else the clip's. */
+  takeAt(at) {
+    return Number.isFinite(at?.k) ? this.scene.takeOf?.(at.k) ?? null : this.scene.take;
+  }
+
+  /** Whether the round cam rides `take` this time round: riding it now, or
+   *  rode it to the hit already (it lets go of its target when the hold is
+   *  over). */
+  running(take = this.scene.take) {
+    const live = this.scene.live;
+    if (!live || !take) return false;
+    if (live.target?.f === take.f && live.state !== 'idle') return true;
+    return this.seenOf(take).hit !== null;
+  }
+
+  /** Each kill's round as it flies this time round: when it landed and when
    *  its hold let go. A jump in the clock starts the record again. */
   observe(t) {
     const live = this.scene.live;
     const state = live?.state ?? 'idle';
-    // The round cam lets go of its target in the frame it stops: whether it
-    // was this take's is the frame before's.
-    const mine = Boolean(live?.target) && live.target.f === this.scene.take?.f;
+    const f = live?.target?.f ?? null;
     const jumped = this.lastT === null || t < this.lastT - 1e-6 || t - this.lastT > 1.2;
     if (jumped) {
-      this.seen = { hit: null, down: null, prev: state, mine };
+      this.seenBy = new Map();
       this.since = [];
       this.cut = null;
     }
-    const seen = this.seen;
-    if (mine && state === 'impact' && seen.hit === null) seen.hit = live.impact?.t ?? t;
-    if (seen.mine && seen.prev === 'impact' && state === 'idle' && seen.down === null) seen.down = t;
-    seen.prev = state;
-    seen.mine = mine;
+    if (f && state === 'impact') {
+      const r = this.seenOf({ f });
+      if (r.hit === null) r.hit = live.impact?.t ?? t;
+    }
+    // The round cam lets go of its target in the frame it stops: whose it
+    // was is the frame before's.
+    if (!jumped && this.lastF && this.lastState === 'impact' && (state === 'idle' || f !== this.lastF)) {
+      const r = this.seenOf({ f: this.lastF });
+      if (r.down === null) r.down = t;
+    }
+    this.lastF = f;
+    this.lastState = state;
     this.lastT = t;
     return jumped;
   }
@@ -458,22 +492,26 @@ export class CutRig {
   /** Whether camera `c`'s hand-over has come at `t`, the take's round riding
    *  (`running`): a share of the flight when the round is that far along, the
    *  hit and the man down once the page's round has landed and let go. */
-  reached(c, ev, t, running) {
+  reached(c, ev, t, running, take = this.takeAt(c.at)) {
     const at = c.at;
     if (!running) return t >= timeOf(at, ev) - 1e-9;
     const live = this.scene.live;
-    const seen = this.seen;
+    const seen = this.seenOf(take);
+    // The round cam's state for this kill's round: once it has let go of it
+    // (or moved on to another kill's), it is idle as far as this one goes.
+    const mine = live.target?.f === take?.f;
+    const state = mine ? live.state : 'idle';
     if (at.ev === 'flight') {
-      if (live.state === 'flying') return (live.target?.progress ?? 0) >= at.p;
-      if (live.state === 'armed') return false;
+      if (state === 'flying') return (live.target?.progress ?? 0) >= at.p;
+      if (state === 'armed') return false;
       return seen.hit !== null || t >= timeOf(at, ev);
     }
     if (at.ev === 'hit' || at.ev === 'down') {
       const when = at.ev === 'hit' ? seen.hit : seen.down;
       if (when !== null) return t >= when + at.dt;
       // Not yet: never off the round while it flies or is held.
-      if (at.dt >= 0 && live.state !== 'idle') return false;
-      if (at.ev === 'down' && live.state === 'impact') return false;
+      if (at.dt >= 0 && state !== 'idle') return false;
+      if (at.ev === 'down' && state === 'impact') return false;
     }
     return t >= timeOf(at, ev) - 1e-9;
   }
@@ -489,10 +527,16 @@ export class CutRig {
     }
     const ev = s.moments();
     const list = resolveCams(this.cams, ev);
-    const running = this.running();
+    // Each hand-over by its own kill's round: one kept by a kill whose round
+    // the page flies this time round waits for it; the rest go by the clock.
     let i = 0;
-    if (running) while (i + 1 < list.length && this.reached(list[i + 1], ev, t, true)) i++;
-    else i = camIndexAt(list, t);
+    while (i + 1 < list.length) {
+      const next = list[i + 1];
+      const take = this.takeAt(next.at);
+      const ok = this.running(take) ? this.reached(next, ev, t, true, take) : next.t0 <= t + 1e-9;
+      if (!ok) break;
+      i++;
+    }
     const entered = i !== this.index;
     if (entered) {
       if (!jumped && this.index >= 0) {
@@ -503,8 +547,9 @@ export class CutRig {
     }
     const c = list[i];
     // The replay's own camera takes over: the page's camera back on the
-    // clip's man, out of the Free fly a camera of yours was placed in.
-    if (c.cam === 'free' && (entered || jumped)) s.replayView?.();
+    // clip's player (or a Follow camera's), out of the Free fly a camera of
+    // yours was placed in; a Cut into it snaps there.
+    if ((c.cam === 'free' || c.cam === 'follow') && (entered || jumped)) s.replayView?.(c, entered && !jumped && i > 0 ? c.into ?? 'cut' : 'cut');
     this.active = c;
     this.usedGhost = false;
     // The hand-over's share done, in seconds of the video.
@@ -552,7 +597,7 @@ export class CutRig {
   showRound(cam, dt) {
     const s = this.scene;
     const live = s.live;
-    if (this.running() && live.state === 'flying') {
+    if (live?.target && live.state === 'flying' && (this.running() || this.cams.some(c => Number.isFinite(c.on) && c.on === live.target.kill?.t))) {
       s.ghost?.hideHero();
       live.camPos.copy(cam.position);
       live.placeHero(dt);
@@ -572,7 +617,7 @@ export class CutRig {
       case 'orbit':
       case 'side':
       case 'incoming':
-        return this.roundPose(ROUND_STYLE[c.cam], t, cam, dt, ARMED_CAMS.has(c.cam));
+        return this.roundPose(ROUND_STYLE[c.cam], t, cam, dt, ARMED_CAMS.has(c.cam), this.takeOf(c));
       case 'victim':
         return this.circle(c, t, cam);
       case 'placed':
@@ -594,20 +639,19 @@ export class CutRig {
   /** A round camera: the take's round cam in `style` while it rides this
    *  time round, else the stand-in laid out at `t`. `armed` holds it on the
    *  shooter (over the shoulder, facing him) whatever the clock says. */
-  roundPose(style, t, cam, dt, armed = false) {
+  roundPose(style, t, cam, dt, armed = false, take = this.scene.take) {
     const s = this.scene;
-    const take = s.take;
     if (!take) return false;
     const live = s.live;
-    if (!armed && this.running() && live.state !== 'idle') {
+    if (!armed && live?.target?.f === take.f && live.state !== 'idle') {
       this.from = live;
       return live.placeAs(cam, dt, t, style);
     }
     const ghost = s.ghost;
     if (!ghost) return false;
     ghost.orbit = armed || !live ? NO_SWING : live.orbit;
-    const ev = s.moments();
-    if (!ghost.modelAt(t, take.f, take.kill, { hit: ev.hit, real: s.real(t), armed })) return false;
+    const m = s.momentsOf?.(take) ?? s.moments();
+    if (!ghost.modelAt(t, take.f, take.kill, { hit: m.hit, real: s.real(t, take), armed })) return false;
     this.from = ghost;
     this.usedGhost = true;
     return ghost.placeAs(cam, dt, t, style);
@@ -618,9 +662,10 @@ export class CutRig {
    *  the video. */
   circle(c, t, cam) {
     const s = this.scene;
-    const centre = s.victimAt?.(t);
-    if (!centre) return this.roundPose('reverse', t, cam, 0);
-    const line = s.line ?? [0, 0, -1];
+    const take = this.takeOf(c);
+    const centre = s.victimAt?.(t, take);
+    if (!centre) return this.roundPose('reverse', t, cam, 0, false, take);
+    const line = (take === s.take ? s.line : s.lineOf?.(take)) ?? [0, 0, -1];
     const b = Math.atan2(-line[0], -line[2]) + CIRCLE.off + CIRCLE.rate * (s.screen(t) - s.screen(c.t0));
     cam.position.set(centre[0] + Math.sin(b) * CIRCLE.dist, centre[1] + CIRCLE.up, centre[2] + Math.cos(b) * CIRCLE.dist);
     s.keepAbove?.(cam.position);

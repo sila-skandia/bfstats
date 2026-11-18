@@ -21,7 +21,8 @@
 
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
-import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
+import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, KILL_CAMS, MOTIONS, camChoices, camGlyph, camLabel, camTitle, camsFor, chasedKills, holdsEnd, killKey } from './replay-cuts.js';
+import { decodePlayerName } from './vehicle-players.js';
 import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, FX_WORDS, GRADES, commsBox, drawOverlay, drawSafeArea, editsOf, editsShow, fxMoments, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
@@ -98,7 +99,7 @@ function el(tag, className, text) {
 
 /** The tray's words for the cameras: short enough for one row. */
 const TRAY_WORDS = Object.freeze({
-  shoulder: 'Shoulder', chase: 'Chase', orbit: '360', incoming: 'From victim', victim: 'Circle victim', free: 'Replay cam',
+  shoulder: 'Shoulder', chase: 'Chase', orbit: '360', incoming: 'From victim', victim: 'Circle victim', free: 'Replay cam', follow: 'Follow',
 });
 
 /**
@@ -108,7 +109,7 @@ const TRAY_WORDS = Object.freeze({
  * `[id, label, glyph, what is on it, group]`.
  */
 export const TABS = Object.freeze([
-  ['kills', 'Kills', 'kills', 'The round\'s kills: open one as a kill shot', 'shoot'],
+  ['kills', 'Kills', 'kills', 'The clip\'s kills to chase, and the round\'s to open as a kill shot', 'shoot'],
   ['camera', 'Camera', 'camera', 'Recipes, the clip\'s cameras, bullet time and the lens', 'shoot'],
   ['look', 'Look', 'look', 'Recipes, colour and the frame\'s guides', 'style'],
   ['text', 'Text', 'text', 'Titles, lower thirds, the kill feed and your tag', 'style'],
@@ -797,6 +798,8 @@ export class Studio {
       const span = creator.span;
       const take = span && creator.autoFilms(span) ? creator.takeInside(span) : null;
       const usable = new Set(camsFor(take));
+      // A clip with no kill shot can still chase its kills.
+      if (!take && span && creator.chaseableKills(span).length) for (const id of KILL_CAMS) usable.add(id);
       for (const [id, chip] of this.trayCams) chip.hidden = !usable.has(id);
     });
     return tray;
@@ -816,6 +819,20 @@ export class Studio {
     if (it.cam) this.trayCams.set(it.cam, chip);
     const bar = () => creator.clipbar;
     const landAt = (x, y) => {
+      // A round camera on a clip with no kill shot: it lands on the kill
+      // nearest where it is let go, the drop line on that kill's shot.
+      const span = creator.span;
+      if (it.cam && KILL_CAMS.has(it.cam) && span && !(creator.autoFilms(span) && creator.takeInside(span))) {
+        const r = bar().strip.getBoundingClientRect();
+        const over = x >= r.left - 4 && x <= r.right + 4 && y >= r.top - 40 && y <= r.bottom + 12;
+        const near = over ? creator.chaseableNear(bar().timeAt(x), Infinity, span) : null;
+        if (!near) {
+          bar().showDrop(null);
+          return null;
+        }
+        bar().showDrop(Math.max(span.t0, near.take.f.t), 'camera', `${it.label} · ${near.label}`);
+        return near.t;
+      }
       if (it.at) {
         // An effect let go near the hit is the hit's (the drop line snaps
         // to it); let go elsewhere on the strip it goes off there.
@@ -961,6 +978,7 @@ export class Studio {
         'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',
         'Click goes there; drag scrubs. The playhead always scrubs, and a paused clip stays paused: grab its white handle or its line, even over a camera, a hand-over or a bar.',
         'WASD roams: the view is yours, the clip\'s cameras stay on the strip; a camera\'s icon or K then sets it from where you are. Clip camera goes back.',
+        'A stretch of the round follows its player and chases each of their kills; Whose clip (Camera tab) changes whose. Click a player on the monitor to follow them from the playhead; right-click a kill on the Clip lane to chase it.',
         'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
         'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
         'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',
@@ -1157,8 +1175,9 @@ export class Studio {
     const mode = this.seg([['best', 'Best'], ['time', 'In order'], ['his', 'Theirs']], () => this.momentMode, v => { this.momentMode = v; },
       'st-kills-mode');
     this.momentList = el('div', 'st-moments');
+    this.killsNote = this.note('');
     page.append(
-      this.group('The round\'s kills', mode, this.note('Each opens as a kill shot here, with the look, text and effects you have on. Keep the clip on Export, then the next.')),
+      this.group('The round\'s kills', mode, this.killsNote),
       this.momentList,
     );
   }
@@ -1168,35 +1187,54 @@ export class Studio {
     const creator = this.creator;
     const take = creator.take ?? creator.takeInside?.();
     const pid = creator.player.followPid;
-    const sig = [this.momentMode, take?.kill?.t, pid].join('|');
+    const span = creator.span;
+    const long = creator.isLongClip?.(span);
+    const own = creator.clipPlayer;
+    const chased = long ? new Set(chasedKills(creator.camList(span)).map(killKey)) : new Set();
+    const sig = [this.momentMode, take?.kill?.t, pid, long, span?.t0, span?.t1, own, [...chased].join(',')].join('|');
     if (!force && sig === this.momentSig) return;
     this.momentSig = sig;
+    this.killsNote.textContent = long
+      ? 'In this clip: a click puts a bullet chase on the kill, inside the clip (the clip\'s player\'s first). The whole round, below: each opens as its own kill shot.'
+      : 'Each opens as a kill shot here, with the look, text and effects you have on. Keep the clip on Export, then the next.';
     let list = creator.moments();
     if (this.momentMode === 'best') list = [...list].sort((a, b) => b.score - a.score || a.t - b.t);
     else if (this.momentMode === 'his') list = list.filter(m => m.killer === pid);
     this.momentList.textContent = '';
+    // A stretch of the round: its own kills first, the clip's player's at
+    // the top. A click chases one inside the clip rather than leaving it.
+    if (long && span) {
+      const inside = creator.chaseableKills(span)
+        .sort((a, b) => (b.take.kill.killer === own) - (a.take.kill.killer === own) || a.t - b.t);
+      const head = el('h4', 'st-mhead', inside.length ? `In this clip · ${inside.length} kill${inside.length === 1 ? '' : 's'}` : 'No kill in this clip has a round to chase');
+      this.momentList.append(head);
+      for (const k of inside) {
+        const m = creator.moments().find(x => Math.abs(x.t - k.t) < 1e-3);
+        if (!m) continue;
+        const row = this.momentRow(m, { chased: chased.has(killKey(k.t)), theirs: m.killer === own, span });
+        row.title = chased.has(killKey(k.t)) ? 'Chased in this clip: click to loop it' : 'A bullet chase on this kill, inside this clip';
+        row.addEventListener('click', () => {
+          try {
+            if (chased.has(killKey(k.t))) {
+              const i = creator.camStretches(span).findIndex(c => c.on !== undefined && Math.abs(c.on - k.t) < 1e-3);
+              if (i >= 0) creator.loopPart({ kind: 'cam', i });
+            } else creator.chaseKill(k.t);
+          } catch (error) { console.warn('studio: a chase', error); }
+          this.refresh(true);
+        });
+        this.momentList.append(row);
+      }
+      this.momentList.append(el('h4', 'st-mhead', 'The whole round · each opens as its own kill shot'));
+    }
     if (!list.length) {
       this.momentList.append(this.note(this.momentMode === 'his' ? 'The man followed has no kill the recording ties a round to.' : 'No kill in this recording has its round.'));
       return;
     }
     for (const m of list.slice(0, 60)) {
-      const row = el('button', 'st-moment');
-      row.type = 'button';
+      const row = this.momentRow(m);
       const current = take?.kill === m.kill;
       row.classList.toggle('on', current);
-      row.title = current ? 'The clip on the strip' : 'Open this kill as a kill shot';
-      row.dataset.t = String(m.t);
-      const when = el('time', '', fmt(m.t));
-      const who = el('span', 'st-mwho');
-      who.append(el('b', '', m.killerName), el('i', '', ' → '), el('span', '', m.victimName));
-      const what = el('span', 'st-mwhat', [m.weapon, m.distance ? `${m.distance} m` : null].filter(Boolean).join(' · '));
-      const tags = el('span', 'st-mtags');
-      if (m.multi > 1) tags.append(el('em', 'multi', `x${m.multi}`));
-      if ((m.distance ?? 0) >= 100) tags.append(el('em', 'long', 'long'));
-      if (m.from === 'vehicle') tags.append(el('em', '', 'vehicle'));
-      const main = el('span', 'st-mmain');
-      main.append(who, what);
-      row.append(when, main, tags);
+      row.title = current ? 'The clip on the strip' : long ? 'Open this kill as its own kill shot, in place of this clip' : 'Open this kill as a kill shot';
       row.addEventListener('click', () => {
         try {
           creator.killShotAt(m.t, m.victim);
@@ -1206,6 +1244,28 @@ export class Studio {
       });
       this.momentList.append(row);
     }
+  }
+
+  /** One kill's row on the Kills tab: when, who killed whom, with what,
+   *  and its tags (chased in the clip, the clip's player's). */
+  momentRow(m, { chased = false, theirs = false } = {}) {
+    const row = el('button', 'st-moment');
+    row.type = 'button';
+    row.dataset.t = String(m.t);
+    const when = el('time', '', fmt(m.t));
+    const who = el('span', 'st-mwho');
+    who.append(el('b', '', decodePlayerName(m.killerName)), el('i', '', ' → '), el('span', '', decodePlayerName(m.victimName)));
+    const what = el('span', 'st-mwhat', [m.weapon, m.distance ? `${m.distance} m` : null].filter(Boolean).join(' · '));
+    const tags = el('span', 'st-mtags');
+    if (theirs) tags.append(el('em', 'theirs', 'theirs'));
+    if (chased) tags.append(el('em', 'chased', 'chased'));
+    if (m.multi > 1) tags.append(el('em', 'multi', `x${m.multi}`));
+    if ((m.distance ?? 0) >= 100) tags.append(el('em', 'long', 'long'));
+    if (m.from === 'vehicle') tags.append(el('em', '', 'vehicle'));
+    const main = el('span', 'st-mmain');
+    main.append(who, what);
+    row.append(when, main, tags);
+    return row;
   }
 
   buildCamera(page) {
@@ -1243,13 +1303,54 @@ export class Studio {
     }, 'st-ghost st-small');
     this.recipeGroup = this.group('Camera recipes', this.camRecipes,
       this.note('A whole kill shot\'s cameras in one click. Ctrl+Z takes it back.'));
+    // Whose clip a stretch of the round is: followed, their kills chased.
+    this.whoseList = el('div', 'st-whose');
+    this.whoseNote = this.note('');
+    this.whoseMore = this.btn('Chase their kills', 'A bullet chase on each of their kills in the clip that has none, your other cameras kept', () => creator.chasePlayerKills(), 'st-wide st-ghost', 'camera');
+    this.whoseGroup = this.group('Whose clip', this.whoseList, this.whoseNote, this.whoseMore);
+    this.whoseGroup.dataset.tour = 'whose';
     page.append(
+      this.whoseGroup,
       this.recipeGroup,
       this.group('The clip\'s cameras', this.camList, here,
         this.note('Each camera films its part of the clip. Click one on the strip, or pick here; drag the gold line between two on the strip to change when. Your camera: fly the view there and press Use this view.')),
       this.group('Bullet time', pace, this.note('How far a kill shot slows from the trigger to the hit.')),
       this.group('Lens', fov, roll, lensAuto, this.note('Your camera keeps the field of view it was placed with: zoom in before Use this view for a tight shot.')),
     );
+  }
+
+  /** Whose clip: the players with kills in it (the clip's own first), one
+   *  click to make it theirs; how many of their kills are chased. */
+  syncWhose(take) {
+    const creator = this.creator;
+    const span = creator.span;
+    this.whoseGroup.hidden = Boolean(take) || !span;
+    if (this.whoseGroup.hidden) return;
+    const own = creator.clipPlayer;
+    const players = creator.clipPlayers(span);
+    const chased = new Set(chasedKills(creator.camList(span)).map(killKey));
+    const mine = own === null ? [] : creator.playerKills(own, span);
+    const missing = mine.filter(k => !chased.has(killKey(k.t))).length;
+    const sig = JSON.stringify([own, players.map(p => [p.pid, p.kills]), mine.length, missing]);
+    if (sig === this.whoseSig) return;
+    this.whoseSig = sig;
+    this.whoseList.textContent = '';
+    for (const p of players.slice(0, 12)) {
+      const b = el('button', `st-whosebtn t${p.team ?? 0}${p.pid === own ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = p.pid === own ? `${p.name}'s clip: following them, their kills chased. Click to lay it out again` : `Make it ${p.name}'s clip: follow them and chase each of their kills (Ctrl+Z takes it back)`;
+      b.append(el('b', '', decodePlayerName(p.name)), el('small', '', p.kills ? `${p.kills} kill${p.kills === 1 ? '' : 's'}` : 'no kills here'));
+      b.addEventListener('click', () => {
+        try { creator.directClip(p.pid); } catch (error) { console.warn('studio: whose clip', error); }
+        this.refresh(true);
+      });
+      this.whoseList.append(b);
+    }
+    this.whoseNote.textContent = own === null
+      ? 'Pick whose clip this is: the camera follows them and each of their kills gets a bullet chase. Or click a player on the monitor.'
+      : mine.length ? `Following them; ${mine.length - missing} of their ${mine.length} kill${mine.length === 1 ? '' : 's'} here chased. Every chase is a camera on the strip to change.`
+        : 'Following them. They have no kill in this stretch: other players\' kills can still be chased from the Kills tab or the Clip lane.';
+    this.whoseMore.hidden = own === null || missing === 0;
   }
 
   /** The clip's cameras, one row each: what it is, its stretch in seconds of
@@ -1260,13 +1361,13 @@ export class Studio {
     if (!span || !this.camList) return;
     const take = creator.autoFilms(span) ? creator.takeInside(span) : null;
     this.recipeGroup.hidden = !take;
+    this.syncWhose(take);
     const list = creator.camStretches(span);
     const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, c.tEnd, c.view?.pos, c.end?.pos])) + creator.keyShots.size + (take ? 1 : 0);
     if (!force && sig === this.camSig) return;
     this.camSig = sig;
     this.camList.textContent = '';
     const s0 = creator.screenAt(span.t0);
-    const usable = camsFor(take);
     const select = (options, value, title, onChange) => {
       const pick = el('select', 'st-select');
       pick.title = title;
@@ -1306,7 +1407,7 @@ export class Studio {
         if (glyph) face.append(glyph);
       }
       face.title = camTitle(c.cam);
-      const what = select(usable.map(id => [id, camLabel(id)]), c.cam, 'What films this part', v => creator.setCamAt(c.i, v));
+      const what = select(camChoices(take, c).map(id => [id, id === 'follow' && c.cam === 'follow' ? `Following ${creator.followName(c.pid)}` : camLabel(id)]), c.cam, 'What films this part', v => creator.setCamAt(c.i, v));
       const when = el('span', 'st-keyt', `${fmt(Math.max(0, creator.screenAt(c.t0) - s0))} to ${fmt(Math.max(0, creator.screenAt(c.t1) - s0))}`);
       const line = el('div', 'st-camline');
       line.append(when);
@@ -2087,6 +2188,22 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
   font-style: normal; letter-spacing: .06em; text-transform: uppercase; }
 .st-mtags em.multi { background: rgba(240, 145, 60, .3); color: #ffd2a8; }
 .st-mtags em.long { background: rgba(232, 195, 90, .22); color: var(--rp-gold); }
+.st-mtags em.theirs { background: var(--rp-gold); color: #17150f; }
+.st-mtags em.chased { background: rgba(110, 170, 220, .3); color: #d6ecff; }
+.st-mhead { margin: 12px 0 6px; color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
+.st-mhead:first-child { margin-top: 4px; }
+/* Whose clip: a player per button, their kills in the clip under the name. */
+.st-whose { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.st-whosebtn { appearance: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 7px 10px;
+  border: 1px solid rgba(200, 194, 152, .2); border-left: 3px solid rgba(200, 194, 152, .35); border-radius: 5px; background: rgba(255, 255, 255, .03);
+  color: var(--rp-ink); cursor: pointer; text-align: left; transition: background-color .15s, border-color .15s; }
+.st-whosebtn.t1 { border-left-color: #d9584b; }
+.st-whosebtn.t2 { border-left-color: #6ea0e0; }
+.st-whosebtn b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 13px var(--rp-font); }
+.st-whosebtn small { color: var(--rp-muted); font: 11px var(--rp-font); }
+.st-whosebtn:hover { background: rgba(200, 194, 152, .08); }
+.st-whosebtn.on { border-color: var(--rp-gold); background: rgba(232, 195, 90, .1); }
+.st-whosebtn.on small { color: var(--rp-gold); }
 .st-clip { display: grid; grid-template-columns: minmax(0, 1fr) auto 30px 30px; align-items: center; gap: 6px; }
 .st-clipname { min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid transparent; border-radius: 5px;
   background: none; color: var(--rp-ink); font: 700 13px var(--rp-font); text-overflow: ellipsis; }

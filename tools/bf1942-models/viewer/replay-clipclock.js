@@ -54,6 +54,9 @@ function lowerBound(arr, v) {
  *   lands (the trigger for a knife), the kill line, the bullet time preset
  *   (BULLET_TIME, null when off), the clock's speed while the shot is coming
  *   and while the round flies, and whether the hold is a turn round the man.
+ *   Or a list of them, a chase on each of several kills in the clip: each
+ *   played out in turn, in the order of their shots (`downs`, each one's
+ *   end of the hold).
  * - `freeze`: `{ at, real }`, the clock held `real` seconds at `at`; or a
  *   list of them (the kill's, and any placed by hand).
  *
@@ -71,13 +74,18 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
   let t = span.t0;
   let s = 0;
   let speed = 1;
+  const bullets = (Array.isArray(bullet) ? bullet : bullet ? [bullet] : []).filter(b => b && Number.isFinite(b.shot))
+    .sort((a, b) => a.shot - b.shot);
+  let bi = 0;
+  bullet = bullets[0] ?? null;
   let state = bullet ? 'armed' : 'idle';
   let real = 0;
   let down = null;
+  const downs = bullets.map(() => null);
   const freezes = (Array.isArray(freeze) ? freeze : freeze ? [freeze] : [])
     .filter(f => f?.real > 0 && f.at >= span.t0 && f.at <= span.t1).sort((a, b) => a.at - b.at);
   let fi = 0;
-  const eased = Boolean(bullet?.preset) && !own;
+  const eased = bullets.some(b => b.preset) && !own;
   for (let i = 0; i < MAX_STEPS && t < span.t1; i++) {
     while (fi < freezes.length && t >= freezes[fi].at) {
       s += freezes[fi].real;
@@ -106,9 +114,14 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
       const hull = bullet.hull && !bullet.melee;
       const least = hull ? C.hullHoldReal : bullet.orbitHold || bullet.melee ? C.orbitHold : C.holdReal;
       if ((real >= least && fell) || real >= Math.max(least, hull ? C.hullHoldMax : C.holdMaxReal)) {
-        state = 'idle';
-        down = t;
+        downs[bi] = t;
+        down ??= t;
         if (eased) speed = 1;
+        // The next kill's chase, if there is one.
+        bi++;
+        bullet = bullets[bi] ?? null;
+        state = bullet ? 'armed' : 'idle';
+        real = 0;
       } else target = bullet.melee ? C.meleeSpeed : hull ? C.hullHoldSpeed : C.holdSpeed;
     }
     if (own) speed = rampSpeedAt(ramp, span, t, 1) ?? 1;
@@ -171,7 +184,7 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
     const ds = sArr[i] - sArr[i - 1];
     return dt > 0 && ds > 0 ? Math.min(1, Math.max(1e-4, dt / ds)) : 1;
   };
-  return { span: { ...span }, toScreen, toRound, speedAt, length, down, knots: last + 1 };
+  return { span: { ...span }, toScreen, toRound, speedAt, length, down, downs, knots: last + 1 };
 }
 
 /** A clip with nothing to slow it: the round's seconds are the video's. */

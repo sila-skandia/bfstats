@@ -33,6 +33,7 @@ export const CAMS = Object.freeze([
   ['gamefront', 'Game front chase', 'The game\'s front chase camera (F11): ahead of what they drive, looking back at it; on foot, their chase', 'cam:gamefront'],
   ['gameflyby', 'Game fly-by', 'The game\'s fly-by camera (F12): a tripod ahead of what they drive as it passes; on foot, their chase', 'cam:gameflyby'],
   ['free', 'Replay camera', 'The replay\'s own camera, as it is: whoever it follows', 'cam:free'],
+  ['follow', 'Follow a player', 'The replay\'s camera on a player you pick: behind them, through their eyes or the game\'s chase. Click a player on the monitor to cut to them', 'cam:follow'],
 ]);
 
 export const CAM_IDS = Object.freeze(CAMS.map(([id]) => id));
@@ -51,17 +52,50 @@ const NEEDS_VICTIM = new Set(['incoming', 'victim']);
  *  need the man it killed, when it killed nobody), else yours and the
  *  replay's own. */
 export function camsFor(take) {
-  if (!take) return ['placed', 'free'];
+  if (!take) return ['placed', 'free', 'follow'];
   const victim = take.kill?.victim !== null && take.kill?.victim !== undefined;
-  return CAM_IDS.filter(id => id !== 'free' && (victim || !NEEDS_VICTIM.has(id)));
+  // The replay's own camera too: a clip trimmed down round one of its kills
+  // turns into that kill's kill shot, and its Replay camera parts stay.
+  return CAM_IDS.filter(id => victim || !NEEDS_VICTIM.has(id));
 }
+
+/**
+ * How a Follow camera films its player (features/replay-creator-view, "Follow
+ * cameras and chases on any kill"): `[id, label, the replay camera's mode]`.
+ */
+export const FOLLOW_HOW = Object.freeze([
+  ['orbit', 'Behind them', 'orbit'],
+  ['pov', 'Their eyes', 'pov'],
+  ['chase', 'Game chase', 'chase'],
+]);
+export const followHowOf = id => (FOLLOW_HOW.some(([h]) => h === id) ? id : 'orbit');
+export const followHowLabel = id => FOLLOW_HOW.find(([h]) => h === followHowOf(id))[1];
+
+/** What camera `c` can be swapped for: the clip's cameras (`camsFor`), and
+ *  for one riding a kill of its own (`on`) the other cameras that can. */
+export function camChoices(take, c = null) {
+  const base = camsFor(take);
+  if (!Number.isFinite(c?.on)) return base;
+  return CAM_IDS.filter(id => KILL_CAMS.has(id) || base.includes(id));
+}
+
+/** The cameras that can ride any kill in a clip, not only its kill shot's
+ *  (`on`, the kill's time): the round's own and the victim's circle. */
+export const KILL_CAMS = new Set(['chase', 'orbit', 'side', 'incoming', 'victim']);
+/** How long a chase on a kill starts before its shot, seconds of the round:
+ *  over the shooter's shoulder as the clock slows for the trigger. */
+export const CHASE_LEAD = 0.6;
+/** How long after the victim goes down a chase hands back. */
+export const CHASE_TAIL = 0.25;
+/** A kill's key in the clip's moments (`ev.kills`). */
+export const killKey = k => Number(k).toFixed(3);
 
 /** The game's own cameras (replay-camera.js's outside views, F10-F12): the
  *  replay's camera films them on the shooter, as it films his eyes. */
 export const GAME_VIEW = Object.freeze({ gamechase: 'chase', gamefront: 'front', gameflyby: 'flyby' });
 /** The cameras the replay's own camera films rather than the clip's rig:
  *  a drag and the wheel are its. */
-export const PAGE_FILMED = new Set(['eyes', 'free', ...Object.keys(GAME_VIEW)]);
+export const PAGE_FILMED = new Set(['eyes', 'free', 'follow', ...Object.keys(GAME_VIEW)]);
 
 /** The shot style of the round cam each round camera borrows (replay-
  *  shotstyle.js): over the shoulder is the chase before the trigger, facing
@@ -126,6 +160,11 @@ const EVENTS = new Set(['time', 'start', 'shot', 'flight', 'hit', 'down']);
  */
 export function timeOf(at, ev) {
   if (!at) return ev.start;
+  // A moment of another kill in the clip (a chase on it): its own moments.
+  if (finite(at.k)) {
+    const m = ev.kills?.[killKey(at.k)] ?? { shot: at.k, hit: at.k, down: at.k };
+    return timeOf({ ...at, k: undefined }, { ...ev, kills: undefined, shot: m.shot, hit: m.hit ?? m.shot, down: m.down ?? m.hit ?? m.shot });
+  }
   const shot = ev.shot ?? ev.start;
   const hit = ev.hit ?? shot;
   switch (at.ev) {
@@ -224,15 +263,26 @@ export function viewOf(v) {
 /** A hand-over's moment as kept, or null. */
 function anchorOf(at) {
   if (!at || !EVENTS.has(at.ev)) return null;
-  if (at.ev === 'flight') return finite(at.p) && at.p > 0 && at.p < 1 ? { ev: 'flight', p: at.p } : null;
+  // Kept by a kill of its own (a chase on it): that kill's time with it.
+  const k = finite(at.k) && at.k >= 0 && at.ev !== 'time' ? { k: at.k } : {};
+  if (at.ev === 'flight') return finite(at.p) && at.p > 0 && at.p < 1 ? { ev: 'flight', p: at.p, ...k } : null;
   if (at.ev === 'time') return finite(at.t) && at.t >= 0 ? { ev: 'time', t: at.t } : null;
-  return finite(at.dt) && Math.abs(at.dt) <= 600 ? { ev: at.ev, dt: at.dt } : null;
+  return finite(at.dt) && Math.abs(at.dt) <= 600 ? { ev: at.ev, dt: at.dt, ...k } : null;
 }
 
 /** One camera as kept: its id, and its view and move for one of your own. */
 function camOf(raw, first, allowed) {
-  if (!raw || typeof raw !== 'object' || !allowed.includes(raw.cam)) return null;
+  if (!raw || typeof raw !== 'object') return null;
+  // One riding a kill of its own (`on`) needs no kill shot on the clip.
+  const on = finite(raw.on) && raw.on >= 0 && KILL_CAMS.has(raw.cam) ? raw.on : null;
+  if (on === null && !allowed.includes(raw.cam)) return null;
   const out = { cam: raw.cam };
+  if (on !== null) out.on = on;
+  if (raw.cam === 'follow') {
+    if (!Number.isInteger(raw.pid) || raw.pid < 0) return null;
+    out.pid = raw.pid;
+    out.how = followHowOf(raw.how);
+  }
   if (!first) {
     const at = anchorOf(raw.at);
     if (!at) return null;
@@ -351,6 +401,18 @@ export function setCam(cams, i, cam, extra = {}) {
   return cams.map((c, j) => {
     if (j !== i) return c;
     const next = { cam, ...(c.at ? { at: c.at, into: cam === 'eyes' ? 'cut' : c.into } : {}), ...extra };
+    // A camera riding a kill keeps it while it is swapped for another that
+    // can; a Follow camera keeps its player while it stays one.
+    if (Number.isFinite(c.on) && KILL_CAMS.has(cam) && extra.on === undefined) next.on = c.on;
+    if (!KILL_CAMS.has(cam)) delete next.on;
+    if (cam === 'follow' && extra.pid === undefined && c.cam === 'follow') {
+      next.pid = c.pid;
+      next.how = c.how;
+    }
+    if (cam !== 'follow') {
+      delete next.pid;
+      delete next.how;
+    }
     if (cam !== 'placed') {
       delete next.view;
       delete next.motion;
@@ -382,7 +444,16 @@ export function moveCut(cams, i, t, ev) {
   const lo = list[i - 1].t0 + CAM_MIN;
   const hi = (list[i + 1]?.t0 ?? ev.end) - CAM_MIN;
   const at = Math.min(hi, Math.max(lo, t));
-  return cams.map((c, j) => (j === i ? { ...c, at: anchorAfter(at, ev, cams[i - 1]) } : c));
+  const k = cams[i].at?.k;
+  return cams.map((c, j) => (j === i ? { ...c, at: finite(k) ? killAnchor(at, k, ev) : anchorAfter(at, ev, cams[i - 1]) } : c));
+}
+
+/** A moment `t` kept by the kill at `k` (a chase's hand-over dragged): as
+ *  `anchorAt` over that kill's own moments. */
+export function killAnchor(t, k, ev) {
+  const m = ev.kills?.[killKey(k)] ?? { shot: k, hit: k, down: k };
+  const at = anchorAt(t, { ...ev, shot: m.shot, hit: m.hit ?? m.shot, down: m.down ?? m.hit ?? m.shot });
+  return at.ev === 'time' ? at : { ...at, k };
 }
 
 /** `cams` with camera `i` handing over its way (`into`). */
@@ -412,6 +483,73 @@ export function setPlaced(cams, i, { view, motion, end, move } = {}) {
     }
     return next;
   });
+}
+
+/**
+ * `cams` with a bullet chase on the kill at `k` (its moments `m`, `{ shot,
+ * hit, down }`, seconds of the round): `cam` (the chase, or another camera
+ * that can ride a kill) from CHASE_LEAD before its shot, kept by that kill's
+ * moments, and the camera that was filming as the victim goes down back
+ * CHASE_TAIL after it. Cameras that started inside that stretch give way to
+ * it; nothing outside it moves. The same kill chased again is swapped.
+ */
+export function chaseOnKill(cams, k, m, ev, cam = 'chase') {
+  if (!finite(k) || !m || !finite(m.shot)) return cams;
+  const down = m.down ?? m.hit ?? m.shot;
+  const t0 = Math.max(ev.start, m.shot - CHASE_LEAD);
+  const t1 = down + CHASE_TAIL;
+  if (!(t0 < ev.end)) return cams;
+  const list = resolveCams(cams, ev);
+  // What films as the chase hands back: the camera there now, unless it is
+  // a chase on this kill already.
+  let back = null;
+  for (let i = camIndexAt(list, Math.min(t1, ev.end)); i >= 0; i--) {
+    if (list[i].on !== k) {
+      back = list[i];
+      break;
+    }
+  }
+  const keep = list.filter(c => c.i === 0 || c.t0 < t0 - CAM_MIN || c.t0 > t1 + CAM_MIN);
+  const out = keep.map(c => {
+    const { i, t0: a, t1: b, tEnd, ...rest } = c;
+    return rest;
+  });
+  const chase = { cam, on: k, at: { ev: 'shot', dt: t0 - m.shot, k }, into: 'glide' };
+  // The clip's very start in the chase: it is the first camera.
+  if (t0 <= ev.start + CAM_MIN) {
+    delete chase.at;
+    delete chase.into;
+    out[0] = chase;
+  } else {
+    let j = out.findIndex((c, n) => n > 0 && timeOf(c.at, ev) > t0);
+    if (j < 0) j = out.length;
+    out.splice(j, 0, chase);
+  }
+  if (back && t1 < ev.end - CAM_MIN) {
+    const { i, t0: a, t1: b, tEnd, at, into, ...rest } = back;
+    const ret = { ...rest, at: { ev: 'down', dt: CHASE_TAIL, k }, into: 'glide' };
+    let j = out.findIndex((c, n) => n > 0 && timeOf(c.at, ev) > t1);
+    if (j < 0) j = out.length;
+    out.splice(j, 0, ret);
+  }
+  return out;
+}
+
+/** The kills the clip's cameras ride (`on`, or a hand-over kept by one),
+ *  their times, once each, in order. */
+export function chasedKills(cams) {
+  const out = new Set();
+  for (const c of cams ?? []) {
+    if (finite(c.on)) out.add(c.on);
+    if (finite(c.at?.k)) out.add(c.at.k);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** `cams` with a Follow camera on `pid` from `t` (a player clicked on the
+ *  monitor), filming `how`, gliding in. */
+export function followAt(cams, t, pid, ev, how = 'orbit') {
+  return insertCam(cams, t, 'follow', ev, { pid, how: followHowOf(how) });
 }
 
 /** Whether two camera lists are the same. */

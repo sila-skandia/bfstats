@@ -599,7 +599,7 @@ class ClipBarTests(unittest.TestCase):
             ["From the victim", "automatic", "style:reverse", "glide"]])
         # Every camera has its glyph; the moves, hand-overs and the tray's too.
         self.assertTrue(self.cb["cameraGlyphs"])
-        self.assertEqual(self.cb["icons"], 36)
+        self.assertEqual(self.cb["icons"], 37)
 
     def test_a_hand_over_being_dragged_says_what_it_is_kept_at(self) -> None:
         self.assertEqual(self.cb["words"], [
@@ -825,7 +825,7 @@ class CutsTests(unittest.TestCase):
         self.assertEqual(r[2], [{"cam": "free"}])
         self.assertIsNone(r[3])
         self.assertEqual(r[4], [{"cam": "chase"}])
-        self.assertEqual(self.c["usable"], [12, ["placed", "free"], False])
+        self.assertEqual(self.c["usable"], [14, ["placed", "free", "follow"], False])
         self.assertTrue(all(ok for _, ok in self.c["recipes"]))
 
     def test_keyframes_kept_before_cameras_become_cameras(self) -> None:
@@ -1108,3 +1108,55 @@ class StudioTourTests(unittest.TestCase):
                 self.assertRegex(source, rf"dataset\.{attr}\s*=", f"{sel}: nothing sets data-{attr}")
                 if attr in ("tour", "recipe", "tray"):
                     self.assertIn(f"'{value}'", source, f"{sel}: no {attr} {value}")
+
+
+class FollowAndChaseTests(unittest.TestCase):
+    """Follow cameras and chases on any kill (replay-cuts.js, replay-clipclock.js,
+    replay-camtrack.js): a clip with no kill shot, 0-100 s, its kill at 50 s
+    (shot 49, hit 49.5, down 51), a Follow camera on player 3, a chase on the
+    kill and a Follow camera on player 5 from 70 s."""
+
+    r: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["followChase"]
+
+    def test_a_chase_on_a_kill_hands_back_to_what_filmed(self) -> None:
+        # From 0.6 s before the shot to 0.25 s after the victim goes down,
+        # then the Follow camera that was filming, on the same player.
+        self.assertEqual(self.r["chased"], [
+            ["follow", 3, None, 0, 48.4], ["chase", None, 50, 48.4, 51.25], ["follow", 3, None, 51.25, 100]])
+        self.assertEqual(self.r["followed"], [["follow", 3, 0], ["chase", None, 48.4], ["follow", 3, 51.25], ["follow", 5, 70]])
+        # The same kill chased again is swapped, not doubled.
+        self.assertEqual(self.r["again"], [["follow", None, 0], ["orbit", 50, 48.4], ["follow", None, 51.25], ["follow", None, 70]])
+
+    def test_a_chase_is_kept_by_its_kills_moments(self) -> None:
+        self.assertEqual(self.r["dragged"], {"ev": "shot", "dt": -0.5, "k": 50})
+        # The kill's round lands later and the victim goes down at 52: the
+        # hand-back follows it.
+        self.assertEqual(self.r["later"], [0, 48.4, 52.25, 70])
+
+    def test_follow_and_chase_cameras_read_back(self) -> None:
+        self.assertEqual(self.r["kept"], ["follow", "chase", "follow", "follow"])
+        self.assertEqual(self.r["keptOn"], 50)
+        # A Follow camera with no player and a round camera with no kill are
+        # dropped from a clip with no kill shot.
+        self.assertEqual(self.r["broken"], ["free"])
+        self.assertEqual(self.r["choices"], [
+            ["placed", "chase", "orbit", "side", "incoming", "victim", "free", "follow"], ["placed", "free", "follow"]])
+
+    def test_two_kills_bullet_time_play_in_turn(self) -> None:
+        self.assertEqual(self.r["one"], [25.03, [103.9]])
+        self.assertEqual(self.r["two"], [30.07, [103.9, 113.9]])
+
+    def test_the_rig_follows_chases_and_hands_back(self) -> None:
+        # The chase rides the page's round while it flies and is held (x 300),
+        # the stand-in before and after (x 100); the hand-back waits for the
+        # round cam to let go, then 0.25 s.
+        self.assertEqual(self.r["rigFrames"], [
+            ["follow", None], ["chase", 100], ["chase", 300], ["chase", 300], ["chase", 300], ["chase", 100],
+            ["follow", None], ["follow", None]])
+        # The page's camera handed to each Follow camera's player as its part
+        # starts: a cut on a jump, the hand-back's glide.
+        self.assertEqual(self.r["asked"], [["follow", 3, "cut"], ["follow", 3, "glide"], ["follow", 5, "cut"]])

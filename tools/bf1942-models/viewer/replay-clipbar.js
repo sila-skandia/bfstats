@@ -35,7 +35,7 @@ import { parseVideoTime, videoTime } from './replay-sync.js';
 import { peakBetween, slidOffset } from './replay-music.js';
 import {
   AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, holdsEnd,
-  motionLabel,
+  motionLabel, FOLLOW_HOW, KILL_CAMS, camChoices, followHowLabel, followHowOf,
 } from './replay-cuts.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -79,11 +79,14 @@ const HEAD_GRAB = 8;
  * for the clip's cameras with their stretches (replay-cuts.js
  * `resolveCams`). `sub` says how one of yours moves.
  */
-export function camLane(list) {
+export function camLane(list, { nameOf = null, killOf = null } = {}) {
   return list.map(c => ({
-    i: c.i, cam: c.cam, t0: c.t0, t1: c.t1, label: camLabel(c.cam), glyph: camGlyph(c.cam),
+    i: c.i, cam: c.cam, t0: c.t0, t1: c.t1, glyph: camGlyph(c.cam),
+    label: c.cam === 'follow' ? `Following ${nameOf?.(c.pid) ?? 'a player'}` : camLabel(c.cam),
     sub: c.cam === 'placed'
-      ? (c.end ? `${abMoveLabel(c.move)} to its end camera${holdsEnd(c) ? ', then holds' : ''}` : motionLabel(c.motion)) : 'automatic',
+      ? (c.end ? `${abMoveLabel(c.move)} to its end camera${holdsEnd(c) ? ', then holds' : ''}` : motionLabel(c.motion))
+      : c.cam === 'follow' ? followHowLabel(c.how)
+        : Number.isFinite(c.on) ? killOf?.(c.on) ?? 'on a kill' : 'automatic',
     into: c.i > 0 ? c.into ?? 'cut' : null, end: Boolean(c.end), tEnd: c.end ? c.tEnd ?? c.t1 : null,
   }));
 }
@@ -148,6 +151,8 @@ export const MOVE_ICONS = Object.freeze({
   'cam:front': 'M10 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M4 21v-4a6 6 0 0 1 12 0v4M22 9h-5M19 6l-3 3 3 3',
   'cam:victim': 'M12 16m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M3 10a9 5 0 0 1 18 0M18 7l3 3-3 3',
   'cam:free': 'M3 6h18v12H3zM8 21h8M12 18v3',
+  // A player, and the camera going after them.
+  'cam:follow': 'M8 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M2 20a6 6 0 0 1 12 0M15 12h7M19 9l3 3-3 3',
   // The game's cameras: a hull, and the camera behind it, ahead of it, or on
   // a tripod beside its path.
   'cam:gamechase': 'M12 11h9v5h-9zM14 11V9h4v2M2 9h5v4H2zM7 11l3-1v2z',
@@ -610,9 +615,15 @@ export class ClipBar {
     const take = creator.take ?? creator.takeInside(span);
     const pin = creator.sync;
     const pinnable = creator.pinMoment(span) !== null;
+    const near = creator.chaseableNear(t, 1.5, span);
     return {
       title: `Clip · ${at}`,
       items: [
+        ...(near && near.take.f !== take?.f ? [
+          item(`Bullet chase on this kill · ${near.label}`, () => creator.chaseKill(near.t, 'chase')),
+          ...(near.take.kill.victim !== null && near.take.kill.victim !== undefined ? [item('From the victim on this kill', () => creator.chaseKill(near.t, 'incoming'))] : []),
+          item('Bullet 360 on this kill', () => creator.chaseKill(near.t, 'orbit'), { rule: false }),
+        ] : []),
         item('Start the clip here', () => creator.setEnd('in', t)),
         item('End the clip here', () => creator.setEnd('out', t)),
         item('Play from here', () => creator.playFrom(t)),
@@ -805,9 +816,23 @@ export class ClipBar {
     const s0 = this.sx(c.t0) - this.sx(span.t0);
     const s1 = this.sx(c.t1) - this.sx(span.t0);
     const items = [
-      { cards: camsFor(take).map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: c.cam === id,
+      { cards: camChoices(take, c).filter(id => id !== 'follow' || c.cam === 'follow').map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: c.cam === id,
         run: () => creator.setCamAt(i, id) })) },
     ];
+    // Who a Follow camera is on, and how it films them; or which player to
+    // follow from here.
+    const rec = creator.player.rec;
+    const players = creator.followable(Math.max(c.t0, Math.min(c.t1, Number.isFinite(t) ? t : c.t0))).slice(0, 10);
+    if (c.cam === 'follow') {
+      items.push({ heading: true, label: 'How it films them' });
+      items.push({ chips: FOLLOW_HOW.map(([id, label]) => ({ label, icon: id === 'pov' ? 'cam:eyes' : id === 'chase' ? 'cam:gamechase' : 'cam:follow',
+        on: followHowOf(c.how) === id, run: () => creator.setFollowHow(i, id) })) });
+    }
+    if (players.length) {
+      items.push({ heading: true, label: c.cam === 'follow' ? 'Who it follows · nearest the view first' : 'Follow a player in this part · nearest first' });
+      items.push({ chips: players.map(p => ({ label: p.name, title: `Follow ${p.name}`, icon: 'cam:follow', on: c.cam === 'follow' && c.pid === p.pid,
+        run: () => (c.cam === 'follow' ? creator.setFollowPid(i, p.pid) : creator.setCamAt(i, 'follow', { pid: p.pid, how: 'orbit' })) })) });
+    }
     items.push({ chips: [
       { label: c.cam === 'placed' ? 'Set its camera' : 'Set the camera', title: 'Fly it where you want it and Use this view: it becomes your camera',
         icon: 'cam:placed', run: () => creator.placeCam(i, { which: 'start' }) },
@@ -861,10 +886,21 @@ export class ClipBar {
     const at = Math.min(t, span.t1 - 0.05);
     const swap = at - c.t0 <= CAM_MIN;
     const rel = Math.max(0, this.sx(at) - this.sx(span.t0));
+    const near = creator.chaseableNear(at, 3, span);
     const items = [
+      ...(near && near.take.f !== take?.f ? [
+        { heading: true, label: `A chase on the kill here · ${near.label}` },
+        { chips: [...KILL_CAMS].filter(id => id !== 'victim' || near.take.kill.victim !== null).map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id),
+          run: () => creator.chaseKill(near.t, id) })) },
+      ] : []),
       { heading: true, label: swap ? `Camera ${i + 1} becomes` : `A new camera from ${fmt(rel)}, after ${camLabel(c.cam)}` },
-      { cards: camsFor(take).map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: swap && c.cam === id,
+      { cards: camsFor(take).filter(id => id !== 'follow').map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: swap && c.cam === id,
         run: () => creator.addCamAt(at, id) })) },
+      ...(creator.followable(at).length ? [
+        { heading: true, label: 'Follow a player from here · nearest the view first' },
+        { chips: creator.followable(at).slice(0, 10).map(p => ({ label: p.name, title: `Follow ${p.name} from here`, icon: 'cam:follow',
+          run: () => creator.followFrom(at, p.pid) })) },
+      ] : []),
       { heading: true, label: `Camera ${i + 1} · ${camLabel(c.cam)}` },
       { chips: [
         { label: 'Change it', title: 'Its chooser: what it films, how it moves and takes over', icon: camGlyph(c.cam),
@@ -1723,9 +1759,13 @@ export class ClipBar {
     const m = timing?.moments;
     const hit = creator.fxKill.kill;
     if (action) node('events', 'i', 'rc-cb-action', '', action.t0, action.t1, 'The action: from the shot to just after the kill');
+    const own = creator.isLongClip?.(span) ? creator.clipPlayer : null;
     for (const k of creator.player.kills ?? rec.kills ?? []) {
       if (k.kind !== 'kill' || k.t < w0 || k.t > w1 || k === take?.kill) continue;
-      go(node('events', 'button', 'rc-cb-mk other', '', k.t, null, `${nameAt(rec, k.killer, k.t)} kills ${nameAt(rec, k.victim, k.t)}`), k.t);
+      // The clip's player's kills stand out: they are what the clip is about.
+      const theirs = own !== null && k.killer === own;
+      go(node('events', 'button', `rc-cb-mk other${theirs ? ' theirs' : ''}`, '', k.t, null,
+        `${nameAt(rec, k.killer, k.t)} kills ${nameAt(rec, k.victim, k.t)}${theirs ? ' · the clip\'s player' : ''} · right-click to chase it`), k.t);
     }
     if (take?.f && take.f.t >= w0 && take.f.t <= w1) {
       go(node('events', 'button', 'rc-cb-mk shot', isMelee(take.f.weapon) ? 'Swing' : 'Shot', take.f.t, null,
@@ -1758,7 +1798,14 @@ export class ClipBar {
 
     // CAMERA: the clip's cameras, and the hand-overs between them.
     this.camEls = [];
-    for (const c of camLane(list)) {
+    const laneOpts = {
+      nameOf: pid => nameAt(rec, pid, t),
+      killOf: k => {
+        const kt = creator.killTakeAt(k);
+        return kt ? `${nameAt(rec, kt.f.pid, k)} kills ${nameAt(rec, kt.kill.victim, k)}` : 'on a kill';
+      },
+    };
+    for (const c of camLane(list, laneOpts)) {
       if (c.t1 - c.t0 <= 1e-6) {
         this.camEls.push(null);
         continue;
@@ -1796,7 +1843,7 @@ export class ClipBar {
       } else b.append(el('i', 'rc-cb-caret'));
       this.camEls.push(b);
     }
-    for (const c of camLane(list).slice(1)) {
+    for (const c of camLane(list, laneOpts).slice(1)) {
       const len = HAND_OVER_LEN[c.into] ?? 0;
       if (len > 0) {
         const t1 = Math.min(c.t1, this.rt(this.sx(c.t0) + len));
@@ -1835,8 +1882,14 @@ export class ClipBar {
         'The kill shot slows itself here (bullet time). Drag it or its ends to make it your own; right-click for how much');
       seg.append(el('b', '', `Bullet time · auto`));
       this.bindSlow(grips(seg), autoSlow, { own: false });
-    } else if (!(creator.ramp.more?.length)) {
+    } else if (!(creator.ramp.more?.length) && !creator.chaseSlows(span).length) {
       node('speed', 'span', 'rc-cb-seg plain', 'normal speed · drag here to slow a stretch down', span.t0, span.t1);
+    }
+    // Each chase on a kill's own bullet time: drawn, as it plays.
+    for (const cs of creator.chaseSlows(span)) {
+      const seg = node('speed', 'span', 'rc-cb-seg slow auto chase', '', cs.t0, cs.t1,
+        'This kill\'s chase slows itself here (bullet time). Right-click the Speed lane for how much; your own slow motion over it replaces it');
+      seg.append(el('b', '', 'Bullet time · chase'));
     }
     // The clip's other stretches of slow motion, each its own bar.
     for (const [k, m] of (creator.ramp.more ?? []).entries()) {
@@ -2100,6 +2153,7 @@ const STYLE = `
 .rc-cb-mk.shot { background: rgba(232, 195, 90, .9); color: #17150f; transform: translateX(calc(-100% - 1px)); border-radius: 3px 0 0 3px; }
 .rc-cb-mk.kill { background: #d9584b; color: #fff; transform: translateX(1px); border-radius: 0 3px 3px 0; }
 .rc-cb-mk.other { width: 2px; height: 14px; padding: 0; margin-left: -1px; background: rgba(217, 88, 75, .55); }
+.rc-cb-mk.other.theirs { width: 4px; margin-left: -2px; background: var(--rp-gold); box-shadow: 0 0 6px rgba(232, 195, 90, .7); }
 /* The hit pinned to a time of the video: a drawing pin over the hit when it
    lands there, red and apart from it when it cannot. */
 .rc-cb-pin { position: absolute; top: -12px; height: 26px; width: 2px; margin-left: -1px; padding: 0; border: 0; background: #6ee7ff;

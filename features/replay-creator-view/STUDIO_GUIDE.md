@@ -270,6 +270,43 @@ moves, or how it gets to its end camera. Bullet time and the lens are below.
 A kill opened from the Kills tab starts on its own three cameras; the look,
 text and effects carry over.
 
+## A stretch of the round
+
+A clip can be more than one kill: mark a stretch (say 9:35 to 11:24) while
+following a player, or open a shared edit of one. It is that player's clip.
+
+- **It opens directed.** The camera follows the clip's player (Following
+  Minnie), and each of their kills inside the clip gets a bullet chase: over
+  the shooter's shoulder as the clock slows for the trigger, the round
+  chased to the player it kills, then back to following them. Each is an
+  ordinary block on the Camera lane, and each chase's bullet time is a bar
+  on the Speed lane ("Bullet time · chase"). Their kills are gold on the
+  Clip lane.
+- **Whose clip** (the Camera tab) lists the players with kills in the
+  clip, the clip's own first, each with how many. Click one to make it
+  their clip: the cameras are laid out again round them (Ctrl+Z takes it
+  back). A clip made while following nobody starts here. Chase their kills
+  adds a chase on each of their kills that has none and keeps your other
+  cameras.
+- **Click a player on the monitor** to cut to them: a Follow camera on them
+  from the playhead, gliding across from the camera before (a double click:
+  through their eyes). Pause on one player, click the other, play on, and
+  the camera chases between them. The hover label says "click to follow
+  from here".
+- **A Follow camera** (Follow in the tray, or a camera's chooser) films a
+  player you pick: behind them, through their eyes or the game's chase. Its
+  chooser lists the players nearest the view to switch to.
+- **A chase on any kill in the clip:** right-click a kill's mark on the
+  Clip lane (Bullet chase, From the victim or Bullet 360 on this kill),
+  click it in the Kills tab's In this clip list, drag Chase (or 360,
+  Side-on, From victim) from the tray (it lands on the nearest kill), or
+  click a round that kills on the monitor. A chase's chooser swaps it for
+  another camera that rides the round, and its hand-overs are kept by its
+  kill's moments, like a kill shot's.
+
+A clip trimmed down to one kill becomes that kill's kill shot, and its
+cameras stay.
+
 ## Slow motion
 
 The kill shot slows itself around the shot (bullet time). The Speed lane

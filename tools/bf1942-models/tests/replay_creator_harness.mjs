@@ -1221,4 +1221,66 @@ results.clip = {
   };
 }
 
+
+// --- Follow cameras and chases on any kill (features/replay-creator-view) -------------------------
+//
+// A clip with no kill shot, 0-100 s, its kill at 50 s (shot 49, hit 49.5,
+// down 51); a Follow camera on player 3, a chase on the kill, then a Follow
+// camera on player 5 from 70 s.
+{
+  const CU = await imp('replay-cuts.js');
+  const CC = await imp('replay-clipclock.js');
+  const T = await imp('replay-camtrack.js');
+  const km = { shot: 49, hit: 49.5, down: 51 };
+  const ev = { start: 0, end: 100, shot: null, hit: null, down: null, kills: { [CU.killKey(50)]: km } };
+  let cams = [{ cam: 'follow', pid: 3, how: 'orbit' }];
+  cams = CU.chaseOnKill(cams, 50, km, ev);
+  const chased = CU.resolveCams(cams, ev).map(c => [c.cam, c.pid ?? null, c.on ?? null, round(c.t0, 2), round(c.t1, 2)]);
+  cams = CU.followAt(cams, 70, 5, ev);
+  const followed = CU.resolveCams(cams, ev).map(c => [c.cam, c.pid ?? null, round(c.t0, 2)]);
+  // Chased again: swapped, not doubled; a 360 on it keeps the kill.
+  const again = CU.resolveCams(CU.chaseOnKill(cams, 50, km, ev, 'orbit'), ev).map(c => [c.cam, c.on ?? null, round(c.t0, 2)]);
+  // Its hand-over dragged a tenth later: still kept by the kill's moments.
+  const dragged = CU.moveCut(cams, 1, 48.5, ev)[1].at;
+  // The kill's moments move (its round lands later): the chase moves with them.
+  const later = CU.resolveCams(cams, { ...ev, kills: { [CU.killKey(50)]: { shot: 49, hit: 49.8, down: 52 } } }).map(c => round(c.t0, 2));
+  // Read back: a chase on a kill and a Follow camera survive a clip with no
+  // kill shot; a Follow camera with no player does not.
+  const kept = CU.camsOf(JSON.parse(JSON.stringify(cams)), null);
+  const broken = CU.camsOf([{ cam: 'free' }, { cam: 'follow', at: { ev: 'time', t: 5 } }, { cam: 'chase', at: { ev: 'time', t: 8 } }], null);
+  const choices = [CU.camChoices(null, { cam: 'chase', on: 50 }), CU.camChoices(null, { cam: 'follow', pid: 3 })];
+  // Two kills' bullet time on one clock, each played out in turn.
+  const preset = RC.BULLET_TIME.strong;
+  const b = (shot, hit) => ({ shot, hit, kill: shot, preset, melee: false, orbitHold: false,
+    armedSlow: RC.slowFor(650, preset, 70), flightSlow: RC.slowFor(700, preset, 70) });
+  const span = { t0: 100, t1: 120 };
+  const one = CC.clipClock({ span, bullet: b(103, 103.1) });
+  const two = CC.clipClock({ span, bullet: [b(113, 113.1), b(103, 103.1)] });
+  // The rig: a Follow camera, a chase on the kill, a Follow camera back.
+  const take = { f: { t: 49, pid: 7 }, kill: { t: 50, victim: 8 } };
+  const asked = [];
+  const ghost = { orbit: null, hideHero() {}, modelAt: () => true, placeAs: (c, dt, t, style) => { c.position.set(style === 'chase' ? 100 : 200, 2, 0); c.quaternion.set(0, 0, 0, 1); return true; },
+    drag: () => 'ghost', nearPlaneAs: () => null };
+  const live = { state: 'idle', target: null, impact: null, from: { w: 1 }, orbit: { yaw: 0, pitch: 0, dist: 1 }, camPos: new THREE.Vector3(), placeHero() {},
+    placeAs: (c) => { c.position.set(300, 1, 0); return true; }, drag: () => 'live', wheel: () => 'live', nearPlaneAs: () => null };
+  const scene = { live, ghost, take: null, takeOf: k => (k === 50 ? take : null), moments: () => ev, momentsOf: tk => (tk ? ev.kills[CU.killKey(tk.kill.t)] : ev),
+    screen: t => t, real: () => 0, victimAt: () => [0, 0, 0], lineOf: () => [0, 0, -1], subjectAt: () => null,
+    replayView: (c, into) => { asked.push([c.cam, c.pid ?? null, into]); return true; } };
+  const rig = new T.CutRig(scene, cams);
+  const cam = new THREE.PerspectiveCamera();
+  const frame = (t, state = 'idle', target = null) => {
+    live.state = state;
+    live.target = target;
+    const placed = rig.place(cam, 1 / 60, t);
+    return [rig.active.cam, placed ? round(cam.position.x, 1) : null];
+  };
+  const rigFrames = [frame(10), frame(48.6), frame(49.2, 'flying', { f: take.f, kill: take.kill, progress: 0.5 }), frame(50.5, 'impact', { f: take.f, kill: take.kill }),
+    frame(51.3, 'impact', { f: take.f, kill: take.kill }), frame(51.6), frame(52.0), frame(75)];
+  results.followChase = {
+    chased, followed, again, dragged, later, kept: kept?.map(c => c.cam), keptOn: kept?.[1]?.on ?? null, broken: broken?.map(c => c.cam), choices,
+    one: [round(one.length, 2), one.downs.map(d => round(d, 2))], two: [round(two.length, 2), two.downs.map(d => round(d, 2))],
+    rigFrames, asked,
+  };
+}
+
 console.log(JSON.stringify(results));
