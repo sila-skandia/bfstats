@@ -1698,6 +1698,31 @@ export class ReplayCamera {
    *  yet spawned, a bot's camera), and the orbit's death cam stands in. A
    *  recording player's own camera while he is dead is not his view either:
    *  after his death it flies to wherever the spawn screen shows. */
+  /**
+   * The followed player as their own HUD reads them, whichever camera films
+   * them (2026-11-19, the owner, on the studio's game HUD: "it doesn't show
+   * the player's health bar for their vehicle / soldier"): `{ kind: 'foot',
+   * life }` on foot, `{ kind: 'seat', life, hull, seat }` in a seat, as
+   * `updatePov` finds them, with `third` set; null dead, spectating or
+   * nowhere. Nothing of the camera moves.
+   */
+  followedSight(t) {
+    const { player } = this;
+    if (player.followPid === null || player.followPid === undefined) return null;
+    if (deathAt(player.rec, player.followPid, t, player.kills)) return null;
+    const life = focusLife(player, t);
+    if (!life || life.camera) return null;
+    if (life.soldier) {
+      if (life.diedAt !== undefined && t >= life.diedAt) return null;
+      return { kind: 'foot', life, third: true };
+    }
+    const hull = player.hulls?.get(life);
+    if (!hull?.group.visible) return null;
+    const nid = controlledAt(player.rec, player.followPid, t);
+    const seat = rootOf(player.rec, nid, t, player.followPid)?.seat ?? 0;
+    return { kind: 'seat', life, hull, seat, nose: false, view: 'cockpit', third: true };
+  }
+
   updatePov(dt, t) {
     const { player } = this;
     const cam = player.ctx.camera;

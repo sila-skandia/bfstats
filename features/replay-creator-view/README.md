@@ -2657,3 +2657,29 @@ crosshair, the chat and the minimap. Tests: the cards' style read back, the
 one most in shown and a hidden one never, the bit rates, the 60 s cap and
 the 80 MB cap.
 
+### The whole HUD with the game's HUD (2026-11-19)
+
+The owner: "the last thing missing is the entire HUD ... it doesn't show the
+player's health bar for their vehicle / soldier". The page's HUD
+(`#hud-canvas`, hud.js over `menu/InGame`: the tickets, health, stance,
+ammunition, the vehicle panel) was hidden in the studio and never recorded,
+and the replay fed it only in first person (replay-hud.js `update` needs the
+camera's `sight`).
+
+- With the clip's game HUD on, the replay feeds the followed player's HUD
+  whatever camera films them (`ReplayCamera.followedSight`: their life and
+  seat as `updatePov` finds them, `third` set), as the game's third person
+  shows it; the crosshair, hit marks and scope stay their first person's
+  (`state.third`, `crosshairAim`), and `replay-sight` is not set.
+- The studio keeps `#hud-canvas` over the monitor (`st-gamehud`) and
+  `drawGameHud` draws it into each frame under the minimap, as the page
+  stacks them. In a narrow frame it shares the message log's 4:3 box
+  (map.html paints both at `commsSize`; `syncHudBox` sizes both).
+
+Measured in headless Chromium on the owner's edit: through Minnie's eyes
+(10:12) the HUD in first person with the crosshair; in the game's chase
+(10:33) the HUD fed in third person (`third`, no `replay-sight`), health,
+stance, ammunition and tickets on the monitor; a recording of 10:26-10:32
+carries them with no crosshair; at 9:16 the HUD and the log 315 x 236 in a
+315 x 560 frame.
+

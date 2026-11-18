@@ -5003,14 +5003,15 @@ function paintHud(dt) {
   // The tooltip plate's clock and variables (tooltips.js); a compare a frame
   // while the profile's option is off.
   toolTips.frame(dt);
-  hudFeed.gameHud.paint(hudW, hudH);
+  // The studio's game HUD in a narrow frame lays the game's screen out 4:3
+  // across the top, the HUD and the message log alike (replay-studio.js
+  // `commsSize`); anywhere else, the stage.
+  const commsSize = replayController?.commsSize?.(hudW, hudH) ?? { w: hudW, h: hudH };
+  hudFeed.gameHud.paint(commsSize.w, commsSize.h);
   // A replay runs the message log on the recording's clock: its speed while
   // it plays, stopped while it is paused. Without one the rate is 1.
   comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
-  // The studio's game HUD in a narrow frame lays the log out 4:3 across
-  // the top (replay-studio.js `commsSize`); anywhere else, the stage.
-  const commsSize = replayController?.commsSize?.(hudW, hudH) ?? { w: hudW, h: hudH };
   comms.paint(commsSize.w, commsSize.h);
   // A replay's followed artillery gunner has the recording's (replay-spotting.js).
   // Its box and icon sit in retail's place unless the replay's bar, card or

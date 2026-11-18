@@ -291,14 +291,16 @@ export class Studio {
 
   /** The log's canvas boxed to `commsSize`, or back to the stage's. */
   syncHudBox() {
-    const log = typeof document !== 'undefined' ? document.getElementById('comms-canvas') : null;
-    if (!log) return;
+    if (typeof document === 'undefined') return;
     const stage = this.stage;
     const size = this.open ? this.commsSize(stage.clientWidth, stage.clientHeight) : null;
     const h = size ? `${size.h}px` : '';
-    if (log.style.height !== h) {
-      log.style.height = h;
-      log.style.bottom = size ? 'auto' : '';
+    // The message log and the HUD share the game's screen.
+    for (const id of ['comms-canvas', 'hud-canvas']) {
+      const layer = document.getElementById(id);
+      if (!layer || layer.style.height === h) continue;
+      layer.style.height = h;
+      layer.style.bottom = size ? 'auto' : '';
     }
   }
 
@@ -1753,7 +1755,7 @@ export class Studio {
     const hud = this.check('The game\'s HUD', () => creator.edits.hud,
       v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s chat and minimap in the picture' : null),
       'The game\'s message log and minimap, in the monitor and the recorded file');
-    const hudNote = this.note('The chat, the kills and the flags as the game prints them, the minimap at the top right, and their crosshair in first person, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
+    const hudNote = this.note('The game\'s whole HUD for the player followed: their health, ammunition and vehicle panel in any camera, their crosshair in first person, the chat, kills and flags as the game prints them, and the minimap at the top right, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
     const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
     const shortNote = this.note('');
     this.syncs.push(() => {
@@ -2034,7 +2036,7 @@ html.replay-studio #stage { position: fixed !important; z-index: 1001; border-ra
 html.replay-studio.st-rec #stage { border-radius: 0; box-shadow: none; }
 /* The game's HUD on: its message log and its minimap stay over the monitor
    (the studio's bare look hides the page's layers, replay-ui.js). */
-html.replay-studio.st-gamehud #comms-canvas, html.replay-studio.st-gamehud #minimap,
+html.replay-studio.st-gamehud #comms-canvas, html.replay-studio.st-gamehud #minimap, html.replay-studio.st-gamehud #hud-canvas,
 html.replay-studio.st-gamehud.replay-sight #crosshair { visibility: visible !important; }
 .st-back { position: fixed; inset: 0; z-index: 1000; background: #0b0b09; }
 html.st-rec .st-back { background: #000; }

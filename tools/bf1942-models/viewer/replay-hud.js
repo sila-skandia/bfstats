@@ -412,11 +412,17 @@ export class ReplayHud {
    *  of (replay-camera.js `sight`): `{ kind: 'foot' | 'seat', ... }`, or null
    *  when the view is not his first person. */
   update(t) {
-    const sight = this.player.camera?.sight ?? null;
+    let sight = this.player.camera?.sight ?? null;
+    // A clip with the game's HUD in its picture shows the followed player's
+    // own HUD whichever camera films them (the creator's `edits.hud`), as
+    // the game's third person does; their crosshair stays their first
+    // person's alone.
+    if (!sight && this.player.creator?.edits?.hud && this.player.creator.editing) sight = this.player.camera?.followedSight?.(t) ?? null;
     this.state = sight ? this.compute(sight, t) : null;
+    if (this.state && sight.third) this.state.third = true;
     // The page's cross stays down in a replay but in his first person
     // (replay-ui.js's style).
-    const up = this.state !== null;
+    const up = this.state !== null && !this.state.third;
     if (up !== this.sightShown && typeof document !== 'undefined') {
       document.documentElement.classList.toggle('replay-sight', up);
       this.sightShown = up;
@@ -564,7 +570,8 @@ export class ReplayHud {
    *  degrees, or null when the view is not his first person. */
   crosshairAim() {
     const s = this.state;
-    if (!s) return null;
+    // Their HUD in third person (the studio's game HUD): no cross.
+    if (!s || s.third) return null;
     // Dragged off his aim, the centre is not where he looked: no cross.
     if (this.player.camera?.sight?.looking) return { style: null, deviation: 0, scoped: false };
     const centre = this.player.rec.crosshairCentrePoint ?? true;
@@ -593,7 +600,10 @@ export class ReplayHud {
     // over a scope or no cross at all (XHIT-1), and is up whenever he is in
     // the world (soldier-hud.js, which puts it down in a replay). Dragged off
     // his aim, the centre is not his and they go with the cross.
-    if (art.hitMarks?.() ?? true) {
+    // In third person the screen's centre is not their aim: no cross, no
+    // hit marks, no scope.
+    if (s.third) vars['CrossHair/ShowCrossHair'] = false;
+    else if (art.hitMarks?.() ?? true) {
       vars['CrossHair/ShowCrossHair'] = true;
       vars['CrossHair/HitIndicationTime'] = this.player.camera?.sight?.looking ? 0 : s.hitMark ?? 0;
     }
@@ -623,7 +633,7 @@ export class ReplayHud {
       // layout's crosshair group with the scope overlay in place of the cross,
       // a sniper sight or the binoculars' ring. The page's feed puts the
       // group and its index back down every frame.
-      if (s.zoomed && s.zoom?.scope) {
+      if (!s.third && s.zoomed && s.zoom?.scope) {
         vars['CrossHair/ShowCrossHair'] = true;
         vars['CrossHair/ScopeIndex'] = 1;
         vars['CrossHair/SniperSight'] = Boolean(s.zoom.sniperSight);

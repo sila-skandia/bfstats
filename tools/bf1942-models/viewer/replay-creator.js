@@ -700,6 +700,13 @@ export class ReplayCreator {
     const view = canvas.getBoundingClientRect();
     const px = { w: canvas.width, h: canvas.height };
     const out = { w: r.source.width, h: r.source.height };
+    // The game's HUD first (hud.js: health, ammunition, the vehicle panel,
+    // the tickets), under the minimap as the page stacks them.
+    const hud = document.getElementById('hud-canvas');
+    if (hud && !hud.hidden && hud.width > 0) {
+      const at = hudRect(hud.getBoundingClientRect(), view, px, r.crop, out);
+      if (at) ctx.drawImage(hud, at.x, at.y, at.w, at.h);
+    }
     const box = document.getElementById('minimap');
     const map = document.getElementById('minimap-canvas');
     if (box && map && !box.hidden && map.width > 0) {
@@ -724,6 +731,7 @@ export class ReplayCreator {
         ctx.restore();
       }
     }
+    // The message log over everything but the crosshair, as the page has it.
     const log = document.getElementById('comms-canvas');
     if (log && !log.hidden && log.width > 0) {
       const at = hudRect(log.getBoundingClientRect(), view, px, r.crop, out);

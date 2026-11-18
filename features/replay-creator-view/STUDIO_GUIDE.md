@@ -449,8 +449,10 @@ clips keeps one style.
 - The game's HUD (In the picture): the game's own message log and minimap
   over the clip, as the game draws them: the chat, the kill lines and the
   flags taken in the game's own face and team colours at the top left, the
-  minimap at the top right with the clip's player as its ring, and the
-  player's crosshair whenever the camera is through their eyes. They show
+  minimap at the top right with the clip's player as its ring, the tickets,
+  the player's health, ammunition and vehicle panel whatever camera films
+  them (as the game's third person shows them), and their crosshair
+  whenever the camera is through their eyes. They show
   on the monitor and go into the recording and the thumbnail. Turning it on
   turns the studio's own kill feed off; the look, text and effects still
   work over it. In a frame narrower than 4:3 (9:16, 1:1) the message log
