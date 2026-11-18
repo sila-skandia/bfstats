@@ -1873,7 +1873,7 @@ export class ReplayCreator {
         return Math.max(0, m.clock.toScreen(t) - m.clock.toScreen(hit));
       },
       victimAt: (t, tk = take) => this.victimPoint(tk, t),
-      subjectAt: t => this.subjectPoint(take, t),
+      subjectAt: t => (take ? this.subjectPoint(take, t) : this.clipSubject(span, t)),
       eyes: () => this.eyesOn(take),
       gameView: mode => this.gameViewOn(take, mode),
       replayView: (c, into) => this.replayViewOn(c, into),
@@ -1894,6 +1894,25 @@ export class ReplayCreator {
 
   /** What the action is at `t`: the shooter's muzzle before the shot, the
    *  round in flight, the man it hit after (a camera of yours following it). */
+  /**
+   * The action in a stretch of the round (no kill shot), for a camera of
+   * yours following it (2026-11-18: "Follow the action" held still there):
+   * a chased kill's shooter, round and victim while its chase's stretch
+   * plays, else the clip's player, a little over their feet.
+   */
+  clipSubject(span, t) {
+    const m = this.timing(span)?.moments;
+    for (const c of this.chaseTakes(span)) {
+      const km = m?.kills?.[killKey(c.kill.t)];
+      if (km && t >= km.shot - 0.6 && t <= km.down + 0.25) return this.subjectPoint(c, t);
+    }
+    const pid = this.clipPlayer ?? this.player.followPid;
+    if (!Number.isInteger(pid)) return null;
+    const w = whereIs(this.player.rec, pid, t, this.player.kills ?? this.player.rec.kills);
+    if (!w?.pos) return null;
+    return [w.pos[0], w.pos[1] + (w.state === 'foot' ? CHARACTER_HEIGHT * 0.8 : 0.8), w.pos[2]];
+  }
+
   subjectPoint(take, t) {
     if (!take) return null;
     const out = new THREE.Vector3();

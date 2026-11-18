@@ -170,7 +170,8 @@ the round hits, or as the man goes down, waits for the page's own round.
 
 Click your camera for how it moves while it films: Still, Follow the action
 (it stays put and turns to keep the shooter, the round and the man in frame,
-from the framing you set), Push in, Pull back, Circle or Crane up. Your
+from the framing you set at the start of its part; in a stretch of the
+round, the clip's player, or a chased kill while its chase plays), Push in, Pull back, Circle or Crane up. Your
 camera keeps the field of view it was placed with, so zoom in before Use
 this view for a tight shot.
 

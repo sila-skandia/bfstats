@@ -2593,3 +2593,14 @@ two kills' bullet time in turn, and the rig following, riding the chase's
 own round through its hold and gliding back. The kill-shot probe and the
 tour run as before.
 
+### Follow the action in a stretch of the round (2026-11-19)
+
+Answering the owner's "what is the idea behind Your camera": a camera of
+yours set to Follow the action turned to the kill shot's shooter, round
+and victim (`subjectAt`), and a clip with no kill shot has none, so it held
+still. In a stretch of the round the action is now the clip's player, or a
+chased kill's shooter, round and victim while that chase's stretch plays
+(`ReplayCreator.clipSubject`). Measured on Minnie's clip in headless
+Chromium: a camera of Minnie's following the action kept her at the same
+60.4 degrees off its line of sight on every frame while she moved 14.4 m.
+
