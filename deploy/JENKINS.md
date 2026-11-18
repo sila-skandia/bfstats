@@ -113,6 +113,89 @@ The Jenkinsfile references this credential ID in the deploy stages.
 
 ---
 
+## 3b. Configure the agent cloud kubeconfig (proxmox cluster)
+
+Section 3 is the credential the deploy stages use to reach **Hetzner**. Jenkins
+needs a second, separate credential to start its own build agents: the
+Kubernetes cloud **Local k8s** (Manage Jenkins > Clouds) creates every agent pod
+in the `jenkins-ci` namespace on the **proxmox** cluster (`https://192.168.1.215:6443`,
+node `bethany`), using the Secret File credential `k3s-bethany` (`jenkins-ci.yaml`).
+
+If that credential stops working, every stage that needs a new agent pod hangs
+on "Still waiting to schedule task", and the controller log fills with `401
+Unauthorized` from `KubernetesLauncher`. That happened on 2026-11-18 (build 1795
+stuck at Deploy Mesh): the `jenkins-agent` ServiceAccount had disappeared, which
+also deletes and invalidates its token Secret. The RoleBinding
+`jenkins-ci/jenkins-agent` and Role `jenkins-agent` (pods, pods/exec, pods/log,
+events, secrets get) survived and still point at it.
+
+Recreate the ServiceAccount and a non-expiring token:
+
+```bash
+kubectl --context proxmox apply -f - <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-agent
+  namespace: jenkins-ci
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-agent-token
+  namespace: jenkins-ci
+  annotations:
+    kubernetes.io/service-account.name: jenkins-agent
+type: kubernetes.io/service-account-token
+EOF
+```
+
+Build the kubeconfig the same way as section 3:
+
+```bash
+TOKEN=$(kubectl --context proxmox -n jenkins-ci get secret jenkins-agent-token -o jsonpath='{.data.token}' | base64 -d)
+CA_DATA=$(kubectl --context proxmox -n jenkins-ci get secret jenkins-agent-token -o jsonpath='{.data.ca\.crt}')
+
+cat > jenkins-ci.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+  - name: bethany
+    cluster:
+      server: https://192.168.1.215:6443
+      certificate-authority-data: ${CA_DATA}
+contexts:
+  - name: jenkins-agent@bethany
+    context:
+      cluster: bethany
+      namespace: jenkins-ci
+      user: jenkins-agent
+current-context: jenkins-agent@bethany
+users:
+  - name: jenkins-agent
+    user:
+      token: ${TOKEN}
+EOF
+
+# All three should answer "yes".
+for v in create get delete; do kubectl --kubeconfig=jenkins-ci.yaml auth can-i $v pods -n jenkins-ci; done
+```
+
+Then:
+
+1. In **Manage Jenkins > Credentials**, click **Update** on `k3s-bethany` and upload the new `jenkins-ci.yaml`.
+2. In **Clouds > Local k8s**, click **Test Connection**.
+3. Delete the local file.
+
+A stuck build picks up its agent on the next retry once the connection test passes.
+
+Alternative with no file at all: set the cloud's Credentials to "- none -".
+Jenkins then uses its own pod's ServiceAccount, `jenkins-ci/jenkins-admin`,
+whose token Kubernetes renews automatically. That account has cluster-wide
+access, so the scoped `jenkins-agent` token above is the tighter choice.
+
+---
+
 ## 4. Configure Git HTTPS credentials
 
 If your Jenkins pipeline clones this repository using an HTTPS URL, Jenkins needs a Git credential with access to the repo.
@@ -174,6 +257,7 @@ The `Deploy UI` stage purges the Cloudflare edge cache upon successful rollout t
 | Credential ID | Type | Purpose |
 |---------------|------|---------|
 | `bf42-stats-k3s-kubeconfig` | Secret File | kubeconfig for k3s cluster (covers `bf42-stats` + `bfstats-ui` namespaces) |
+| `k3s-bethany` | Secret File | kubeconfig the Local k8s cloud uses to start agent pods on the proxmox cluster (section 3b) |
 | `bf42-stats-secrets-jwt-private-key` | Secret Text | JWT signing key |
 | `bf42-stats-secrets-refresh-token-secret` | Secret Text | Refresh token secret |
 | `jenkins-bf1942-stats-dockerhub-pat` | Username/Password | Docker Hub push |
