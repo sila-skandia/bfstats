@@ -103,6 +103,11 @@ export class ClipRecorder {
       if (e.data?.size) this.chunks.push(e.data);
     };
     this.recorder.start(1000);
+    // What it really writes: a bare `video/mp4` is VP9 and Opus in Firefox and in
+    // Chromium builds without an H.264 encoder, which no iPhone plays (2026-11-19,
+    // a studio share that would not play on iOS). The recorder names its codecs
+    // once started; keep the asked-for type where it does not.
+    if (/codecs=/i.test(this.recorder.mimeType ?? '')) this.mime = this.recorder.mimeType;
     this.startedAt = performance.now();
   }
 

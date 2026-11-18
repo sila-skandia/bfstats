@@ -575,6 +575,14 @@ videos.
   (`scripts/video-range.mjs`). `ffprobe` must say `yuv420p` and `tv`, never
   `yuvj420p`/`pc`. A live video is fixed with `scripts/shorts-colour.mjs`
   (`PUT <slug>/video`), which the nightly runs after its uploads.
+- **A Short that will not play on iPhone** (2026-11-19, `2ywyeks3uj`, a
+  studio share): VP9 and Opus inside an MP4. A browser asked for a bare
+  `video/mp4` (Firefox, Chromium builds without an H.264 encoder) writes
+  those, and iOS plays only H.264/AAC. The recorder now reports its real
+  codecs (`recorder.mimeType`), `shareable` refuses non-H.264, the API
+  refuses the share (415, `Mp4Codecs`), and `scripts/shorts-colour.mjs` (in
+  the nightly) re-encodes any live video that is not H.264/AAC. To check
+  one: `ffprobe` the `og:video` URL; it must say `h264` and `aac`.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the

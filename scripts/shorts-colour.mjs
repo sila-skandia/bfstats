@@ -6,6 +6,11 @@
 // a player's studio share is whatever their browser's MediaRecorder wrote, so the
 // nightly job runs this after its uploads to put those right too.
 //
+// It also re-encodes any video that is not H.264 with AAC sound (2026-11-19: a
+// studio share recorded in a browser that wrote VP9 and Opus into its MP4 would
+// not play on any iPhone). The API refuses those shares now; this puts right
+// the ones that came in before, and any page still cached from before.
+//
 //   SHORTS_UPLOAD_KEY=... node scripts/shorts-colour.mjs [--dry-run] [--only=<slug>,...] [--to=https://bfstats.io]
 //
 // Idempotent: a video already at TV range is left alone. Work files go to
@@ -64,13 +69,21 @@ async function liveShorts() {
 }
 
 function probe(file) {
-  const out = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries',
-    'stream=pix_fmt,color_range,bit_rate:format=duration', '-of', 'json', file], { encoding: 'utf8' });
+  const out = execFileSync('ffprobe', ['-v', 'error', '-show_entries',
+    'stream=codec_type,codec_name,pix_fmt,color_range,bit_rate:format=duration', '-of', 'json', file], { encoding: 'utf8' });
   const j = JSON.parse(out);
-  const s = j.streams?.[0] ?? {};
-  return { pixFmt: s.pix_fmt ?? '', range: s.color_range ?? '', bitRate: Number(s.bit_rate) || 0, duration: Number(j.format?.duration) || 0 };
+  const s = j.streams?.find(x => x.codec_type === 'video') ?? {};
+  const a = j.streams?.find(x => x.codec_type === 'audio');
+  return {
+    pixFmt: s.pix_fmt ?? '', range: s.color_range ?? '', bitRate: Number(s.bit_rate) || 0, duration: Number(j.format?.duration) || 0,
+    video: s.codec_name ?? '', audio: a?.codec_name ?? '',
+  };
 }
 const isFull = p => p.range === 'pc' || p.pixFmt.startsWith('yuvj');
+/** Plays on an iPhone: H.264 with AAC sound or none. */
+const isPhoneSafe = p => p.video === 'h264' && (!p.audio || p.audio === 'aac');
+const needsWork = p => isFull(p) || !isPhoneSafe(p);
+const whatsWrong = p => [isFull(p) && `${p.pixFmt} ${p.range}`, !isPhoneSafe(p) && `${p.video}/${p.audio || 'silent'}`].filter(Boolean).join(', ');
 
 /** Probing a URL reads only the head of the file; retried, the edge answers 5xx under load. */
 async function probeUrl(url) {
@@ -90,7 +103,7 @@ function encode(from, to, p, limit) {
   const kbps = Math.max(1500, Math.round((p.bitRate || 8e6) / 1000));
   const run = rate => execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', from, '-map', '0', '-vf', tvFilter(),
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-maxrate', `${rate}k`, '-bufsize', `${rate * 2}k`, '-profile:v', 'high',
-    '-c:a', 'copy', '-movflags', '+faststart', to]);
+    ...(p.audio && p.audio !== 'aac' ? ['-c:a', 'aac', '-b:a', '160k'] : ['-c:a', 'copy']), '-movflags', '+faststart', to]);
   run(Math.round(kbps * 1.15));
   if (fs.statSync(to).size > limit && p.duration > 0) {
     run(Math.floor(((limit * 8) / p.duration) * 0.85 / 1000) - 200);
@@ -137,12 +150,12 @@ for (const s of shorts) {
       failed++;
       continue;
     }
-    if (!isFull(p)) {
+    if (!needsWork(p)) {
       fine++;
       continue;
     }
     if (DRY) {
-      log(`${s.slug} ${s.kind} ${copy}: ${p.pixFmt} ${p.range}, would re-encode`);
+      log(`${s.slug} ${s.kind} ${copy}: ${whatsWrong(p)}, would re-encode`);
       fixed++;
       continue;
     }
@@ -155,12 +168,12 @@ for (const s of shorts) {
       const local = probe(src);
       encode(src, out, local, limitOf(copy, s.kind));
       const now = probe(out);
-      if (isFull(now)) throw new Error(`still ${now.pixFmt} ${now.range} after the encode`);
+      if (needsWork(now)) throw new Error(`still ${whatsWrong(now)} after the encode`);
       if (Math.abs(now.duration - local.duration) > 0.2) throw new Error(`length moved ${local.duration} -> ${now.duration}`);
       const dto = await put(s.slug, copy, out);
       const live = await probeUrl(`${TO}${urlOf(dto, copy)}`);
-      if (isFull(live)) throw new Error(`the live file is still ${live.pixFmt} ${live.range}`);
-      log(`${s.slug} ${s.kind} ${copy}: ${(fs.statSync(src).size / 1e6).toFixed(1)} -> ${(fs.statSync(out).size / 1e6).toFixed(1)} MB, live at TV range`);
+      if (needsWork(live)) throw new Error(`the live file is still ${whatsWrong(live)}`);
+      log(`${s.slug} ${s.kind} ${copy}: ${whatsWrong(local)} -> ${(fs.statSync(src).size / 1e6).toFixed(1)} -> ${(fs.statSync(out).size / 1e6).toFixed(1)} MB, live as H.264/AAC at TV range`);
       fs.rmSync(src, { force: true });
       fs.rmSync(out, { force: true });
       fixed++;
@@ -170,5 +183,5 @@ for (const s of shorts) {
     }
   }
 }
-log(`${DRY ? 'would re-encode' : 're-encoded'} ${fixed}, ${fine} already TV range, ${failed} failed`);
+log(`${DRY ? 'would re-encode' : 're-encoded'} ${fixed}, ${fine} already H.264 at TV range, ${failed} failed`);
 process.exit(failed ? 1 : 0);

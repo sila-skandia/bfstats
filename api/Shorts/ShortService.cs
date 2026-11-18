@@ -444,6 +444,11 @@ public sealed class ShortService(
                 throw new RecordingRejectedException("The HD video is not an MP4 file.");
             }
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
+            // A studio share is whatever the player's browser recorded; the render job's are H.264.
+            if (flatten && Mp4Codecs.Unplayable(await Mp4Codecs.ReadAsync(videoFile, ct)) is { } unplayable)
+            {
+                throw new RecordingRejectedException(unplayable, StatusCodes.Status415UnsupportedMediaType);
+            }
             if (flatten && flattener is not null)
             {
                 await flattener.FlattenAsync(videoFile, ct);

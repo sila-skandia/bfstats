@@ -41,10 +41,22 @@ const el = (tag, cls, text) => {
   return node;
 };
 
+/** Whether a recorded type plays on every phone: H.264 video with AAC sound (or
+ *  none). A type that names no codecs is let through; the API reads the file. */
+export function playsEverywhere(mime) {
+  const codecs = /codecs\s*=\s*"?([^"]*)"?/i.exec(String(mime ?? ''))?.[1];
+  if (!codecs) return true;
+  const list = codecs.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+  const video = list.filter(c => !c.startsWith('mp4a') && !c.startsWith('opus'));
+  const audio = list.filter(c => c.startsWith('mp4a') || c.startsWith('opus'));
+  return video.length > 0 && video.every(c => /^(avc1|avc3)/.test(c)) && audio.every(c => c.startsWith('mp4a'));
+}
+
 /** Whether a recorded clip can be shared as a Short: `{ ok, why }`. */
 export function shareable({ mime, frame, replayUrl }) {
   if (frame !== '916') return { ok: false, why: 'Pick the 9:16 frame to share a clip as a Short.' };
   if (!/mp4/i.test(String(mime ?? ''))) return { ok: false, why: 'This browser records WebM; Shorts take MP4 (Chrome, Edge or Safari).' };
+  if (!playsEverywhere(mime)) return { ok: false, why: 'This browser records VP9 video, which iPhones cannot play; Shorts take H.264 (Chrome, Edge or Safari).' };
   if (!sharedRecordingOf(replayUrl)) return { ok: false, why: 'Only clips of a shared round can be Shorts.' };
   return { ok: true, why: null };
 }

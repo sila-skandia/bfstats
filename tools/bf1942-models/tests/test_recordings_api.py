@@ -164,7 +164,7 @@ class RecordingsApiTests(unittest.TestCase):
 
     def test_a_studio_clip_is_offered_as_a_short_when_it_can_be_one(self) -> None:
         # A Short is 9:16, an MP4 the API takes, and of a round the feed has.
-        self.assertEqual(self.results["share"], [True, False, False, False])
+        self.assertEqual(self.results["share"], [True, False, False, False, False, True, False])
 
     def test_an_action_roll_is_landscape_and_plays_4k_or_hd(self) -> None:
         # features/replay-shorts, "Rolls in the strip (2026-11-12)": HD under
