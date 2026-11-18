@@ -73,6 +73,9 @@ function element(tag) {
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
     after() {}, focus() {}, click() {},
     setAttribute() {},
+    // The preview's box holds its canvas, kit bar and buttons.
+    appendChild: child => child, append() {}, remove() {}, contains: () => false,
+    replaceChildren() {}, blur() {}, value: '', textContent: '', className: '', dataset: {}, options: [],
   };
 }
 globalThis.document = { createElement: element };

@@ -69,6 +69,7 @@ import {
 } from '../video-options.js';
 import { chooseAntialias, storeAntialias, storedAntialias } from '../render-antialias.js';
 import { remasterSupported, storeRemaster, storedRemaster } from '../remaster-mode.js';
+import { BADGE_INK, remasterNudge } from './remaster-nudge.js';
 import {
   SOUND_NAV_DX, chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
   storeHardware3d, storedHardware3d,
@@ -881,8 +882,16 @@ export function createControlsScreen({
       if (label) paintElement(ctx, label, layout, null, env);
       if (row.unit) paintElement(ctx, row.unit, layout, null, env);
     }
-    if (v.pendingRows.includes(row.id)) {
+    const pendingHere = v.pendingRows.includes(row.id);
+    if (pendingHere) {
       text('NEXT LEVEL', [row.hit[0] + row.hit[2] + 12, row.label.rect[1], 120, 20], HELP_TEXT);
+    }
+    // NEW on REMASTER until the player has ticked or unticked it.
+    if (row.id === 'remaster' && remasterNudge.badge()) {
+      const box = row.frame[0]?.rect ?? row.hit;
+      const badge = remasterNudge.paintBadge(ctx, row.hit[0] + row.hit[2] + (pendingHere ? 90 : 10),
+                                             box[1] + box[3] / 2);
+      text('NEW', [badge[0], badge[1] + 3, badge[2], badge[3]], BADGE_INK, 'center');
     }
   }
 
@@ -927,6 +936,7 @@ export function createControlsScreen({
     paintDisplayModes(v);
     for (const el of video.panel) paintElement(ctx, el, layout, null, env);
     for (const row of video.rows) paintVideoRow(row, v);
+    if (video.rows.some(row => row.id === 'remaster')) remasterNudge.markSeen();
     // Under the last row; under the plate when the page's own ninth line
     // (REMASTER's) has taken the plate's last room.
     const last = video.rows[video.rows.length - 1];
@@ -1788,6 +1798,8 @@ export function createControlsScreen({
     stepProfile,
     preview,
     get strip() { return strip; },
+    /** The section up, cheaply: asked on every frame of the nav's cues. */
+    get section() { return state.section; },
     get state() {
       return {
         section: state.section,

@@ -205,4 +205,57 @@ const TABS = [
   assert.equal(ctx.globalAlpha, 1, 'the alpha is put back');
 }
 
+// --- a button pointing the way (remaster-nudge.js) --------------------------
+
+{
+  // `attention` lights a tab that is not up: its dimmed copy is skipped, a
+  // warm edge is stroked around the plate's art, and the shiver moves it
+  // sideways only inside the buzz at the start of each period.
+  const asked = [];
+  const spyEnv = { ...env, texture: name => { asked.push(name); return null; } };
+  const rows = [{ page: 'mainNav',
+    items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
+            { key: 'MENU_OPTIONS', id: 'options', attention: () => true }] }];
+  const strip = createNavStrip({ layout, env: spyEnv, rows, active: 'singleplay' });
+  const strokes = [];
+  const shifts = [];
+  const ctx = { ...stubCtx(), save() {}, restore() {}, translate: dx => shifts.push(dx),
+                strokeRect: (...r) => strokes.push(r), shadowBlur: 0, shadowColor: '', strokeStyle: '',
+                lineWidth: 1 };
+  strip.paint(ctx);
+  assert.equal(asked.filter(n => n === 'knapp_n').length, 2,
+               'SINGLEPLAY (up) draws its plate once, OPTIONS skips its dimmed copy');
+  assert.deepEqual(strokes[0], [240.5, 34.5, 106, 24], 'the edge is on the plate\'s art');
+
+  // Once OPTIONS is the tab up, it no longer points anywhere.
+  strokes.length = 0;
+  strip.setActive('options');
+  strip.paint(ctx);
+  assert.equal(strokes.length, 0, 'the tab up wears no cue');
+}
+
+{
+  const { remasterNudge } = await import('../viewer/play/remaster-nudge.js');
+  assert.equal(remasterNudge.offset(2000), 0, 'still between shivers');
+  assert.notEqual(remasterNudge.offset(4200 + 10), 0, 'buzzing at the start of a period');
+  assert.ok(Math.abs(remasterNudge.offset(4200 + 10)) <= 1.6, 'a shiver, not a jump');
+  // Off until the front end enables it; on with WebGPU and no choice made.
+  assert.equal(remasterNudge.wanted(), false, 'nothing before `enable`');
+  const store = new Map();
+  globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v),
+                              removeItem: k => store.delete(k) };
+  Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true });
+  globalThis.requestAnimationFrame ??= () => 0;
+  remasterNudge.enable();
+  assert.deepEqual([remasterNudge.wanted(), remasterNudge.badge()], [true, true]);
+  remasterNudge.markSeen();
+  assert.deepEqual([remasterNudge.wanted(), remasterNudge.badge()], [false, true],
+                   'seen: the glow stops, NEW stays until a choice');
+  store.set('bf42-mesh-remaster', '0');
+  assert.equal(remasterNudge.badge(), false, 'a choice made, either way, ends NEW');
+  store.clear();
+  Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+  assert.equal(remasterNudge.badge(), false, 'no WebGPU, no row, no badge');
+}
+
 console.log('nav-strip: ok');

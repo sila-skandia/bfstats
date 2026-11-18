@@ -23,6 +23,7 @@
 // file names it.
 
 import { elementVisible, inRect, paintElement } from './menu-screen.js';
+import { remasterNudge } from './remaster-nudge.js';
 
 /** The variable the tab strip dims itself by. */
 const CLICKED = 'Navigation/Level1/MouseClickedIndex';
@@ -91,7 +92,11 @@ function relabel(elements, label) {
  *                                 the slot's plate; `enabled` is asked every frame and a
  *                                 button that answers false is neither
  *                                 drawn nor clickable (CREATE GAME while
- *                                 the room server is not answering)
+ *                                 the room server is not answering);
+ *                                 `attention` is asked every frame too, and
+ *                                 a button that answers true (and is not
+ *                                 the tab up) glows and shivers now and
+ *                                 then (`remaster-nudge.js`)
  * @param {string} [options.active] the id of the tab that is up
  * @param {(id: string) => void} [options.onPick]
  */
@@ -109,6 +114,7 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
         index: slot.index,
         text: item.label ?? slot.text,
         enabled: item.enabled ?? (() => true),
+        attention: item.attention ?? (() => false),
         rect: [x, slot.elements[0].rect[1], slot.width, slot.elements[0].rect[3]],
         elements: relabel(place(slot, x), item.label),
       }];
@@ -126,12 +132,25 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
 
   function paint(ctx) {
     const table = vars();
+    const now = performance.now();
     for (const button of built) {
       if (!button.enabled()) continue;
+      const nudge = button.id !== current && button.attention();
+      const dx = nudge ? remasterNudge.offset(now) : 0;
+      if (dx) { ctx.save(); ctx.translate(dx, 0); }
       for (const el of button.elements) {
         if (!elementVisible(el, table)) continue;
+        // A button pointing the way is not dimmed with the rest.
+        if (nudge && el.color?.[3] < 1) continue;
         paintElement(ctx, el, layout, null, env);
       }
+      // Around the plate's art, which `knapp_n` draws 3 units right of
+      // and 1 below the pointer rect (its alpha's bounds: 3,1 to 110,26).
+      if (nudge) {
+        const [x, y, w, h] = button.rect;
+        remasterNudge.paintGlow(ctx, [x + 3, y + 1, w, h + 1], now);
+      }
+      if (dx) ctx.restore();
     }
     ctx.globalAlpha = 1;
   }

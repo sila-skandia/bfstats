@@ -105,6 +105,30 @@ own wind.
 
 ![The row](shots/options_video_remaster.jpg)
 
+### Finding the row (2026-11-18)
+
+The row is three clicks deep and off until ticked, so a player who never
+opens VIDEO never learns it is there (the owner: "a subtle but effective way
+to draw player's attention"). On the front end (`play/index.html` only, never
+a level's Escape menu), `play/remaster-nudge.js` marks the way:
+
+- OPTIONS on the main nav, on every other tab, and VIDEO on OPTIONS' own row,
+  wear a slow amber edge around the plate's art and are not dimmed with the
+  other tabs. Every 4.2 s they give one short shiver, 1.6 layout units
+  either way, decaying over half a second.
+- The REMASTER row carries an amber NEW badge beside the tick box, lettered
+  in the menu's own `standard6`.
+
+The edge and the shiver stop for good once VIDEO has been drawn with the row
+on it (`localStorage` `bf42-mesh-remaster-seen`). NEW stays until the player
+ticks or unticks the row: any stored choice ends it, and DEFAULT, which
+clears the choice, brings it back. Without WebGPU there is no row, so there
+is no cue either. The cues repaint at about 30 frames a second only while
+one is drawn and the menu movie is not already repainting; `test_nav_strip.mjs`
+pins the rules.
+
+![The cues](shots/remaster_nudge.png)
+
 For a comparison or a harness, the address decides for one page whatever is
 stored:
 

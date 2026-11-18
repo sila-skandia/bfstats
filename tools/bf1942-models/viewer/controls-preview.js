@@ -55,7 +55,12 @@ export function createControlsPreview({ root = '' } = {}) {
     // No WebGL (blocked, or out of contexts): the screen keeps its rows,
     // lit as keys are pressed, and the frame stays black.
     console.warn('controls preview: no WebGL,', error.message);
+    // Everything the screen asks of a preview is here, empty: no kits,
+    // no vehicles, so the kit bar and the vehicle list stay hidden.
     return { canvas, setMode() {}, resize() {}, frame() {},
+             setKit() {}, loadKitData: async () => {}, setVehicle() {},
+             vehicles: () => [], loadCatalogue: async () => {}, chosenVehicle: () => null,
+             factions: () => [], kitsVersion: 0, vehiclesVersion: 0, kit: null, scene: null,
              get state() { return { mode: null, loaded: false, webgl: false }; } };
   }
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));

@@ -21,6 +21,7 @@ import { bootShortLoader, endBootShortLoader } from './short-loader.js';
 import { VANILLA } from '../mods.js';
 import { glyphTable, snapToPixel } from '../bitmap-text.js';
 import { setTextMetrics } from './menu-screen.js';
+import { remasterNudge } from './remaster-nudge.js';
 
 // The menu's faces at the display width's metrics, its lists and text fields
 // snapped to device pixels (ledger FONT-3, FONT-5).
@@ -43,18 +44,21 @@ const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
             { key: 'MENU_MULTIPLAY', id: 'multiplay' },
-            { key: 'MENU_OPTIONS', id: 'options' },
+            { key: 'MENU_OPTIONS', id: 'options', attention: () => remasterNudge.wanted() },
             { key: 'MENU_CUSTOM_GAME', id: 'customgame' },
             { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' },
             { key: 'CREDITS', id: 'proving', label: 'THE RANGE' }] },
 ];
 // OPTIONS' own row: CONTROLS, CUSTOMIZE, VIDEO and SOUND, the controls
-// screen's four sections.
+// screen's four sections. OPTIONS, and VIDEO under it, point the way to the
+// REMASTER row until the player has seen it (remaster-nudge.js).
 const OPTIONS_TABS = [
   ...TABS,
   { page: 'optionsNav',
     items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_GENERAL_OPTIONS', id: 'general' },
-            { key: 'MENU_VIDEO', id: 'video' }, { key: 'MENU_SOUND', id: 'sound' }] },
+            { key: 'MENU_VIDEO', id: 'video',
+              attention: () => remasterNudge.wanted() && options.section !== 'video' },
+            { key: 'MENU_SOUND', id: 'sound' }] },
 ];
 // SINGLEPLAY's own row, `menu/SingleplayerNavigation`: CAMPAIGN and INSTANT
 // BATTLE, retail's two (the file's other slots are a demo build's). CAMPAIGN
@@ -93,6 +97,7 @@ const playerName = (() => {
 // This is the one Instant Battle screen: `map.html` mounts the same
 // controller with the same options as its Esc menu, so Escaping out of a
 // level lands on the screen the level was launched from.
+remasterNudge.enable();
 const screen = createSkirmishScreen({
   canvas,
   root: '../',
@@ -416,6 +421,7 @@ window.__menu = {
   chooseCustomGame: id => customGame.chooseMod(id),
   get options() { return options.state; },
   optionsScreen: options,
+  get remasterNudge() { return remasterNudge.state; },
   replay,
   multiplay,
   proving,

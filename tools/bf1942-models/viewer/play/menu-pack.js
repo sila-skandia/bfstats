@@ -18,6 +18,7 @@
 // back in the still's place, and every new frame repaints the screen.
 
 import { MOVIE_PLATE, menuMovie } from './menu-movie.js';
+import { remasterNudge } from './remaster-nudge.js';
 
 /**
  * @param {object} options
@@ -102,6 +103,9 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {}, env: 
   // A hidden screen's paint stops at `beginStage` (no size), so every pack
   // can listen; only the screen that is up draws.
   menuMovie.onFrame(() => { if (layout?.textures?.[MOVIE_PLATE]) onImage(); });
+  // The REMASTER cues' frames, where the movie is not already repainting
+  // (`remaster-nudge.js`; only the front end turns them on).
+  remasterNudge.onTick(() => { if (layout) onImage(); });
 
   /** Fetch every face and every plate the layout names. The screens here
    *  are a few dozen small textures and paint once, so nothing is lazy.
