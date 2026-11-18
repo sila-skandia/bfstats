@@ -874,7 +874,7 @@ export class Studio {
       ]),
       col('The timeline', [
         'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',
-        'Click goes there; drag scrubs. The monitor shows the clip\'s camera there.',
+        'Click goes there; drag scrubs. The playhead always scrubs: grab its white handle or its line, even over a camera or a bar.',
         'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
         'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
         'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',

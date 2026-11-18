@@ -386,7 +386,8 @@ const _aimV = new THREE.Vector3();
  * `screen(t)` (seconds of the video), `real(t)` (real seconds of the hold),
  * `victimAt(t)` and `subjectAt(t)` (points, arrays), `line` (the round's
  * heading), `centre` (the action, for your camera's moves), `eyes()` (the
- * view handed to the shooter's eyes, true when it can be), `keepAbove(v)`
+ * view handed to the shooter's eyes, true when it can be), `replayView()`
+ * (the page's camera back on the clip's man for the Replay camera), `keepAbove(v)`
  * and `baseFov()`.
  */
 export class CutRig {
@@ -492,7 +493,8 @@ export class CutRig {
     let i = 0;
     if (running) while (i + 1 < list.length && this.reached(list[i + 1], ev, t, true)) i++;
     else i = camIndexAt(list, t);
-    if (i !== this.index) {
+    const entered = i !== this.index;
+    if (entered) {
       if (!jumped && this.index >= 0) {
         this.since[i] = t;
         this.cut = { i, pos: cam.position.clone(), quat: cam.quaternion.clone() };
@@ -500,6 +502,9 @@ export class CutRig {
       this.index = i;
     }
     const c = list[i];
+    // The replay's own camera takes over: the page's camera back on the
+    // clip's man, out of the Free fly a camera of yours was placed in.
+    if (c.cam === 'free' && (entered || jumped)) s.replayView?.();
     this.active = c;
     this.usedGhost = false;
     // The hand-over's share done, in seconds of the video.

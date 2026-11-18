@@ -70,6 +70,9 @@ export const PAINT_MIN = 0.15;
 const LONG_PRESS_MS = 550;
 /** Pixels a press may wander and still be a click. */
 const CLICK_SLOP = 5;
+/** How far either side of the playhead a press grabs it, px: a 2 px line was
+ *  missed, and the block or bar under it was dragged instead. */
+const HEAD_GRAB = 8;
 
 /**
  * The Camera lane as drawn: `[{ i, cam, t0, t1, label, sub, glyph, into }]`
@@ -250,6 +253,10 @@ export class ClipBar {
       this.sync(creator.player.time, true);
     };
     this.bindSongDrop();
+    // The playhead: a handle on the ruler and a grab zone down its line that
+    // always scrub, over whatever the lanes hold there (2026-11-18: "if you
+    // try to drag the timeline scrubber it can often drag something on to
+    // one of the lanes").
     this.knob = el('div', 'rc-cb-knob');
     // The chooser a click on a camera or a right-click opens, and Export's.
     this.pop = el('div', 'rc-cb-pop');
@@ -1182,6 +1189,13 @@ export class ClipBar {
     });
   }
 
+  /** Whether a press at `clientX` is on the playhead: its line and the
+   *  handle on the ruler, HEAD_GRAB px either side. */
+  onHead(clientX) {
+    const r = this.knob.getBoundingClientRect();
+    return r.width + r.height > 0 && Math.abs(clientX - (r.left + r.width / 2)) <= HEAD_GRAB;
+  }
+
   /** A press on the strip scrubs, through the round timeline's own scrub, so
    *  the replay pauses its clock and lands the seek in the frame as it does
    *  for the round's bar; the clip's cameras film what is scrubbed to. A
@@ -1242,23 +1256,22 @@ export class ClipBar {
         } catch (error) { console.warn('creator: a camera', error); }
       }
     };
-    this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || this.dragging || e.target.closest('.rc-cb-h, .rc-cb-cut, .rc-cb-grip, .rc-cb-seg.slow, .rc-cb-seg.txt, .rc-cb-fxm.mark')) return;
+    const start = (e, onHead) => {
       e.preventDefault();
       creator.ui.activity?.();
       this.closePop();
       const t = this.timeAt(e.clientX);
       const span = creator.span;
-      const paint = this.laneAt(e.clientY) === 'speed' && span && t >= span.t0 && t <= span.t1;
-      const camEl = e.target.closest('.rc-cb-cam');
-      const markEl = e.target.closest('.rc-cb-mk[data-t]');
+      const target = e.target;
+      const paint = !onHead && this.laneAt(e.clientY) === 'speed' && span && t >= span.t0 && t <= span.t1;
+      const camEl = target.closest('.rc-cb-cam');
+      const markEl = target.closest('.rc-cb-mk[data-t]');
       press = {
         x: e.clientX, y: e.clientY, mode: paint ? 'paint' : 'scrub', t0: t, t1: null, moved: false,
         cam: camEl ? Number(camEl.dataset.i) : null,
         mark: markEl ? Number(markEl.dataset.t) : null,
       };
       if (e.pointerType === 'touch') {
-        const target = e.target;
         press.timer = setTimeout(() => {
           if (!press) return;
           end();
@@ -1278,6 +1291,23 @@ export class ClipBar {
       this.strip.addEventListener('pointermove', move);
       this.strip.addEventListener('pointerup', up);
       this.strip.addEventListener('pointercancel', up);
+    };
+    // The playhead first (2026-11-18: "if you try to drag the timeline
+    // scrubber it can often drag something on to one of the lanes"): a press
+    // on it scrubs, before a camera block, a bar, a mark or the song under it
+    // can take it. A click that does not move is still a click on the camera
+    // under it (its chooser), and a right-click still reaches the lane's
+    // menu. The clip's trim handles and rail, the camera icons, the
+    // hand-over lines and the pin keep their own presses.
+    this.strip.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || this.dragging || !this.onHead(e.clientX)) return;
+      if (e.target.closest('.rc-cb-h, .rc-cb-grip, .rc-cb-camicon, .rc-cb-cut, .rc-cb-pin, .rc-cb-pop')) return;
+      e.stopPropagation();
+      start(e, true);
+    }, true);
+    this.strip.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || this.dragging || e.target.closest('.rc-cb-h, .rc-cb-cut, .rc-cb-grip, .rc-cb-seg.slow, .rc-cb-seg.txt, .rc-cb-fxm.mark')) return;
+      start(e, false);
     });
   }
 
@@ -2027,6 +2057,13 @@ const STYLE = `
 .rc-cb-grip::after { content: ''; position: absolute; inset: -4px 0 -3px; }
 .rc-cb-knob { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none;
   box-shadow: 0 0 6px rgba(255, 255, 255, .6); z-index: 4; }
+/* Its handle on the ruler; a press HEAD_GRAB px either side of the line
+   scrubs before the lanes' blocks and bars take it (bindScrub). */
+.rc-cb-knob::before { content: ''; position: absolute; top: -2px; left: 50%; width: 14px; height: 13px; transform: translateX(-50%);
+  background: #fff; clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6)); }
+.rc-cb-strip.scrubbing .rc-cb-knob, .rc-cb-strip.on-head .rc-cb-knob { width: 4px; margin-left: -2px; box-shadow: 0 0 10px rgba(255, 255, 255, .9); }
+.rc-cb-strip.on-head { cursor: ew-resize; }
+.rc-cb-strip.outside .rc-cb-knob::before { background: var(--rp-muted); }
 .rc-cb-strip.outside .rc-cb-knob { background: var(--rp-muted); box-shadow: none; }
 .rc-cb-mk { position: absolute; top: 1px; padding: 0 4px; border: 0; font: 800 9px/14px var(--rp-font); letter-spacing: .08em;
   text-transform: uppercase; white-space: nowrap; cursor: pointer; z-index: 1; }

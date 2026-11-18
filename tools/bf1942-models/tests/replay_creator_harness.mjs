@@ -1007,7 +1007,20 @@ results.clip = {
   const dragRound = played.drag(1, 1);
   const near = played.nearPlane();
   const dragYours = paused.place(cam, 0, 8) && paused.drag(1, 1);
-  results.cutRig = { scrub, play, fromReset, letGo, abMove, abHeld, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
+  // A clip with no kill: your camera, then the Replay camera from 4 s. The
+  // replay's camera is the page's: the scene is asked for it as the part
+  // starts (out of the Free fly your camera was placed in), not every frame.
+  const asked = [];
+  const bare = { moments: () => ({ start: 0, end: 10, shot: null, hit: null, down: null }), screen: t => t, real: () => 0,
+    replayView: () => { asked.push(true); return true; } };
+  const replayRig = new T.CutRig(bare, [view([5, 5, 5]), { cam: 'free', at: { ev: 'time', t: 4 }, into: 'glide' }]);
+  const replayCam = [1, 3, 4.1, 5, 6].map(t => {
+    const placed = replayRig.place(cam, 1 / 60, t);
+    return [replayRig.active.cam, placed, asked.length];
+  });
+  // Looped back to the start and round again: asked again as it comes.
+  replayCam.push(...[1, 4.2].map(t => [replayRig.place(cam, 1 / 60, t) && replayRig.active.cam, asked.length]));
+  results.cutRig = { scrub, play, fromReset, letGo, abMove, abHeld, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours, replayCam };
 }
 
 // --- the studio's edits ---------------------------------------------------------------------------

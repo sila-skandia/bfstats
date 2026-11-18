@@ -2356,3 +2356,46 @@ records a file, as before. Checked on the same page with the frame at 16:9:
 the plate read Bullet chase, Post as a Short, Record a file, Stop; a click
 recorded 506 x 900 under "REC FOR A SHORT", the frame came back to 16:9 and
 the dialog opened with the title.
+
+### The Replay camera after yours, and a playhead you can grab (2026-11-18)
+
+A creator, Minnie, cutting 9:35-11:24 of a Battleaxe round (no kill in it,
+so the clip opens on Replay camera; their edit `d45667qh`): "it starts with
+the replay camera, then I place the camera where I want, then I add a
+replay camera, but it gets stuck in the free camera I put". The owner, the
+same day: "if you try to drag the timeline scrubber it can often drag
+something on to one of the lanes. the scrubber should be thicker to grab
+it, but also allow adding to the other swimlanes easily".
+
+- **The Replay camera takes the page back.** Placing a camera puts the
+  page's camera in Free fly (`freeAt`), and a Replay camera part is filmed by
+  the page's camera (`CutRig.poseOf` returns false), so it filmed on from the
+  placed view. `CutRig.place` now asks the scene's `replayView()` as a
+  Replay camera part starts (or the clock jumps into it), and
+  `ReplayCreator.replayViewOn` puts the page's camera back in the mode it had
+  before Free fly (`freeFrom`: the mode and the orbit's yaw, pitch and zoom),
+  on the clip's player, gliding there. Asked once per part, not each frame,
+  and never while a camera is being placed.
+- **The playhead scrubs first.** It was a 2 px line that took no presses, so
+  a drag from it took whatever was under it: a camera block, a slow
+  stretch, a text bar. A press within `HEAD_GRAB` (8 px) of it now scrubs,
+  caught before the lanes' own handlers (a capture listener in
+  `bindScrub`); it has a handle on the ruler, and widens while held or
+  scrubbing. A click on it that does not move still opens the camera under
+  it, and a right-click still reaches the lane's menu (adding a title, a
+  camera, an effect at the playhead). The trim handles and rail, the camera
+  icons, the hand-over lines and the pin keep their own presses: the
+  playhead often sits on camera 1's icon at the clip's start.
+
+Measured in headless Chromium on the live recording (`7bfqhefjjq`) with
+their edit opened: camera 1 set 40 m up, a Replay camera added from 4 s in.
+Before, from 579.7 s the Replay camera was active, the page in Free fly and
+0.00 m from the placed view to the end. After, it went back to orbit on
+player 3 and was 6.0-6.4 m from them from 580.7 s, as framed before. With a
+title bar and a 1/2 slow stretch under the playhead, drags from the
+playhead across the Text and Speed lanes moved the clock (595.7 s to 614.2
+s) and neither bar; a click on it over the Camera lane opened camera 2's
+chooser; a right-click over the Text lane opened its menu; a drag on the
+title bar away from the playhead still moved it. The kill-shot probe
+(Bocage) ran clean through to its recording. Tests: the Replay camera's
+part asks for the page once as it starts and again the next time round.

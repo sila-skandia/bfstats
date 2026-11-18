@@ -70,6 +70,12 @@ follow the same rules:
 
 - Click goes to that moment, and dragging scrubs. The monitor shows the
   clip's camera there, the bullet drawn where it would be.
+- The playhead (the white line, with a handle on the time ruler) always
+  scrubs: grab it anywhere along its line, even where it crosses a camera,
+  a slow motion or a text bar, and the drag moves the time, never the thing
+  under it. A click on it still opens the camera under it, and a
+  right-click still opens the lane's menu there. The clip's gold edges,
+  the camera icons and the hand-over lines keep their own drags.
 - Dragging a thing moves it. The clip's gold edges trim it, and the gold
   rail along its top slides the whole clip. Slow motion and text bars move
   by their middle and resize by their ends.
@@ -161,6 +167,12 @@ Click your camera for how it moves while it films: Still, Follow the action
 from the framing you set), Push in, Pull back, Circle or Crane up. Your
 camera keeps the field of view it was placed with, so zoom in before Use
 this view for a tight shot.
+
+A clip with no kill in it (one marked by hand) starts on **Replay camera**,
+the replay's own camera following the player the clip is about. Set it, or
+add Your camera anywhere along it; a Replay camera after one of yours goes
+back to following the player, framed as it was before you placed your
+camera.
 
 K anywhere in the clip makes the view on screen a camera of yours from the
 playhead on: fly with Free fly, press K.

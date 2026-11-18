@@ -937,6 +937,15 @@ class CutRigTests(unittest.TestCase):
     def test_a_glide_takes_its_seconds_from_where_it_took_over(self) -> None:
         self.assertEqual(self.r["glide"], [4, 4, 52, 100])
 
+    def test_the_replay_camera_takes_the_page_back_as_its_part_starts(self) -> None:
+        # Your camera to 4 s, then the page's own: the scene asked once as the
+        # part starts, not every frame, and again the next time round
+        # (2026-11-18: after your camera, a Replay camera "gets stuck in the
+        # free camera I put").
+        self.assertEqual(self.r["replayCam"], [
+            ["placed", True, 0], ["placed", True, 0], ["free", False, 1], ["free", False, 1], ["free", False, 1],
+            ["placed", 1], [False, 2]])
+
     def test_his_eyes_are_the_pages_and_hand_over_from_where_they_left_it(self) -> None:
         self.assertEqual(self.r["eyes"], [["eyes", None, None], ["chase", 7, 7], ["chase", 53.5, 4]])
         # With no eyes to look through: over his shoulder.

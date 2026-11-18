@@ -1,5 +1,5 @@
-// An example steps file for studio-probe.cjs: Bocage's 5:06 kill shot
-// (SoldierHEad's MG 42 on Smokeya) opened in the studio; camera 1 set by its
+// An example steps file for studio-probe.cjs: the recording's best kill on foot
+// (as the tour picks it) opened in the studio; camera 1 set by its
 // icon and given an end camera, its part looped with the camera measured
 // against both views every frame; a hand-over looped; Clear and Ctrl+Z; the
 // clip recorded.
@@ -74,9 +74,11 @@ module.exports = [
       const c = r.creator;
       // Start clean: kept slow motion and cameras from storage would change the clip.
       c.ramp.in = null; c.ramp.out = null; c.ramp.speed = 1; c.cams = null;
-      const kill = r.rec.kills.find(k => k.kind === 'kill' && k.killer === 21 && k.t > 300 && k.t < 312);
-      r.seek(kill.t - 6);
-      c.killShotAt(kill.t, kill.victim);
+      // The best kill on foot, as the tour picks one: the file changes, so
+      // never a killer's id.
+      const m = c.moments().filter(m => m.from !== 'vehicle' && (m.distance ?? 0) >= 20).sort((a, b) => b.score - a.score)[0] ?? c.moments()[0];
+      r.seek(m.t - 6);
+      c.killShotAt(m.t, m.victim);
       c.studio.show();
     });
     await sleep(4500);

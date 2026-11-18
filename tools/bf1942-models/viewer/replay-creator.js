@@ -298,6 +298,7 @@ export class ReplayCreator {
     this.keyShots = new Map();    // a view's pose -> a small picture of it (`keyShot`): your cameras' pictures
     this.shotWanted = null;       // the pose whose picture the next frame takes
     this.cams = null;             // the clip's cameras (replay-cuts.js); null is the clip's own default
+    this.freeFrom = null;         // the page camera before the creator took it into Free fly (`freeAt`): { mode, yaw, pitch, zoom }
     this.placing = null;          // { i, before, t }: a camera of your own being placed (`placeCam`)
     this.seen = new Map();        // a take's shot -> { hit, down } as the page flew it: lays the clip out (`timing`)
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
@@ -1102,7 +1103,11 @@ export class ReplayCreator {
   /** The free camera at `pos`, turned as `quat`, or looking at `look`. */
   freeAt(pos, quat = null, look = null) {
     const camera = this.player.camera;
-    if (camera.mode !== 'free') camera.setMode('free');
+    if (camera.mode !== 'free') {
+      // Kept for the Replay camera to go back to (`replayViewOn`).
+      this.freeFrom = { mode: camera.mode, yaw: camera.yaw, pitch: camera.pitch, zoom: camera.zoom };
+      camera.setMode('free');
+    }
     camera.free.pos.copy(pos);
     const e = new THREE.Euler(0, 0, 0, 'YXZ');
     if (look) {
@@ -1469,6 +1474,7 @@ export class ReplayCreator {
       subjectAt: t => this.subjectPoint(take, t),
       eyes: () => this.eyesOn(take),
       gameView: mode => this.gameViewOn(take, mode),
+      replayView: () => this.replayViewOn(),
       keepAbove: v => this.rounds.keepAbove(v),
       baseFov: () => this.player.camera.pageLens?.fov ?? 60,
     };
@@ -1522,6 +1528,30 @@ export class ReplayCreator {
       if (!camera.setMode(mode)) return false;
       this.ui.syncMode?.();
     }
+    return true;
+  }
+
+  /** The replay's own camera filming a Replay camera part: back on the man
+   *  the clip follows, in the mode the page had before the creator took it
+   *  into Free fly to place a camera (it would hold the placed view: "it
+   *  gets stuck in the free camera I put"). False while a camera is placed. */
+  replayViewOn() {
+    if (this.placing) return false;
+    const camera = this.player.camera;
+    if (camera.mode === 'free') {
+      const was = this.freeFrom;
+      const back = [was?.mode, this.editing?.mode].find(m => m && m !== 'free') ?? 'orbit';
+      if (!camera.setMode(back)) camera.setMode('orbit');
+      // The orbit as it was framed, not picked up from the placed view.
+      if (camera.mode === 'orbit' && was?.mode === 'orbit' && [was.yaw, was.pitch, was.zoom].every(Number.isFinite)) {
+        camera.yaw = was.yaw;
+        camera.pitch = was.pitch;
+        camera.zoom = was.zoom;
+        camera.eased = { yaw: was.yaw, pitch: was.pitch, zoom: was.zoom };
+      }
+      this.ui.syncMode?.();
+    }
+    this.followQuietly(this.rangePid ?? this.player.followPid);
     return true;
   }
 
