@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tvFilter } from './video-range.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
@@ -1268,7 +1269,7 @@ function linkCopy(dir) {
   const audio = 128;
   for (const target of [44e6, 38e6, 30e6]) {
     const video = Math.max(800, Math.floor((target * 8) / seconds / 1000 - audio));
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', from, '-vf', 'scale=-2:720:flags=lanczos',
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', from, '-vf', tvFilter('-2:720:flags=lanczos'),
       '-c:v', 'libx264', '-preset', 'slow', '-b:v', `${video}k`, '-maxrate', `${video}k`, '-bufsize', `${video * 2}k`,
       '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-c:a', 'aac', '-b:a', `${audio}k`, '-movflags', '+faststart', out]);
     if (fs.statSync(out).size <= 46e6) break;
@@ -1725,7 +1726,7 @@ try {
     const out = path.join(dir, `roll-${h}p.mp4`);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%05d.jpg'),
       ...(wavPath ? ['-i', wavPath, '-map', '0:v', '-map', '1:a'] : []),
-      '-vf', `scale=-2:${h}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-maxrate', peak, '-bufsize', `${parseInt(peak, 10) * 2}M`,
+      '-vf', tvFilter(`-2:${h}:flags=lanczos`), '-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-maxrate', peak, '-bufsize', `${parseInt(peak, 10) * 2}M`,
       '-pix_fmt', 'yuv420p', '-profile:v', 'high',
       ...(wavPath ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-af', 'afade=t=in:d=0.6,loudnorm=I=-16:TP=-1.5:LRA=11,apad', '-shortest'] : []),
       '-movflags', '+faststart', out]);

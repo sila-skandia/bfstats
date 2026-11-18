@@ -105,6 +105,15 @@ if [[ ${SHORTS_PRUNE:-1} == 1 ]]; then
   SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") node scripts/shorts-prune.mjs || echo "the prune failed (exit $?)"
 fi
 
+# Colour range (2026-11-18): every video goes out at TV range, which Reddit's
+# upload needs. The runners encode it so; a player's studio share is whatever
+# their browser wrote, so re-encode anything still full range.
+# SHORTS_COLOUR=0 skips it.
+if [[ ${SHORTS_COLOUR:-1} == 1 ]]; then
+  echo "--- colour range ---"
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") node scripts/shorts-colour.mjs || echo "the colour pass failed (exit $?)"
+fi
+
 # Keep two weeks of filmed videos on disk; the API has the uploaded copies.
 # The meta files stay: a meta.rejected.json keeps a turned-down kill unfilmed.
 find "$OUT" -mindepth 3 -maxdepth 3 \( -name short.mp4 -o -name poster.jpg -o -name sheet.jpg \) -mtime +14 -delete 2>/dev/null || true

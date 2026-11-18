@@ -1192,6 +1192,32 @@ with the words from y 683 (phone), the quality swap by keyboard kept the
 time and kept playing, ArrowDown and ArrowUp stepped roll -> Short -> roll
 -> Short, Rolls showed only the roll, no page errors.
 
+### Colour range (2026-11-18)
+
+The owner shared a Short on Reddit: the link did not embed, and the downloaded
+video, uploaded to Reddit, failed with "unspecified error". Every live video
+(294 Shorts, rolls and recaps, 312 files with their HD and link copies) was
+full-range H.264: ffprobe `yuvj420p`, range `pc`, BT.601. The runners film
+JPEG frames, which are full range, and ffmpeg 9 carries the range through
+`-pix_fmt yuv420p`. Reddit's transcoder, like most upload pipelines, wants TV
+range (16-235).
+
+- **Encoding.** `scripts/video-range.mjs` (`tvFilter`) converts to TV range in
+  BT.709 inside the `scale` filter and tags the stream so; every x264 call in
+  `shorts-runner.mjs` and `action-roll.mjs` uses it.
+- **Swapping a live video.** An upload of a live Short's kill keeps the old
+  video, so `PUT /stats/shorts/<slug>/video?copy=main|hd|link` puts a new copy
+  in place (the body up to 90 MiB, or `&upload=<id>` naming parts sent to
+  `/stats/shorts/parts`, for a roll's 4K). Key, admin or the creator.
+- **The live files.** `scripts/shorts-colour.mjs` finds every full-range video,
+  re-encodes it (CRF 18 under its own bitrate, sound copied), swaps it in and
+  probes the live file. Idempotent. The nightly runs it after its uploads
+  (`SHORTS_COLOUR=0` skips it): a player's studio share is what their browser's
+  MediaRecorder wrote, and Chrome's is full range too.
+- **The link embed.** Reddit unfurls a link to another site as its `og:image`
+  only; it plays video inline only from its own upload or a few providers
+  (YouTube and the like). A Short shared to Reddit is uploaded as a video file.
+
 ## What already exists
 
 | Need | Already in the viewer |

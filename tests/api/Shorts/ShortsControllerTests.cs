@@ -993,6 +993,44 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplaceVideo_PutsANewEncodeInPlace_ItsLinkChanges_PartsForA4kTake()
+    {
+        var dto = await UploadAsync(Meta(kind: ShortKinds.Roll), Mp4Of(50));
+        var before = await VolumeUsage.StoredBytesAsync(db, default);
+
+        // Nobody signed in, a copy it does not know, not an MP4, no such Short: refused, nothing kept.
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(), Mp4Of(70)).ReplaceVideo(dto.Slug, null, null, default)).Result).StatusCode);
+        Assert.IsType<BadRequestObjectResult>((await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo(dto.Slug, "4k", null, default)).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey), Jpeg).ReplaceVideo(dto.Slug, "main", null, default)).Result).StatusCode);
+        Assert.IsType<NotFoundResult>((await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo("zzzzzzzzzz", null, null, default)).Result);
+        Assert.Equal(before, await VolumeUsage.StoredBytesAsync(db, default));
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+
+        // The Short's own video, from the body: a new file, a new ?v=, the volume counts the growth.
+        var main = Value(await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo(dto.Slug, null, null, default));
+        Assert.Equal($"/stats/shorts/{dto.Slug}.mp4?v=70", main.VideoUrl);
+        Assert.Equal(70, new FileInfo(storage.VideoPath(dto.Slug)).Length);
+        Assert.Equal(before + 70 - Mp4.Length, await VolumeUsage.StoredBytesAsync(db, default));
+
+        // The HD copy, from parts: joined in order, the parts gone after.
+        var hd = Mp4Of(90);
+        for (var i = 16; i < hd.Length; i++) hd[i] = (byte)i;
+        const string upload = "replacehdparts0001";
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 1, hd[40..]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 0, hd[..40]));
+        var withHd = Value(await PosterBody(Controller(UploadKey), []).ReplaceVideo(dto.Slug, "hd", upload, default));
+        Assert.Equal($"/stats/shorts/{dto.Slug}.hd.mp4?v=90", withHd.HdVideoUrl);
+        Assert.Equal(hd, await File.ReadAllBytesAsync(storage.HdVideoPath(dto.Slug)));
+        Assert.Empty(storage.Parts(upload));
+
+        // The link copy too, the same as SetLinkVideo.
+        var link = Value(await PosterBody(Controller(UploadKey), Mp4Of(30)).ReplaceVideo(dto.Slug, "link", null, default));
+        Assert.Equal($"/stats/shorts/{dto.Slug}.link.mp4?v=30", link.LinkVideoUrl);
+    }
+
+    [Fact]
     public async Task Retention_TakesDownTheUnwatchedWeekOld_KeepsTheWatchedTheYoungAndCreatorsShares()
     {
         db.Users.Add(new User { Id = 7, Email = "creator@example.com" });

@@ -569,6 +569,12 @@ videos.
   with the old slug and keeps the old video (2026-11-04). `--refilm-live`
   deletes before it uploads; by hand, `DELETE /stats/shorts/<slug>` first,
   then confirm the live `.mp4` size (with `?cb=`) matches the new file.
+- **Colour range** (2026-11-18: a Short downloaded and uploaded to Reddit
+  failed, "unspecified error"). JPEG frames are full range and ffmpeg 9 keeps
+  that through `-pix_fmt yuv420p`; every encode goes through `tvFilter`
+  (`scripts/video-range.mjs`). `ffprobe` must say `yuv420p` and `tv`, never
+  `yuvj420p`/`pc`. A live video is fixed with `scripts/shorts-colour.mjs`
+  (`PUT <slug>/video`), which the nightly runs after its uploads.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the

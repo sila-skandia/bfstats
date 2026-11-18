@@ -237,6 +237,37 @@ public class ShortsController(
         }
     }
 
+    /// <summary>A new copy of a Short's video in place of the old one (<c>copy</c> is <c>main</c>,
+    /// the default, <c>hd</c> or <c>link</c>): the MP4 in the body, at most 90 MiB, or with
+    /// <c>upload</c> the parts sent to <see cref="Part"/>, for a roll's 4K. An upload of a live
+    /// Short's kill keeps the old video, so re-encoding one (2026-11-18, every Short at full colour
+    /// range, which Reddit refused) comes this way. For the key, an admin, or the creator.</summary>
+    [HttpPut("{slug:length(10)}/video")]
+    [RequestSizeLimit(PartLimitBytes)]
+    [DisableFormValueModelBinding]
+    public async Task<ActionResult<ShortDto>> ReplaceVideo(string slug, [FromQuery] string? copy, [FromQuery] string? upload,
+        CancellationToken ct)
+    {
+        if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
+        ShortVideoCopy? which = (copy ?? "main") switch
+        {
+            "main" => ShortVideoCopy.Main,
+            "hd" => ShortVideoCopy.Hd,
+            "link" => ShortVideoCopy.Link,
+            _ => null,
+        };
+        if (which is null) return BadRequest(new { message = "copy must be main, hd or link." });
+        if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
+        try
+        {
+            return await shorts.ReplaceVideoAsync(clean, which.Value, Request.Body, upload, ct) is { } dto ? Ok(dto) : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+    }
+
     /// <summary>Rewrites a Short's video as a plain MP4 when it is a fragmented one (a studio share
     /// from before shares were flattened on the way in), so a link preview can read it.</summary>
     [HttpPost("{slug:length(10)}/flatten")]

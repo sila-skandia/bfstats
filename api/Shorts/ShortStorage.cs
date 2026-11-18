@@ -96,11 +96,12 @@ public sealed partial class ShortStorage(IRecordingStorage recordings)
         recordings.Promote(incomingPath, finalPath);
     }
 
-    /// <summary>Puts a new link copy in place of the old one, if any.</summary>
-    public void ReplaceLinkVideo(string incomingPath, string slug)
+    /// <summary>Puts a new video (the Short's own, its HD copy or its link copy) in place of the
+    /// old one, if any.</summary>
+    public void Replace(string incomingPath, string finalPath)
     {
         System.IO.Directory.CreateDirectory(Directory);
-        File.Move(incomingPath, LinkVideoPath(slug), overwrite: true);
+        File.Move(incomingPath, finalPath, overwrite: true);
     }
 
     /// <summary>Puts a new poster in place of the old one.</summary>

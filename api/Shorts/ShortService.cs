@@ -245,34 +245,66 @@ public sealed class ShortService(
         }
     }
 
-    public async Task<ShortDto?> SetLinkVideoAsync(string slug, Stream body, CancellationToken ct)
+    public Task<ShortDto?> SetLinkVideoAsync(string slug, Stream body, CancellationToken ct) =>
+        ReplaceVideoAsync(slug, ShortVideoCopy.Link, body, null, ct);
+
+    public async Task<ShortDto?> ReplaceVideoAsync(string slug, ShortVideoCopy copy, Stream body, string? upload, CancellationToken ct)
     {
         var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
+        var limits = options.Value;
+        var (limit, what, path) = copy switch
+        {
+            ShortVideoCopy.Main => (limits.VideoLimit(row.Kind), "A Short's video", storage.VideoPath(row.Slug)),
+            ShortVideoCopy.Hd => (limits.HdVideoLimit(row.Kind), "A Short's HD video", storage.HdVideoPath(row.Slug)),
+            _ => (limits.MaxLinkVideoBytes, "A Short's link video", storage.LinkVideoPath(row.Slug)),
+        };
+        var stored = copy switch
+        {
+            ShortVideoCopy.Main => row.VideoBytes,
+            ShortVideoCopy.Hd => row.HdVideoBytes,
+            _ => row.LinkVideoBytes,
+        };
         string? videoFile = storage.IncomingPath();
         try
         {
-            var limit = options.Value.MaxLinkVideoBytes;
-            await ReceiveAsync(body, videoFile, limit, "A Short's link video", ct);
-            if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException("The link video is not an MP4 file.");
+            if (upload is not null)
+            {
+                if (!ShortStorage.IsUploadId(upload))
+                {
+                    throw new RecordingRejectedException("A chunked upload's id must be 16 to 32 of a-z and 0-9.");
+                }
+                await JoinAsync(upload, videoFile, limit, what, ct);
+            }
+            else
+            {
+                await ReceiveAsync(body, videoFile, limit, what, ct);
+            }
+            if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException($"{what} is not an MP4 file.");
             if (flattener is not null) await flattener.FlattenAsync(videoFile, ct);
             var bytes = new FileInfo(videoFile).Length;
-            if (bytes > limit) throw TooBig(limit, "A Short's link video");
-            var growth = bytes - row.LinkVideoBytes;
+            if (bytes > limit) throw TooBig(limit, what);
+            var growth = bytes - stored;
             if (growth > 0 && storage.RoomFor(await StoredBytesAsync(ct), growth) is { } full)
             {
                 throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
             }
-            storage.ReplaceLinkVideo(videoFile, row.Slug);
+            storage.Replace(videoFile, path);
             videoFile = null;
-            row.LinkVideoBytes = bytes;
+            switch (copy)
+            {
+                case ShortVideoCopy.Main: row.VideoBytes = bytes; break;
+                case ShortVideoCopy.Hd: row.HdVideoBytes = bytes; break;
+                default: row.LinkVideoBytes = bytes; break;
+            }
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Short {Slug} has a link video, {Bytes} bytes", row.Slug, bytes);
+            logger.LogInformation("Short {Slug} has a new {Copy} video, {Bytes} bytes", row.Slug, copy, bytes);
             return ShortDto.From(row);
         }
         finally
         {
             Discard(videoFile);
+            DiscardParts(upload is not null && ShortStorage.IsUploadId(upload) ? upload : null);
         }
     }
 

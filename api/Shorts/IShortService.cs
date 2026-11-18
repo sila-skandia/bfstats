@@ -42,12 +42,19 @@ public interface IShortService
     /// its new poster link, or null when there is none.</summary>
     Task<ShortDto?> SetPosterAsync(string slug, Stream body, CancellationToken ct);
 
-    /// <summary>Flattens a Short's video when it is a fragmented MP4 (<see cref="IVideoFlattener"/>):
-    /// the Short, its video link new when it was rewritten, or null when there is none.</summary>
     /// <summary>Puts a small link copy beside a Short (an MP4 in the body), the video its share
     /// link names; null when there is no such Short.</summary>
     Task<ShortDto?> SetLinkVideoAsync(string slug, Stream body, CancellationToken ct);
 
+    /// <summary>Puts a new <paramref name="copy"/> of a Short's video in place of the old one: the
+    /// MP4 in the body, or a chunked upload's parts when <paramref name="upload"/> names one. Held
+    /// to the copy's limit for the Short's kind. Re-encoding a live Short (the 2026-11-18 colour
+    /// range fix) goes this way, since an upload of its kill keeps the old video. Null when there
+    /// is no such Short.</summary>
+    Task<ShortDto?> ReplaceVideoAsync(string slug, ShortVideoCopy copy, Stream body, string? upload, CancellationToken ct);
+
+    /// <summary>Flattens a Short's video when it is a fragmented MP4 (<see cref="IVideoFlattener"/>):
+    /// the Short, its video link new when it was rewritten, or null when there is none.</summary>
     Task<ShortDto?> FlattenVideoAsync(string slug, CancellationToken ct);
 
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>

@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tvFilter } from './video-range.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VIEWER = path.join(REPO, 'tools/bf1942-models/viewer');
@@ -3643,7 +3644,7 @@ async function filmReel(page, reel, dir) {
   jCut(audio);
   const mp4 = path.join(dir, 'short.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%04d.jpg'),
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
+    '-vf', tvFilter('trunc(iw/2)*2:trunc(ih/2)*2'), '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   // The poster: the first death's hold, before its fade.
   const p0 = reel.parts[0];
@@ -3691,7 +3692,7 @@ async function film(page, cand, dir, view = null) {
   }
   const mp4 = path.join(dir, 'short.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%04d.jpg'),
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
+    '-vf', tvFilter('trunc(iw/2)*2:trunc(ih/2)*2'), '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   const at = posterFrame(frames, n, hitFrame);
   const poster = path.join(dir, 'poster.jpg');
@@ -4088,7 +4089,7 @@ function fitSize(mp4) {
   const kbps = Math.floor(((FIT_BYTES * 8) / Math.max(1, secs)) * 0.9 / 1000) - 160;
   const big = `${mp4}.big.mp4`;
   fs.renameSync(mp4, big);
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', big, '-c:v', 'libx264', '-preset', 'medium', '-b:v', `${kbps}k`,
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', big, '-vf', tvFilter(), '-c:v', 'libx264', '-preset', 'medium', '-b:v', `${kbps}k`,
     '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-c:a', 'copy', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   fs.rmSync(big);
   log(`  re-encoded ${path.basename(path.dirname(mp4))} to ${(fs.statSync(mp4).size / 1e6).toFixed(1)} MB`);
@@ -4221,7 +4222,7 @@ async function filmArsenal() {
   fs.writeFileSync(listFile, order.map(m => `file '${pieces.get(m).mp4}'`).join('\n'));
   const mp4 = path.join(dir, 'short.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile,
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
+    '-vf', tvFilter(), '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', mp4]);
   const poster = pieces.get(order[0]).poster;
   const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
@@ -4310,7 +4311,7 @@ async function filmAsmrMix(what) {
   fs.writeFileSync(list, order.map(m => `file '${pieces.get(m).mp4}'`).join('\n'));
   const mp4 = path.join(dir, 'short.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list,
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
+    '-vf', tvFilter(), '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', mp4]);
   const poster = pieces.get(order[0]).poster;
   const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
