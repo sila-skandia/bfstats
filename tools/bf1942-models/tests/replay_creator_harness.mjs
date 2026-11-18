@@ -1053,6 +1053,22 @@ results.clip = {
     log: r6(FX.hudRect(view, view, px, { x: 1094, y: 0, w: 1012, h: 1800 }, { w: 1012, h: 1800 })),
     none: FX.hudRect({ left: 0, top: 0, width: 0, height: 0 }, view, px, null, { w: 3200, h: 1800 }),
     kept: [FX.editsOf({ hud: true }).hud, FX.editsOf({}).hud, FX.defaultEdits().hud],
+    // Name cards: read back checked; the one most in shows, a hidden one never.
+    names: (() => {
+      const e = FX.editsOf({ names: { plate: 'team', ink: 'bogus', spot: 'top', dur: 99, hidden: ['3@10.0', 7] } });
+      const cards = [{ key: '3@10.0', t0: 10, text: 'Minnie', team: 1 }, { key: '18@20.0', t0: 20, text: 'Lt Chet Morton', team: 2 }];
+      const on = FX.editsOf({});
+      const at = (edits, t) => FX.overlayAt(edits, { t0: 0, t1: 60 }, t, { names: cards }).name;
+      return {
+        read: [e.names.plate, e.names.ink, e.names.spot, e.names.dur, e.names.hidden],
+        defaults: FX.defaultNames(),
+        shown: [10.5, 11.5, 13, 20.5].map(t => at(on, t)?.text ?? null),
+        hidden: at(e, 10.5)?.text ?? null,
+        off: at(FX.editsOf({ names: { on: false } }), 20.5),
+      };
+    })(),
+    quality: [FX.exportBitrate(1920, 1080), FX.exportBitrate(1280, 720), FX.exportBitrate(2560, 1440), FX.exportBitrate(3840, 2160), FX.exportBitrate(1080, 1920)],
+    qualities: Object.entries(FX.EXPORT_QUALITY).map(([id, q]) => [id, q.short]),
     // The log's screen: the stage at 16:9 and 4:3, a 4:3 box over 9:16 and 1:1.
     box: [[1600, 900], [800, 600], [607, 1080], [900, 900]].map(([w, h]) => FX.commsBox(w, h)),
   };
@@ -1129,6 +1145,15 @@ results.clip = {
       elsewhere: shortBlock({ clip: true, replayUrl: `https://other.example${slug}`, mimes: mp4, page: live }),
       webm: shortBlock({ clip: true, replayUrl: slug, mimes: ['video/webm;codecs=vp9,opus', 'video/webm'], page: live }),
       silentWebm: shortBlock({ clip: true, replayUrl: slug, mimes: [mp4[0], null], page: live }),
+      // Too long for a Short: said before anything is recorded.
+      long: shortBlock({ clip: true, replayUrl: slug, mimes: mp4, seconds: 81.4, page: live }),
+      fits: shortBlock({ clip: true, replayUrl: slug, mimes: mp4, seconds: 59.8, page: live }),
+      // A recording over the upload cap is not offered; it is saved instead.
+      big: await (async () => {
+        const SH = await imp('replay-share.js');
+        const ok = { mime: 'video/mp4;codecs=avc1', frame: '916', replayUrl: slug };
+        return [SH.shareable({ ...ok, size: 79 * 1048576 }).ok, SH.shareable({ ...ok, size: 81 * 1048576 }).why];
+      })(),
     };
     results.shortTitle = [
       shortTitle({ killer: 'Lagtastic', weapon: 'Bazooka', victim: 'FAVELA' }),

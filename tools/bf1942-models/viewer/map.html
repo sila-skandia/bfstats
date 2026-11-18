@@ -1302,7 +1302,7 @@ const videoApply = createVideoApply({
     try { return [scene, soldierKit.vmScene]; } catch { return [scene]; }
   },
 });
-canvasPixelRatio = videoApply.pixelRatio;
+canvasPixelRatio = () => filmRatio ?? videoApply.pixelRatio();
 // A replay's quality on the fly (replay-quality.js): Auto steps the drawing
 // down a rung at a time while the frame rate stays under its target, and the
 // replay's "..." menu shows the rung and pins another. `?quality=` picks one
@@ -1321,12 +1321,20 @@ const replayQuality = params.has('replay') ? createQualityGovernor({
 // creator calls it as a take starts and ends (replay-creator.js `record`,
 // `stopRecording`); the frame loop below also ends it if no take is running.
 let filming = false;
-function setFilming(on) {
+// A recording at a size of its own (the studio's export quality): the
+// canvas's pixel ratio while it records, so its short side is that many
+// pixels whatever the window; null draws at the screen's.
+let filmRatio = null;
+function setFilming(on, { short = null } = {}) {
   on = Boolean(on);
-  if (on === filming) return;
+  const ratio = on && short > 0 && stage.clientWidth && stage.clientHeight
+    ? Math.min(4, Math.max(0.5, short / Math.min(stage.clientWidth, stage.clientHeight))) : null;
+  if (on === filming && ratio === filmRatio) return;
   filming = on;
+  filmRatio = ratio;
   replayQuality?.pause(on);
   videoApply.setFull(on);
+  if (renderer.getPixelRatio() !== canvasPixelRatio()) resize();
 }
 // SHADOWS (ledger VID-7, DSH-1..DSH-9): the `hasDynamicShadow` objects within
 // 50 m, each drawn black from up the sun and projected on the terrain
@@ -4213,7 +4221,7 @@ replayController = createReplayController({
   // a replayed hull of the same template takes (replay-assets.js levelSkins).
   levelRoot: () => level.currentRoot ?? null,
   quality: replayQuality,
-  filming: on => setFilming(on),
+  filming: (on, opts) => setFilming(on, opts),
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
   // The level's combat area and the terrain material under a point (CA-5),

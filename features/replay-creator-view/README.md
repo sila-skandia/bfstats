@@ -2604,3 +2604,56 @@ chased kill's shooter, round and victim while that chase's stretch plays
 Chromium: a camera of Minnie's following the action kept her at the same
 60.4 degrees off its line of sight on every frame while she moved 14.4 m.
 
+### Minnie's report: crosshair, own radio, Shorts, quality, name cards (2026-11-19)
+
+Minnie, after cutting their edit and putting it on YouTube at 720p: a Short
+failed at 3% with `net::ERR_FILE_NOT_FOUND`; recording a Short they had to
+stop at the last second; the crosshair and their own (non-team) radio calls
+were missing. The owner: cap the files and leave long clips to YouTube, a
+quality export option, no upload of ordinary clips; and a name card where
+the camera switches player, styled from the strip.
+
+- **Crosshair.** The studio's bare look hid `#crosshair` and the recording
+  never drew it (it is HTML). With the game's HUD on it stays over the
+  monitor in their first person (`st-gamehud.replay-sight`), and
+  `drawGameHud` draws it into each frame piece by piece (each bar in its
+  computed colour, the weapon's picture through `hudImage`).
+- **Their own radio** is not in the recording: of 30 minutes, not one
+  `radio` event from Minnie (player 3), every other player's there. The
+  recorder writes the events the server sends, and the server never sends a
+  player's radio back to them. Fixed in the recorder (bf42plus, branch
+  `record-own-radio`): the radio menu's two send paths are hooked just
+  before they hand the message to the menu's own receive, and the record is
+  written with `own`. The replay plays it as it plays everyone else's.
+- **The upload.** Every recording ran at 16 Mbit/s whatever its size, so a
+  minute was about 120 MB, over the API's 90 MiB for a Short's video; the
+  browser gave up reading the blob. Post as a Short now records 1080 x 1920
+  at 8 Mbit/s (`SHORT_BITRATE`), refuses a clip over 60 s of video before
+  recording (`SHORT_MAX_SECONDS`, `shortBlock`), and a file over 80 MiB is
+  saved, not uploaded (`SHORT_MAX_BYTES`, `shareable`). Record the clip no
+  longer offers its file as a Short: only Post as a Short uploads.
+- **Stopping.** Measured, a 25 s stretch with a chase and the game's HUD
+  stopped recording on its own at 10:01.06 (out at 10:01.00), paused, and
+  did not loop; not reproduced as reported.
+- **Quality** (`EXPORT_QUALITY`, `exportBitrate`, the `quality` pref):
+  Screen, 1080p, 1440p, 4K, the frame's short side in pixels. While it
+  records the page draws the canvas at that pixel ratio (map.html
+  `setFilming(on, { short })`, `filmRatio`), and the bit rate follows the
+  pixels (16 Mbit/s at 1080p; 6 to 60).
+- **Name cards** (replay-studio-fx.js `names`, `defaultNames`, `namesOf`,
+  `drawNameCard`; creator `nameCards`, `setNameShown`; the strip's
+  `nameMenu`): one where a Follow camera takes over on a player other than
+  the one before, the player's name and their side's flag (`teamFlag`), a
+  bar on the Text lane (72 px at least, to read and click), hidden one by
+  one or styled from its menu or the Text tab.
+
+Measured in headless Chromium on the owner's edit (`cxgs3hht`): its two
+cards, Minnie at 10:01.5 and Lt Chet Morton at 10:55.0, both with flags, on
+the Text lane; at 10:55.4 the card fully in; the bar's menu set the plate to
+his side's colour; through Minnie's eyes the crosshair stayed over the
+monitor; a recording at 1080p drew the canvas at 1920 x 1080 (the window
+995 x 560), 16 Mbit/s, and its frame carries the card with the UK flag, the
+crosshair, the chat and the minimap. Tests: the cards' style read back, the
+one most in shown and a hidden one never, the bit rates, the 60 s cap and
+the 80 MB cap.
+

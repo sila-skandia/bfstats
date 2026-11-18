@@ -55,10 +55,11 @@ import { ClipMusic } from './replay-music.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
 import { whereIs } from './replay-battles.js';
+import { decodePlayerName } from './vehicle-players.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { ClipBar, crossedOut } from './replay-clipbar.js';
 import { Studio } from './replay-studio.js';
-import { FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, freezesOf, gradeOf, hudRect, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
+import { EXPORT_QUALITY, FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, exportBitrate, freezesOf, gradeOf, hudRect, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
 
 /** The keys that pick a camera by hand (replay-ui.js `key`): orbit, first
  *  person, free and Auto, C, the game's F9-F12 and the scout view's J. */
@@ -193,8 +194,20 @@ function el(tag, className, text) {
 /** Why a clip cannot be posted as a Short, in words to show, or null:
  *  `clip` whether one is marked, `replayUrl` the page's `?replay=`, `mimes`
  *  what the browser would record in, with sound and without. */
-export function shortBlock({ clip, replayUrl, mimes, page = globalThis.location }) {
+/** A Short's bits a second: small enough that a minute stays under its
+ *  upload cap (`SHORT_MAX_BYTES` in replay-share.js). */
+export const SHORT_BITRATE = 8_000_000;
+
+/** The longest a Short is, seconds of the video (2026-11-19: a long clip's
+ *  upload failed part way; the owner: "cap how big these files can be, and
+ *  leave it to YouTube"). Anything longer is recorded to a file. */
+export const SHORT_MAX_SECONDS = 60;
+
+export function shortBlock({ clip, replayUrl, mimes, seconds = null, page = globalThis.location }) {
   if (!clip) return 'Open a kill as a kill shot first: a Short is a clip.';
+  if (Number.isFinite(seconds) && seconds > SHORT_MAX_SECONDS + 0.5) {
+    return `This clip is ${Math.round(seconds)} s of video and a Short is at most ${SHORT_MAX_SECONDS} s: trim it on the strip, or Record it to a file and put it on YouTube.`;
+  }
   const shared = sharedRecordingOf(replayUrl, page?.origin ?? '');
   if (!shared) return 'Only a round shared on bfstats.io can be posted as a Short. Share the round first.';
   if (apiMode(shared.base, page) === 'remote') return 'This round is read from another site: open it on bfstats.io to post a Short.';
@@ -276,6 +289,9 @@ function loadPrefs() {
     // The game's sound in a recorded file; off with the song off too, the
     // file is silent, for laying the sound in another editor.
     recordGame: kept.recordGame !== false,
+    // How big a recorded file is drawn (`EXPORT_QUALITY`): the screen's own
+    // size, or a size of its own whatever the window.
+    quality: Object.hasOwn(EXPORT_QUALITY, kept.quality) ? kept.quality : 'screen',
     shotStyle: styleOf(kept.shotStyle),
     angleAim: kept.angleAim === 'lock' ? 'lock' : 'track',
   };
@@ -616,7 +632,46 @@ export class ReplayCreator {
   /** What is over the footage at `t`, for the overlay and the recording. */
   overlayState(t = this.player.time) {
     const { kill, shot } = this.fxKill;
-    return overlayAt(this.edits, this.span, t, { kill, shotT: shot, lowerLines: this.lowerLines(), kills: this.feedKills() });
+    return overlayAt(this.edits, this.span, t, { kill, shotT: shot, lowerLines: this.lowerLines(), kills: this.feedKills(), names: this.nameCards() });
+  }
+
+  /**
+   * The clip's name cards (2026-11-19, the owner: "a text effect that briefly
+   * shows who you switched to ... the flag of the team they're on"): one where
+   * a Follow camera takes over on a player other than the one followed
+   * before it. `[{ key, t0, pid, text, team, flag }]`, `t0` seconds of the
+   * round, `key` the player and the moment, kept to hide it by.
+   */
+  nameCards(span = this.span) {
+    if (!span) return [];
+    const list = this.camStretches(span);
+    const out = [];
+    let last = null;
+    for (const c of list) {
+      if (c.cam !== 'follow' || !Number.isInteger(c.pid)) {
+        if (c.cam !== 'follow' && !Number.isFinite(c.on)) last = null;
+        continue;
+      }
+      if (c.pid !== last && c.t1 - c.t0 > 0.05) {
+        const rec = this.player.rec;
+        const team = teamAt(rec, c.pid, c.t0);
+        const src = this.ctx.teamFlag?.(team) ?? null;
+        out.push({
+          key: `${c.pid}@${c.t0.toFixed(1)}`, t0: c.t0, pid: c.pid, team,
+          text: decodePlayerName(nameAt(rec, c.pid, c.t0)), flag: src ? this.hudImage(src) : null,
+        });
+      }
+      last = c.pid;
+    }
+    return out;
+  }
+
+  /** A name card taken off the clip (or put back). One undo step. */
+  setNameShown(key, shown) {
+    const hidden = new Set(this.edits.names.hidden);
+    if (shown) hidden.delete(key);
+    else hidden.add(key);
+    this.setEdit('names.hidden', [...hidden]);
   }
 
   /** The recording's frame from the view: the crop, the grade, the text and
@@ -674,6 +729,44 @@ export class ReplayCreator {
       const at = hudRect(log.getBoundingClientRect(), view, px, r.crop, out);
       if (at) ctx.drawImage(log, at.x, at.y, at.w, at.h);
     }
+    // The crosshair in their first person (2026-11-19: "it's suppressing the
+    // cross-hair"): HTML, drawn piece by piece, each bar in its colour and
+    // the weapon's picture where it has one, where the page puts them.
+    const cross = document.getElementById('crosshair');
+    if (cross && !cross.hidden && getComputedStyle(cross).display !== 'none') {
+      for (const part of cross.querySelectorAll('span')) {
+        const cs = getComputedStyle(part);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        const at = hudRect(part.getBoundingClientRect(), view, px, r.crop, out);
+        if (!at) continue;
+        const url = /url\(["']?([^"')]+)["']?\)/.exec(cs.backgroundImage)?.[1];
+        if (url) {
+          const img = this.hudImage(url);
+          if (img?.complete && img.naturalWidth) ctx.drawImage(img, at.x, at.y, at.w, at.h);
+          continue;
+        }
+        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') {
+          ctx.save();
+          ctx.globalAlpha = Number(cs.opacity) || 1;
+          ctx.fillStyle = cs.backgroundColor;
+          ctx.fillRect(at.x, at.y, Math.max(1, at.w), Math.max(1, at.h));
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  /** An image the page's HUD shows (the crosshair's picture), loaded once
+   *  to be drawn into the recording. */
+  hudImage(url) {
+    this.hudImages ??= new Map();
+    let img = this.hudImages.get(url);
+    if (!img) {
+      img = new Image();
+      img.src = url;
+      this.hudImages.set(url, img);
+    }
+    return img;
   }
 
   savePrefs() {
@@ -4265,6 +4358,7 @@ export class ReplayCreator {
     return shortBlock({
       clip, replayUrl: new URLSearchParams(globalThis.location?.search ?? '').get('replay'),
       mimes: [recorderMime(true), recorderMime(false)],
+      seconds: this.span ? this.screenLength(this.span) : null,
     });
   }
 
@@ -4326,8 +4420,10 @@ export class ReplayCreator {
     }
     // A take is drawn at Full whatever the replay's quality or a phone's
     // profile (map.html `setFilming`): the canvas is the recording. Before
-    // the crop below is measured, so it is the full canvas's.
-    this.ctx.filming?.(true);
+    // the crop below is measured, so it is the full canvas's. At a quality of
+    // its own, the canvas is drawn at that size (a Short at 1080p).
+    const quality = short ? EXPORT_QUALITY['1080'] : EXPORT_QUALITY[this.prefs.quality] ?? EXPORT_QUALITY.screen;
+    this.ctx.filming?.(true, { short: quality.short });
     this.ctx.ensureAudio?.();
     // A frame guide set is the clip's shape: the view cropped to it, drawn
     // after each render (`afterRender`).
@@ -4335,7 +4431,7 @@ export class ReplayCreator {
     // The look, the text and the effects are drawn into the recording's own
     // canvas each frame (`composeFrame`), as the crop is.
     // A montage composes every frame: its clips' looks may differ.
-    const compose = editsShow(this.edits) || this.edits.hud || Boolean(queue);
+    const compose = editsShow(this.edits) || this.edits.hud || this.nameCards().length > 0 || Boolean(queue);
     let source = canvas;
     if (crop || compose) {
       source = document.createElement('canvas');
@@ -4348,6 +4444,7 @@ export class ReplayCreator {
     const song = !queue && this.music.loaded && this.music.record ? this.music.attach(tap?.context ?? null) : null;
     const clip = new ClipRecorder(source, {
       sound: () => (tap || song ? { context: tap?.context ?? song.context, node: tap?.node ?? null, extra: song ? [song] : [] } : null),
+      bitrate: short ? SHORT_BITRATE : exportBitrate(source.width, source.height),
     });
     this.recorder = {
       clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose,
@@ -4553,14 +4650,11 @@ export class ReplayCreator {
         });
         return;
       }
+      // A recorded clip is the creator's file, never uploaded: only Post as a
+      // Short puts a clip on the site (2026-11-19, the owner: "no option to
+      // upload normal clips").
       download(blob, name);
       this.ui.flash(`Clip saved: ${(blob.size / 1e6).toFixed(1)} MB`, 2600);
-      // A 9:16 MP4 of a shared round can go to the Shorts strip too
-      // (replay-share.js); a nicety, so nothing here may break the save.
-      quietly('offering the clip as a Short', () => {
-        import('./replay-share.js').then(m => m.offerShare(blob, mime, clip, { frame: this.prefs.frame, save: null }))
-          .catch(error => console.warn('creator: the Share as a Short dialog', error));
-      });
     }).catch(error => console.warn('creator: finishing the recording', error));
     this.player.playing = false;
     this.syncPlate();

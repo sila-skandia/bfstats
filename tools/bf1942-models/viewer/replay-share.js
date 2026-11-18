@@ -52,8 +52,15 @@ export function playsEverywhere(mime) {
   return video.length > 0 && video.every(c => /^(avc1|avc3)/.test(c)) && audio.every(c => c.startsWith('mp4a'));
 }
 
+/** The biggest file a Short uploads, bytes: under the API's 90 MiB for its
+ *  video, with room for the poster. A bigger one is saved as a file. */
+export const SHORT_MAX_BYTES = 80 * 1024 * 1024;
+
 /** Whether a recorded clip can be shared as a Short: `{ ok, why }`. */
-export function shareable({ mime, frame, replayUrl }) {
+export function shareable({ mime, frame, replayUrl, size = null }) {
+  if (Number.isFinite(size) && size > SHORT_MAX_BYTES) {
+    return { ok: false, why: `That recording is ${Math.round(size / 1048576)} MB and a Short can be at most ${SHORT_MAX_BYTES / 1048576} MB.` };
+  }
   if (frame !== '916') return { ok: false, why: 'Pick the 9:16 frame to share a clip as a Short.' };
   if (!/mp4/i.test(String(mime ?? ''))) return { ok: false, why: 'This browser records WebM; Shorts take MP4 (Chrome, Edge or Safari).' };
   if (!playsEverywhere(mime)) return { ok: false, why: 'This browser records VP9 video, which iPhones cannot play; Shorts take H.264 (Chrome, Edge or Safari).' };
@@ -146,7 +153,7 @@ export async function posterOf(blob) {
  * the clip was not downloaded, and Save the file does it.
  */
 export function offerShare(blob, mime, clip, { frame, save = null, replayUrl = new URLSearchParams(location.search).get('replay') } = {}) {
-  const can = shareable({ mime, frame, replayUrl });
+  const can = shareable({ mime, frame, replayUrl, size: blob?.size ?? null });
   if (!can.ok) return { offered: false, why: can.why };
   const shared = sharedRecordingOf(replayUrl);
   const api = sharedRecordingsApi({ base: shared.base, mode: apiMode(shared.base) });

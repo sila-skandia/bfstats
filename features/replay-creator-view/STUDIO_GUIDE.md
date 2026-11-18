@@ -294,6 +294,12 @@ following a player, or open a shared edit of one. It is that player's clip.
   through their eyes). Pause on one player, click the other, play on, and
   the camera chases between them. The hover label says "click to follow
   from here".
+- **Name cards.** Where the camera switches to a player, a card names them,
+  with their side's flag, for two seconds: each is a bar on the Text lane.
+  Click one to hide just that one, or to set every card's plate (dark,
+  their side's colour, gold or none), text colour, place (lower left, top
+  centre, centre), flag and time on screen. The Text tab's Name cards group
+  has the same settings. Shown on the monitor and in the file.
 - **A Follow camera** (Follow in the tray, or a camera's chooser) films a
   player you pick: behind them, through their eyes or the game's chase. Its
   chooser lists the players nearest the view to switch to.
@@ -442,8 +448,9 @@ clips keeps one style.
   picture: to see the vertical framing first, set the frame to 9:16.
 - The game's HUD (In the picture): the game's own message log and minimap
   over the clip, as the game draws them: the chat, the kill lines and the
-  flags taken in the game's own face and team colours at the top left, and
-  the minimap at the top right with the clip's player as its ring. They show
+  flags taken in the game's own face and team colours at the top left, the
+  minimap at the top right with the clip's player as its ring, and the
+  player's crosshair whenever the camera is through their eyes. They show
   on the monitor and go into the recording and the thumbnail. Turning it on
   turns the studio's own kill feed off; the look, text and effects still
   work over it. In a frame narrower than 4:3 (9:16, 1:1) the message log
@@ -461,8 +468,17 @@ clips keeps one style.
 - Sound in the file: the game's sound and the song on the Music lane, each
   on or off. Both off records a silent video, to lay the sound in another
   editor.
-- Record the clip plays it once in real time at the monitor's full size and
-  downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
+- Record the clip plays it once in real time and saves it as a file on your
+  computer (MP4 or WebM, with the game's sound), to put on YouTube or
+  anywhere else: a recorded clip is never uploaded. Quality picks its size:
+  Screen (the monitor's full size on this screen), 1080p, 1440p or 4K, drawn
+  at that size whatever the window. The line under it gives the size and
+  the bit rate (16 Mbit/s at 1080p, more for more pixels). 4K draws four
+  times the pixels of 1080p a frame: if the file stutters, pick a lower one.
+- Post as a Short is the only way a clip goes on the site. It is always
+  1080 x 1920 at 8 Mbit/s, and a clip over a minute of video cannot be a
+  Short (the button says so before anything is recorded); a recording over
+  80 MB is saved as a file instead of uploaded. Slow motion takes its
   time: the video clock says how long. Keep other windows quiet while it
   records; Esc stops and saves.
 - Save a thumbnail downloads the frame on screen as a PNG, cropped, graded

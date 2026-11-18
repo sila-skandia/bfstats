@@ -24,7 +24,7 @@ import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, KILL_CAMS, MOTIONS, camChoices, camGlyph, camLabel, camTitle, camsFor, chasedKills, holdsEnd, killKey } from './replay-cuts.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
-import { FADES, FRAMES, FREEZES, FX_WORDS, GRADES, commsBox, drawOverlay, drawSafeArea, editsOf, editsShow, fxMoments, gradeOf } from './replay-studio-fx.js';
+import { EXPORT_QUALITY, FADES, FRAMES, FREEZES, FX_WORDS, GRADES, NAME_INKS, NAME_PLATES, NAME_SPOTS, commsBox, drawOverlay, drawSafeArea, editsOf, editsShow, exportBitrate, fxMoments, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
 /** The game's outside views the Game view button names (replay-camera.js
@@ -304,8 +304,11 @@ export class Studio {
 
   /** What a recording will measure, device pixels, in the frame. */
   outputSize() {
-    const ratio = devicePixelRatio || 1;
     const box = monitorBox({ x: 0, y: 0, w: innerWidth, h: innerHeight }, this.creator.prefs.frame);
+    // At an export quality of its own the short side is that many pixels;
+    // else the screen's own, the window at its device pixels.
+    const short = EXPORT_QUALITY[this.creator.prefs.quality]?.short ?? null;
+    const ratio = short ? short / Math.max(1, Math.min(box.w, box.h)) : devicePixelRatio || 1;
     const w = Math.floor((box.w * ratio) / 2) * 2;
     const h = Math.floor((box.h * ratio) / 2) * 2;
     return `${w} x ${h}`;
@@ -450,7 +453,8 @@ export class Studio {
    *  is edited, and the studio's clock. */
   frame(t) {
     const creator = this.creator;
-    const show = creator.on && Boolean(creator.editing) && !creator.recorder && (editsShow(creator.edits) || creator.edits.safe);
+    const show = creator.on && Boolean(creator.editing) && !creator.recorder && (editsShow(creator.edits) || creator.edits.safe
+      || (creator.edits.names.on && creator.nameCards().length > 0));
     this.setGrade(creator.on && creator.editing && !creator.recorder ? creator.edits.grade : null);
     if (show) this.drawOverlay(t);
     else if (this.drawn) this.clearOverlay();
@@ -1524,6 +1528,22 @@ export class Studio {
     const lowerDur = this.slider('On screen', 1, 8, 0.1, () => e().lower.dur, v => creator.setEdit('lower.dur', v, 'slide:lower'), v => `${v.toFixed(1)} s`);
     const lowerReset = this.btn('Place it at the shot again', 'Back to just before the shot', () => creator.setEdit('lower.t', null), 'st-ghost st-small');
     const feedOn = this.check('Kill feed', () => e().feed, v => creator.setEdit('feed', v));
+    // Name cards: who the camera switched to, as each Follow camera takes over.
+    const namesOn = this.check('Name cards', () => e().names.on, v => creator.setEdit('names.on', v),
+      'A card with the player\'s name as the camera switches to them');
+    const namesFlag = this.check('Their side\'s flag', () => e().names.flag, v => creator.setEdit('names.flag', v));
+    const namePlate = this.seg(NAME_PLATES.map(([id, l]) => [id, l.replace('Their side\'s colour', 'Side')]), () => e().names.plate, v => creator.setEdit('names.plate', v), 'st-names-plate');
+    const nameInk = this.seg(NAME_INKS.map(([id, l]) => [id, l.replace('Their side\'s colour', 'Side')]), () => e().names.ink, v => creator.setEdit('names.ink', v), 'st-names-ink');
+    const nameSpot = this.seg(NAME_SPOTS, () => e().names.spot, v => creator.setEdit('names.spot', v), 'st-names-spot');
+    const nameDur = this.slider('On screen', 0.5, 8, 0.1, () => e().names.dur, v => creator.setEdit('names.dur', v, 'slide:names'), v => `${v.toFixed(1)} s`);
+    const namesNote = this.note('');
+    this.syncs.push(() => {
+      const n = creator.nameCards().length;
+      const hidden = creator.nameCards().filter(c => e().names.hidden.includes(c.key)).length;
+      namesNote.textContent = n
+        ? `${n} on the Text lane, one where the camera switches player${hidden ? `, ${hidden} hidden` : ''}. Click one there to hide it or style it.`
+        : 'None yet: they come with Follow cameras, one where the camera switches player (click a player on the monitor).';
+    });
     const tagOn = this.check('Channel tag', () => e().tag.on, v => creator.setEdit('tag.on', v));
     const [tagRow] = this.textInput('Words', () => e().tag.text, v => creator.setEdit('tag', { on: true, text: v }, 'type:tag'), 'your channel', 40);
     const lowerGroup = this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the player killed, the distance.'));
@@ -1602,6 +1622,8 @@ export class Studio {
       more,
       this.group('More text', moreAdd, this.note('A clip can carry any number of titles and lower thirds, a bar each on the Text lane: drag one to move it, its ends to resize it. Right-click the lane to add one where you point, or drop Title or Lower third from the tray.')),
       this.group('Kill feed', feedOn, this.note('The round\'s kills in the corner as they happen, in the game\'s colours.')),
+      this.group('Name cards', namesOn, namesFlag, el('span', 'st-label', 'Plate'), namePlate, el('span', 'st-label', 'Text'), nameInk,
+        el('span', 'st-label', 'Where'), nameSpot, nameDur, namesNote),
       this.group('Channel tag', tagOn, tagRow, this.note('In the corner the whole clip, for the video\'s credit.')),
     );
   }
@@ -1731,7 +1753,7 @@ export class Studio {
     const hud = this.check('The game\'s HUD', () => creator.edits.hud,
       v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s chat and minimap in the picture' : null),
       'The game\'s message log and minimap, in the monitor and the recorded file');
-    const hudNote = this.note('The chat, the kills and the flags as the game prints them, and the minimap at the top right, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
+    const hudNote = this.note('The chat, the kills and the flags as the game prints them, the minimap at the top right, and their crosshair in first person, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
     const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
     const shortNote = this.note('');
     this.syncs.push(() => {
@@ -1739,12 +1761,25 @@ export class Studio {
       shortNote.classList.toggle('bad', Boolean(why));
       shortNote.textContent = why ?? 'One step: the clip plays once, recorded vertical (9:16) whatever frame is set, then you name it and it goes in the Shorts strip on the REPLAY tab.';
     });
+    // How big the file is drawn: the screen's size, or a size of its own.
+    const quality = this.seg(Object.entries(EXPORT_QUALITY).map(([id, q]) => [id, q.label, id === 'screen' ? 'The size the studio draws at on this screen' : `${q.label} whatever the window: drawn at that size while it records`]),
+      () => creator.prefs.quality, v => {
+        creator.setPref('quality', v);
+        this.refresh(true);
+      }, 'st-quality');
+    const qualityNote = this.note('');
+    this.syncs.push(() => {
+      const q = EXPORT_QUALITY[creator.prefs.quality] ?? EXPORT_QUALITY.screen;
+      qualityNote.textContent = `${this.outputSize()} at ${Math.round(exportBitrate(...this.outputSize().split(' x ').map(Number)) / 1e6)} Mbit/s.`
+        + (q.short && q.short > 1440 ? ' 4K draws four times the pixels of 1080p each frame: if the file stutters, pick a lower one.' : '')
+        + ' Post as a Short is always 1080 x 1920.';
+    });
     page.append(
       this.group('Post as a Short', short, shortNote),
       this.group('In the picture', hud, hudNote),
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
-      this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
+      this.group('Export', quality, qualityNote, rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it as a file on your computer when it ends, to put on YouTube or anywhere else. Keep other windows quiet while it runs.')),
       this.group('Keep the clip', keep, keptNote),
     );
   }
@@ -1999,7 +2034,8 @@ html.replay-studio #stage { position: fixed !important; z-index: 1001; border-ra
 html.replay-studio.st-rec #stage { border-radius: 0; box-shadow: none; }
 /* The game's HUD on: its message log and its minimap stay over the monitor
    (the studio's bare look hides the page's layers, replay-ui.js). */
-html.replay-studio.st-gamehud #comms-canvas, html.replay-studio.st-gamehud #minimap { visibility: visible !important; }
+html.replay-studio.st-gamehud #comms-canvas, html.replay-studio.st-gamehud #minimap,
+html.replay-studio.st-gamehud.replay-sight #crosshair { visibility: visible !important; }
 .st-back { position: fixed; inset: 0; z-index: 1000; background: #0b0b09; }
 html.st-rec .st-back { background: #000; }
 .st { --rp-plate: rgba(33, 33, 29, .8); --rp-plate-deep: rgba(20, 20, 17, .9); --rp-plate-menu: rgba(20, 20, 17, .97);

@@ -30,7 +30,7 @@ import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, slowerThan, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
-import { FRAMES, FREEZES, FX_WORDS, TEXT_EASE, fxMoments } from './replay-studio-fx.js';
+import { FRAMES, FREEZES, FX_WORDS, NAME_INKS, NAME_PLATES, NAME_SPOTS, TEXT_EASE, fxMoments } from './replay-studio-fx.js';
 import { parseVideoTime, videoTime } from './replay-sync.js';
 import { peakBetween, slidOffset } from './replay-music.js';
 import {
@@ -499,6 +499,9 @@ export class ClipBar {
       return this.newCamMenu(t);
     }
     if (lane === 'text') {
+      // A name card under the pointer: its own menu.
+      const nameKey = target?.closest?.('.rc-cb-seg.txt.name')?.dataset.name;
+      if (nameKey) return this.nameMenu(nameKey);
       // The bar under the pointer (the one pressed, else the one at its
       // time), then what can be added here: there can be any number.
       const bars = creator.textBars(span);
@@ -910,6 +913,35 @@ export class ClipBar {
       ] },
     ];
     return { title: `Camera lane · ${fmt(rel)}`, items, wide: true };
+  }
+
+  /** A name card's menu: this one shown or hidden, and how every card
+   *  looks (its plate, its ink, where it sits, the flag, how long). */
+  nameMenu(key) {
+    const creator = this.creator;
+    const card = creator.nameCards().find(c => c.key === key);
+    if (!card) return null;
+    const n = creator.edits.names;
+    const hidden = n.hidden.includes(key);
+    const set = (path, v) => () => creator.setEdit(`names.${path}`, v);
+    return {
+      title: `Name card · ${card.text}`,
+      wide: true,
+      items: [
+        { label: hidden ? 'Show this name card' : 'Hide this name card', run: () => creator.setNameShown(key, hidden) },
+        { label: n.on ? 'Turn every name card off' : 'Turn name cards on', run: set('on', !n.on) },
+        { heading: true, label: 'Plate' },
+        { chips: NAME_PLATES.map(([id, label]) => ({ label, on: n.plate === id, run: set('plate', id) })) },
+        { heading: true, label: 'Text colour' },
+        { chips: NAME_INKS.map(([id, label]) => ({ label, on: n.ink === id, run: set('ink', id) })) },
+        { heading: true, label: 'Where' },
+        { chips: NAME_SPOTS.map(([id, label]) => ({ label, on: n.spot === id, run: set('spot', id) })) },
+        { heading: true, label: 'Their side' },
+        { chips: [{ label: 'Flag shown', on: n.flag, run: set('flag', true) }, { label: 'No flag', on: !n.flag, run: set('flag', false) }] },
+        { heading: true, label: 'On screen' },
+        { chips: [1, 1.5, 2, 3, 4].map(d => ({ label: `${d} s`, on: Math.abs(n.dur - d) < 0.01, run: set('dur', d) })) },
+      ],
+    };
   }
 
   /** The hand-over into camera `i`: a cut, a glide or a whip. */
@@ -1920,7 +1952,26 @@ export class ClipBar {
         creator.setTextAt(bar.key, next.t0, Math.max(TEXT_EASE * 2, next.t1 - next.t0));
       }, { click: () => creator.studio?.focus(bar.key) });
     }
-    if (!bars.length) node('text', 'span', 'rc-cb-seg plain', 'no text · right-click to add a title or a lower third', span.t0, span.t1);
+    // The name cards, one where the camera switches player: drawn as they
+    // play, a click or right-click for this one's and every card's style.
+    const cards = creator.nameCards(span);
+    const names = e.names;
+    for (const card of cards) {
+      const off = !names.on || names.hidden.includes(card.key);
+      const seg = node('text', 'span', `rc-cb-seg txt name t${card.team ?? 0}${off ? ' off' : ''}`, '', card.t0, card.t0 + names.dur,
+        `Name card · ${card.text}${off ? ' (hidden)' : ''}: click for its style, or to hide it`);
+      seg.dataset.name = card.key;
+      seg.append(el('b', '', `${off ? 'Hidden · ' : ''}${card.text}`));
+      seg.addEventListener('pointerdown', ev => ev.stopPropagation());
+      seg.addEventListener('click', ev => {
+        ev.stopPropagation();
+        try {
+          const menu = this.nameMenu(card.key);
+          if (menu) this.openMenuOn(menu, card.t0);
+        } catch (error) { console.warn('creator: a name card', error); }
+      });
+    }
+    if (!bars.length && !cards.length) node('text', 'span', 'rc-cb-seg plain', 'no text · right-click to add a title or a lower third', span.t0, span.t1);
     const fxMark = (cls, label, t0, t1 = null, title = '') => {
       const n = node('fx', 'span', `rc-cb-fxm ${cls}`, '', t0, t1, title);
       const glyph = moveIcon(`fx:${cls}`);
@@ -2289,6 +2340,14 @@ const STYLE = `
 .rc-cb-text .rc-cb-seg, .rc-cb-fx .rc-cb-seg { top: 2px; height: 18px; line-height: 18px; }
 .rc-cb-seg.txt { overflow: visible; padding: 0 14px; background: rgba(240, 145, 60, .5); color: #fff; pointer-events: auto; cursor: grab; touch-action: none; }
 .rc-cb-seg.txt.lower { background: rgba(232, 195, 90, .55); color: #17150f; }
+/* A name card: where the camera switches player, its side's colour down its
+   edge; hidden, it stays on the lane, dimmed. */
+.rc-cb-seg.txt.name { background: rgba(20, 20, 16, .82); color: #eeecd9; border-left: 3px solid #a39c6c; cursor: pointer;
+  min-width: 72px; box-sizing: border-box; z-index: 1; }
+.rc-cb-seg.txt.name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-cb-seg.txt.name.t1 { border-left-color: #ff5959; }
+.rc-cb-seg.txt.name.t2 { border-left-color: #6699ff; }
+.rc-cb-seg.txt.name.off { opacity: .45; text-decoration: line-through; }
 .rc-cb-seg.txt b { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 800; pointer-events: none; }
 .rc-cb-seg.txt:hover { filter: brightness(1.15); }
 .rc-cb-seg.txt.held { cursor: grabbing; box-shadow: 0 0 0 1px #fff; }

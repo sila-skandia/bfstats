@@ -662,6 +662,12 @@ class TemplateWordsTests(unittest.TestCase):
         self.assertIn("another site", got["elsewhere"])
         self.assertIn("MP4", got["webm"])
         self.assertIn("MP4", got["silentWebm"])
+        # A clip over a minute of video is no Short: record it to a file.
+        self.assertIn("81 s of video", got["long"])
+        self.assertIn("YouTube", got["long"])
+        self.assertIsNone(got["fits"])
+        self.assertTrue(got["big"][0])
+        self.assertEqual(got["big"][1], "That recording is 81 MB and a Short can be at most 80 MB.")
 
     def test_a_shorts_title_starts_from_its_kill(self) -> None:
         self.assertEqual(run_harness()["shortTitle"],
@@ -696,6 +702,17 @@ class StudioTests(unittest.TestCase):
         self.assertIsNone(h["none"])
         # Kept with the edits, off by default.
         self.assertEqual(h["kept"], [True, False, False])
+        # Name cards: their style read back checked, the one most in shown
+        # (eased in over a quarter second, gone after two), a hidden one never.
+        n = h["names"]
+        self.assertEqual(n["read"], ["team", "white", "top", 8, ["3@10.0"]])
+        self.assertEqual(n["defaults"], {"on": True, "flag": True, "plate": "dark", "ink": "white", "spot": "lower", "dur": 2, "hidden": []})
+        self.assertEqual(n["shown"], ["Minnie", "Minnie", None, "Lt Chet Morton"])
+        self.assertIsNone(n["hidden"])
+        self.assertIsNone(n["off"])
+        # Export quality: 16 Mbit/s at 1080p, in proportion to the pixels.
+        self.assertEqual(h["quality"], [16000000, 7111111, 28444444, 60000000, 16000000])
+        self.assertEqual(h["qualities"], [["1080", 1080], ["1440", 1440], ["2160", 2160], ["screen", None]])
         # The message log keeps the game's 4:3 screen in a narrow frame.
         self.assertEqual(h["box"], [None, None, {"w": 607, "h": 455}, {"w": 900, "h": 675}])
 

@@ -51,6 +51,34 @@ export const FX_WORDS = Object.freeze({ flash: 'Flash', punch: 'Zoom punch', sha
 /** How long a piece of text stays up when nothing says. */
 export const TEXT_DUR = Object.freeze({ title: 2.4, lower: 3.5 });
 
+/** How a name card can look: its plate behind the name, the name's ink, and
+ *  where it sits. `[id, label]`. */
+export const NAME_PLATES = Object.freeze([['dark', 'Dark plate'], ['team', 'Their side\'s colour'], ['gold', 'Gold'], ['none', 'No plate']]);
+export const NAME_INKS = Object.freeze([['white', 'White'], ['team', 'Their side\'s colour'], ['gold', 'Gold']]);
+export const NAME_SPOTS = Object.freeze([['lower', 'Lower left'], ['top', 'Top centre'], ['centre', 'Centre']]);
+const oneOf = (list, v, d) => (list.some(([id]) => id === v) ? v : d);
+
+/** Name cards as they start: on, with the flag, a dark plate, white, lower
+ *  left, two seconds. */
+export function defaultNames() {
+  return { on: true, flag: true, plate: 'dark', ink: 'white', spot: 'lower', dur: 2, hidden: [] };
+}
+
+/** Name cards' settings read back, every field checked. */
+export function namesOf(raw) {
+  const d = defaultNames();
+  if (!raw || typeof raw !== 'object') return d;
+  return {
+    on: raw.on !== false,
+    flag: raw.flag !== false,
+    plate: oneOf(NAME_PLATES, raw.plate, d.plate),
+    ink: oneOf(NAME_INKS, raw.ink, d.ink),
+    spot: oneOf(NAME_SPOTS, raw.spot, d.spot),
+    dur: Number.isFinite(raw.dur) ? Math.min(8, Math.max(0.5, raw.dur)) : d.dur,
+    hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).filter(k => typeof k === 'string').slice(0, 64).map(k => k.slice(0, 40)),
+  };
+}
+
 /** A clip's edits with nothing on. */
 export function defaultEdits() {
   return {
@@ -63,6 +91,10 @@ export function defaultEdits() {
     // The game's own HUD in the picture: its message log (chat, kills,
     // captures, as the game prints them) and its minimap, as on the page.
     hud: false,
+    // A name card as a Follow camera takes over (who the camera switched to,
+    // their side's flag), styled here, each one on the Text lane; `hidden`
+    // the cards taken off one by one (their keys).
+    names: defaultNames(),
     safe: false,
     fadeIn: 0,
     fadeOut: 0,
@@ -98,6 +130,7 @@ export function editsOf(raw) {
     tag: { on: Boolean(raw.tag?.on), text: str(raw.tag?.text, 40) },
     feed: Boolean(raw.feed),
     hud: Boolean(raw.hud),
+    names: namesOf(raw.names),
     safe: Boolean(raw.safe),
     fadeIn: FADES.includes(raw.fadeIn) ? raw.fadeIn : 0,
     fadeOut: FADES.includes(raw.fadeOut) ? raw.fadeOut : 0,
@@ -141,6 +174,27 @@ export function hudRect(rect, view, px, crop, out, { right = false } = {}) {
     x = Math.max(0, out.w - gap - w);
   }
   return { x, y, w, h };
+}
+
+/**
+ * How big a recorded file is drawn (2026-11-19, the owner: "a quality export
+ * option would be nice"): `{ label, short }`, `short` the frame's short side
+ * in pixels (1080 is 1920 x 1080 at 16:9, 1080 x 1920 at 9:16), null for the
+ * screen's own size. The canvas is drawn at it while the clip records.
+ */
+export const EXPORT_QUALITY = Object.freeze({
+  screen: { label: 'Screen', short: null },
+  '1080': { label: '1080p', short: 1080 },
+  '1440': { label: '1440p', short: 1440 },
+  '2160': { label: '4K', short: 2160 },
+});
+
+/** Bits a second for a recording of `w` x `h`: 16 Mbit/s at 1080p and in
+ *  proportion to its pixels (YouTube's own upload guidance runs 8-12 at
+ *  1080p, 35-45 at 4K), never under 6 or over 60. */
+export function exportBitrate(w, h) {
+  const px = Math.max(1, w * h);
+  return Math.round(Math.min(60e6, Math.max(6e6, 16e6 * (px / (1920 * 1080)))));
 }
 
 /** The game's message log's screen on a stage `w` x `h` narrower than 4:3:
@@ -215,8 +269,8 @@ export function lowerStart(edits, span, shotT = null) {
 /** How long a kill stays in the kill feed, seconds of the round. */
 export const FEED_HOLD = 4;
 
-export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLines = null, kills = null } = {}) {
-  const out = { black: 0, white: 0, title: null, lower: null, tag: null, feed: null };
+export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLines = null, kills = null, names = null } = {}) {
+  const out = { black: 0, white: 0, title: null, lower: null, tag: null, feed: null, name: null };
   if (!edits || !span) return out;
   if (edits.fadeIn > 0) out.black = Math.max(out.black, 1 - smooth(span.t0, span.t0 + edits.fadeIn, t));
   if (edits.fadeOut > 0) out.black = Math.max(out.black, smooth(span.t1 - edits.fadeOut, span.t1, t));
@@ -245,6 +299,17 @@ export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLine
     }
   }
   if (edits.tag.on && edits.tag.text.trim()) out.tag = edits.tag.text.trim();
+  // The name card of the player the camera switched to: `names` the cards,
+  // `{ key, t0, text, team, flag }`, `t0` seconds of the round; the one most
+  // in shows.
+  const nc = edits.names;
+  if (nc?.on && names?.length) {
+    for (const card of names) {
+      if (nc.hidden.includes(card.key)) continue;
+      const a = textAt(card.t0, nc.dur);
+      if (a && !(out.name && out.name.a >= a)) out.name = { text: card.text, team: card.team ?? 0, flag: nc.flag ? card.flag ?? null : null, a, style: nc };
+    }
+  }
   // The kill feed, the game's way: the newest on top, each a few seconds.
   if (edits.feed && kills?.length) {
     const lines = kills.filter(k => k.t <= t + 1e-6 && t - k.t < FEED_HOLD).sort((a, b) => b.t - a.t).slice(0, 5)
@@ -256,6 +321,73 @@ export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLine
 
 /** The colour a side's names are drawn in, as the replay draws them. */
 const TEAM_INK = { 1: '#ff5959', 2: '#6699ff' };
+/** A side's plate behind a name card: its ink, dark enough for white. */
+const TEAM_PLATE = { 1: 'rgba(150, 38, 34, 0.88)', 2: 'rgba(36, 66, 140, 0.88)' };
+
+/**
+ * A name card (`state.name`): the player the camera switched to, in its
+ * style (`defaultNames`), sliding in from the side it sits on, with their
+ * side's flag (an image) before the name. In a vertical frame the lower card
+ * sits above the player's own buttons, as the lower third does.
+ */
+function drawNameCard(ctx, box, card) {
+  const { x, y, w, h } = box;
+  const u = Math.min(w, h);
+  const s = card.style ?? defaultNames();
+  const a = card.a;
+  const size = Math.round(u * 0.045);
+  ctx.save();
+  ctx.font = `800 ${size}px ${TEXT_FONT}`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(size * 0.04)}px`;
+  const text = String(card.text ?? '');
+  const tw = Math.min(w * 0.7, ctx.measureText(text).width);
+  const flag = card.flag && (card.flag.naturalWidth || card.flag.width) ? card.flag : null;
+  const fh = size * 0.95;
+  const fw = flag ? fh * ((flag.naturalWidth || flag.width) / Math.max(1, flag.naturalHeight || flag.height)) : 0;
+  const pad = size * 0.55;
+  const gap = flag ? size * 0.4 : 0;
+  const bw = tw + fw + gap + pad * 2;
+  const bh = size * 1.6;
+  let left;
+  let top;
+  if (s.spot === 'top') {
+    left = x + (w - bw) / 2;
+    top = y + h * (h > w ? 0.12 : 0.06) - (1 - a) * bh * 0.5;
+  } else if (s.spot === 'centre') {
+    left = x + (w - bw) / 2;
+    top = y + (h - bh) / 2 + (1 - a) * bh * 0.3;
+  } else {
+    left = x + w * 0.05 - (1 - a) * w * 0.04;
+    top = y + h * (h > w ? 0.68 : 0.8) - bh;
+  }
+  ctx.globalAlpha = a;
+  const plate = s.plate === 'team' ? TEAM_PLATE[card.team] ?? 'rgba(14, 14, 11, 0.82)'
+    : s.plate === 'gold' ? '#e8c35a' : s.plate === 'none' ? null : 'rgba(14, 14, 11, 0.82)';
+  if (plate) {
+    ctx.fillStyle = plate;
+    ctx.fillRect(left, top, bw, bh);
+    // The side's colour down the plate's edge, a dark plate's only accent.
+    if (s.plate === 'dark') {
+      ctx.fillStyle = TEAM_INK[card.team] ?? '#e8c35a';
+      ctx.fillRect(left, top, Math.max(2, Math.round(size * 0.12)), bh);
+    }
+  }
+  let cx = left + pad;
+  if (flag) {
+    ctx.drawImage(flag, cx, top + (bh - fh) / 2, fw, fh);
+    cx += fw + gap;
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  if (!plate) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = size * 0.35;
+  }
+  ctx.fillStyle = s.ink === 'team' ? TEAM_INK[card.team] ?? '#ffffff' : s.ink === 'gold' ? (s.plate === 'gold' ? '#17150f' : '#e8c35a')
+    : s.plate === 'gold' ? '#17150f' : '#ffffff';
+  ctx.fillText(text, cx, top + bh / 2, tw);
+  ctx.restore();
+}
 
 /** The zoom punch on the kill, and at each punch placed by hand: the field
  *  of view's factor at round time `t` (1 none): in by a quarter over 0.08 s,
@@ -373,6 +505,7 @@ export function drawOverlay(ctx, box, state, { grade = null, vignette = 0 } = {}
     ctx.fillStyle = '#eeecd9';
     rest.forEach((line, i) => ctx.fillText(line, left + pad, top + big * 1.35 + small * 0.78 + i * small * 1.5, bw - pad * 2));
   }
+  if (state.name) drawNameCard(ctx, box, state.name);
   if (state.tag) {
     const size = Math.round(u * 0.03);
     ctx.globalAlpha = 0.72;
