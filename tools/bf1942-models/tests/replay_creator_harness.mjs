@@ -1036,7 +1036,28 @@ results.clip = {
     const o = FX.overlayAt(e, span, t, { kill: 104, shotT: 103.6, lowerLines: ['Him', 'MG 42 · kills them · 72 m'] });
     return { black: round(o.black, 3), white: round(o.white, 3), title: o.title ? round(o.title.a, 3) : 0, lower: o.lower ? round(o.lower.a, 3) : 0, tag: o.tag };
   };
+  // The game's HUD in a recorded frame: a 1600x900 view drawn at 2x (3200 x
+  // 1800 px), the minimap 196 px square 16 px in from the right and 44 down.
+  const view = { left: 0, top: 0, width: 1600, height: 900 };
+  const px = { w: 3200, h: 1800 };
+  const mini = { left: 1388, top: 44, width: 196, height: 196 };
+  const r6 = o => (o ? [round(o.x, 1), round(o.y, 1), round(o.w, 1), round(o.h, 1)] : null);
+  const hud = {
+    whole: r6(FX.hudRect(mini, view, px, null, { w: 3200, h: 1800 })),
+    // Recorded at 1920 x 1080 from the whole view.
+    scaled: r6(FX.hudRect(mini, view, px, null, { w: 1920, h: 1080 })),
+    // A 9:16 crop from the middle (1012 x 1800 px at x 1094): the minimap
+    // would fall outside it, so it keeps its gap to the right edge inside.
+    cropped: r6(FX.hudRect(mini, view, px, { x: 1094, y: 0, w: 1012, h: 1800 }, { w: 1012, h: 1800 }, { right: true })),
+    // The message log over the whole view, cropped like the picture.
+    log: r6(FX.hudRect(view, view, px, { x: 1094, y: 0, w: 1012, h: 1800 }, { w: 1012, h: 1800 })),
+    none: FX.hudRect({ left: 0, top: 0, width: 0, height: 0 }, view, px, null, { w: 3200, h: 1800 }),
+    kept: [FX.editsOf({ hud: true }).hud, FX.editsOf({}).hud, FX.defaultEdits().hud],
+    // The log's screen: the stage at 16:9 and 4:3, a 4:3 box over 9:16 and 1:1.
+    box: [[1600, 900], [800, 600], [607, 1080], [900, 900]].map(([w, h]) => FX.commsBox(w, h)),
+  };
   results.studio = {
+    hud,
     at: [100, 100.5, 100.8, 101.5, 102.5, 103.2, 104, 104.2, 107.75, 108].map(at),
     lowerLines: FX.overlayAt(e, span, 104, { kill: 104, shotT: 103.6, lowerLines: ['Him', 'MG 42'] }).lower?.lines ?? null,
     typed: FX.overlayAt(FX.editsOf({ ...e, lower: { ...e.lower, text: 'My words' } }), span, 104, { lowerLines: ['Him'], shotT: 103.6 }).lower?.lines ?? null,

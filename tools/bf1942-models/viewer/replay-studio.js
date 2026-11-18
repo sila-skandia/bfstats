@@ -23,7 +23,7 @@ import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
 import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
-import { FADES, FRAMES, FREEZES, FX_WORDS, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, fxMoments, gradeOf } from './replay-studio-fx.js';
+import { FADES, FRAMES, FREEZES, FX_WORDS, GRADES, commsBox, drawOverlay, drawSafeArea, editsOf, editsShow, fxMoments, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
 /** The game's outside views the Game view button names (replay-camera.js
@@ -219,7 +219,8 @@ export class Studio {
     if (this.tour?.running) this.withTour(tour => tour.end(false));
     this.open = false;
     this.setRecording(false);
-    document.documentElement.classList.remove('replay-studio');
+    document.documentElement.classList.remove('replay-studio', 'st-gamehud');
+    this.syncHudBox();
     this.back.remove();
     this.el.remove();
     const bar = creator.clipbar.el;
@@ -258,6 +259,32 @@ export class Studio {
     s.width = `${box.w}px`;
     s.height = `${box.h}px`;
     if (this.sizeText) this.sizeText.textContent = this.outputSize();
+    this.syncHudBox();
+  }
+
+  /**
+   * The message log's screen while the game's HUD is in the picture: the
+   * game lays its 800 x 600 screen over the stage stretched on each axis
+   * (comms.js), which in a frame narrower than 4:3 squeezes the letters to
+   * unreadable (9:16 to 42% of their width). There it gets a 4:3 box across
+   * the top of the frame instead, the game's screen scaled evenly; the
+   * minimap stays the page's. Null where the stage is the screen.
+   */
+  commsSize(w, h) {
+    return this.open && this.creator.edits.hud ? commsBox(w, h) : null;
+  }
+
+  /** The log's canvas boxed to `commsSize`, or back to the stage's. */
+  syncHudBox() {
+    const log = typeof document !== 'undefined' ? document.getElementById('comms-canvas') : null;
+    if (!log) return;
+    const stage = this.stage;
+    const size = this.open ? this.commsSize(stage.clientWidth, stage.clientHeight) : null;
+    const h = size ? `${size.h}px` : '';
+    if (log.style.height !== h) {
+      log.style.height = h;
+      log.style.bottom = size ? 'auto' : '';
+    }
   }
 
   /** What a recording will measure, device pixels, in the frame. */
@@ -860,7 +887,7 @@ export class Studio {
         'Kill shot on a kill (the round\'s timeline, or the Kills tab) opens it here, filmed and looping.',
         'Look: pick a recipe. Frag movie and Shorts are good starts.',
         'Post as a Short (top right) records the clip vertical and puts it in the Shorts strip: one click, then a title.',
-        'Export: Record the clip. It plays once and downloads.',
+        'Export: Record the clip. It plays once and downloads. The game\'s HUD there puts the game\'s own chat and minimap in the picture.',
         'Keep the clip, open the next kill, and the Montage tab plays the kept clips together and records them as one video.',
       ]),
       col('Cameras', [
@@ -921,6 +948,10 @@ export class Studio {
       creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, this.momentMode, creator.player.followPid, creator.placing?.i].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
+    // The game's HUD over the monitor while the clip has it: the monitor is
+    // the recording.
+    document.documentElement.classList.toggle('st-gamehud', Boolean(creator.edits.hud));
+    this.syncHudBox();
     for (const fn of this.syncs) {
       try { fn(); } catch (error) { console.warn('studio: a control', error); }
     }
@@ -1530,6 +1561,13 @@ export class Studio {
       soundNote.textContent = g && s ? 'The game and the song, mixed.' : g ? 'The game\'s sound alone.'
         : s ? 'The song alone.' : 'No sound: a silent video, to lay the sound in another editor.';
     });
+    // The game's own HUD in the picture (2026-11-18, the owner: "record the
+    // gameplay as-is, not our own simulated kill feed ... the raw chat, the
+    // minimap at the top right, that's it").
+    const hud = this.check('The game\'s HUD', () => creator.edits.hud,
+      v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s chat and minimap in the picture' : null),
+      'The game\'s message log and minimap, in the monitor and the recorded file');
+    const hudNote = this.note('The chat, the kills and the flags as the game prints them, and the minimap at the top right, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
     const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
     const shortNote = this.note('');
     this.syncs.push(() => {
@@ -1539,6 +1577,7 @@ export class Studio {
     });
     page.append(
       this.group('Post as a Short', short, shortNote),
+      this.group('In the picture', hud, hudNote),
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
@@ -1788,6 +1827,9 @@ const STYLE = `
 html.replay-studio, html.replay-studio body { overflow: hidden; }
 html.replay-studio #stage { position: fixed !important; z-index: 1001; border-radius: 6px; box-shadow: 0 0 0 1px rgba(200, 194, 152, .28), 0 18px 48px rgba(0, 0, 0, .6); }
 html.replay-studio.st-rec #stage { border-radius: 0; box-shadow: none; }
+/* The game's HUD on: its message log and its minimap stay over the monitor
+   (the studio's bare look hides the page's layers, replay-ui.js). */
+html.replay-studio.st-gamehud #comms-canvas, html.replay-studio.st-gamehud #minimap { visibility: visible !important; }
 .st-back { position: fixed; inset: 0; z-index: 1000; background: #0b0b09; }
 html.st-rec .st-back { background: #000; }
 .st { --rp-plate: rgba(33, 33, 29, .8); --rp-plate-deep: rgba(20, 20, 17, .9); --rp-plate-menu: rgba(20, 20, 17, .97);

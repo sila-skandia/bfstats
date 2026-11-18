@@ -683,6 +683,22 @@ class StudioTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.st = run_harness()["studio"]
 
+    def test_the_games_hud_lands_where_the_page_has_it(self) -> None:
+        h = self.st["hud"]
+        # Where it is on the page, in the view's pixels, scaled to the file.
+        self.assertEqual(h["whole"], [2776, 88, 392, 392])
+        self.assertEqual(h["scaled"], [1665.6, 52.8, 235.2, 235.2])
+        # A crop that would cut the minimap off keeps it 32 px in from the
+        # crop's right edge, as it is from the view's.
+        self.assertEqual(h["cropped"], [588, 88, 392, 392])
+        # The message log is cropped like the picture under it.
+        self.assertEqual(h["log"], [-1094, 0, 3200, 1800])
+        self.assertIsNone(h["none"])
+        # Kept with the edits, off by default.
+        self.assertEqual(h["kept"], [True, False, False])
+        # The message log keeps the game's 4:3 screen in a narrow frame.
+        self.assertEqual(h["box"], [None, None, {"w": 607, "h": 455}, {"w": 900, "h": 675}])
+
     def test_fades_title_lower_third_flash_and_tag_over_time(self) -> None:
         a = {round(t * 100): o for t, o in zip([100, 100.5, 100.8, 101.5, 102.5, 103.2, 104, 104.2, 107.75, 108], self.st["at"])}
         # A 1 s fade in from black: all black, half way, gone.

@@ -57,7 +57,7 @@ import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { ClipBar, crossedOut } from './replay-clipbar.js';
 import { Studio } from './replay-studio.js';
-import { FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, freezesOf, gradeOf, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
+import { FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, freezesOf, gradeOf, hudRect, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
 
 /** The keys that pick a camera by hand (replay-ui.js `key`): orbit, first
  *  person, free and Auto, C, the game's F9-F12 and the scout view's J. */
@@ -620,7 +620,51 @@ export class ReplayCreator {
     ctx.filter = grade[2] || 'none';
     ctx.drawImage(canvas, c.x, c.y, c.w, c.h, 0, 0, r.source.width, r.source.height);
     ctx.restore();
+    if (this.edits.hud) quietly('the game HUD', () => this.drawGameHud(ctx, r, canvas));
     drawOverlay(ctx, { x: 0, y: 0, w: r.source.width, h: r.source.height }, this.overlayState(), { grade, vignette: this.edits.vignette });
+  }
+
+  /**
+   * The game's own HUD into a recorded frame (`edits.hud`): its message log
+   * (comms.js: the chat, the kills and the captures as the game prints them)
+   * and its minimap, each from its own canvas, where the page has it over
+   * the view. Under the grade's filter, as the page's HUD is over the
+   * footage: the look grades the world, the HUD stays the game's.
+   */
+  drawGameHud(ctx, r, canvas) {
+    if (typeof document === 'undefined') return;
+    const view = canvas.getBoundingClientRect();
+    const px = { w: canvas.width, h: canvas.height };
+    const out = { w: r.source.width, h: r.source.height };
+    const box = document.getElementById('minimap');
+    const map = document.getElementById('minimap-canvas');
+    if (box && map && !box.hidden && map.width > 0) {
+      const at = hudRect(map.getBoundingClientRect(), view, px, r.crop, out, { right: true });
+      if (at) {
+        ctx.save();
+        if (box.classList.contains('is-disk')) {
+          // The disk's plate, its art clipped round and its rim (map.css).
+          const k = at.w / (map.getBoundingClientRect().width || at.w);
+          ctx.beginPath();
+          ctx.ellipse(at.x + at.w / 2, at.y + at.h / 2, at.w / 2, at.h / 2, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(13, 15, 16, 0.78)';
+          ctx.fill();
+          ctx.save();
+          ctx.clip();
+          ctx.drawImage(map, at.x, at.y, at.w, at.h);
+          ctx.restore();
+          ctx.lineWidth = 2 * k;
+          ctx.strokeStyle = 'rgba(190, 190, 175, 0.38)';
+          ctx.stroke();
+        } else ctx.drawImage(map, at.x, at.y, at.w, at.h);
+        ctx.restore();
+      }
+    }
+    const log = document.getElementById('comms-canvas');
+    if (log && !log.hidden && log.width > 0) {
+      const at = hudRect(log.getBoundingClientRect(), view, px, r.crop, out);
+      if (at) ctx.drawImage(log, at.x, at.y, at.w, at.h);
+    }
   }
 
   savePrefs() {
@@ -3826,7 +3870,7 @@ export class ReplayCreator {
     // The look, the text and the effects are drawn into the recording's own
     // canvas each frame (`composeFrame`), as the crop is.
     // A montage composes every frame: its clips' looks may differ.
-    const compose = editsShow(this.edits) || Boolean(queue);
+    const compose = editsShow(this.edits) || this.edits.hud || Boolean(queue);
     let source = canvas;
     if (crop || compose) {
       source = document.createElement('canvas');

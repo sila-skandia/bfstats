@@ -5000,7 +5000,10 @@ function paintHud(dt) {
   // it plays, stopped while it is paused. Without one the rate is 1.
   comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
-  comms.paint(hudW, hudH);
+  // The studio's game HUD in a narrow frame lays the log out 4:3 across
+  // the top (replay-studio.js `commsSize`); anywhere else, the stage.
+  const commsSize = replayController?.commsSize?.(hudW, hudH) ?? { w: hudW, h: hudH };
+  comms.paint(commsSize.w, commsSize.h);
   // A replay's followed artillery gunner has the recording's (replay-spotting.js).
   // Its box and icon sit in retail's place unless the replay's bar, card or
   // callouts are up over it; then they lift clear of them (map-spotter.js

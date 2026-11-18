@@ -2399,3 +2399,52 @@ chooser; a right-click over the Text lane opened its menu; a drag on the
 title bar away from the playhead still moved it. The kill-shot probe
 (Bocage) ran clean through to its recording. Tests: the Replay camera's
 part asks for the page once as it starts and again the next time round.
+
+### The game's HUD in the recording (2026-11-18)
+
+Minnie wanted their 9:35-11:24 cut "as a separate replay that includes game
+chat, kill feed, map". The owner: "record the gameplay as-is, not our own
+simulated kill feed, basically just show what they would see in retail: the
+raw chat, the minimap at the top right, that's it". The recording drew only
+the 3D canvas and the studio's overlay; the page's message log
+(`#comms-canvas`, comms.js, which the replay feeds the recording's chat,
+kills and captures through replay-feed.js) and minimap (`#minimap-canvas`)
+are canvases of their own, which the studio's bare look hides.
+
+- **The switch** is `edits.hud` (replay-studio-fx.js; kept with the clip, a
+  shared edit and undo), The game's HUD under In the picture on the Export
+  tab. On, it turns the studio's own kill feed (`edits.feed`) off.
+- **On the monitor**: `st-gamehud` on the page keeps the two layers visible
+  through the studio's `replay-bare`.
+- **In the file**: `ReplayCreator.drawGameHud`, from `composeFrame`, draws
+  both canvases into each frame where the page has them over the view
+  (`hudRect`: their client rects through the view's pixels and the crop),
+  over the grade's filter, under the studio's text and effects. The phone's
+  disk minimap is clipped round with its plate and rim. A crop that would
+  cut the minimap off (a frame guide outside the studio) keeps its gap to
+  the right edge. Recording composes whenever it is on.
+- **The minimap's ring** is the clip's player while the clip's cameras hold
+  the camera (`replay.js` `minimapMarks`): before, any rig put the ring on
+  the camera.
+- **A narrow frame.** The game stretches its 800 x 600 HUD screen over the
+  stage on each axis, so at 9:16 the letters were squeezed to 42% of their
+  width and unreadable. With the switch on and the stage narrower than 4:3
+  the log gets a 4:3 box across the top (`commsBox`, `Studio.commsSize` and
+  `syncHudBox`; map.html paints the log at `replayController.commsSize`).
+  The minimap is the page's own narrow-stage disk.
+- Not changed, on purpose: MoonGamers' server lines read as one word
+  (`*Donotattack/enter...`), because the game draws nothing for their 0x80
+  separators (`replay-recording.js` `chatText`).
+
+Measured in headless Chromium on the live recording with Minnie's edit
+trimmed to 9:46-9:56: the switch clicked by the mouse made both layers
+visible over the monitor and turned the kill feed off; the minimap's focus
+was player 3 while the cut rig held the camera. Record wrote a 20.9 s
+1600 x 900 VP9 + Opus file whose frames at 1, 4.5 and 8 s carry the message
+log (kill lines in team colours with flags, the F4 radio call, chat and the
+server's lines) and the minimap at the top right, as on the monitor. At
+9:16 (483 x 860 stage) the log was 483 x 362 and the thumbnail matched the
+monitor, the minimap the 100 px disk; off, both hid and the log went back
+to the stage's 483 x 860. Tests: `hudRect` (scaled, cropped, right-pinned,
+no size), `commsBox` at 16:9, 4:3, 9:16 and 1:1, `hud` kept by `editsOf`.
+

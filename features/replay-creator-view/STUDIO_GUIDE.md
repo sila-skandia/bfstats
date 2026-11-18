@@ -384,6 +384,16 @@ clips keeps one style.
   that records WebM, which is Firefox) the note under the button says why
   before you record anything. The clip is cropped to the middle of the
   picture: to see the vertical framing first, set the frame to 9:16.
+- The game's HUD (In the picture): the game's own message log and minimap
+  over the clip, as the game draws them: the chat, the kill lines and the
+  flags taken in the game's own face and team colours at the top left, and
+  the minimap at the top right with the clip's player as its ring. They show
+  on the monitor and go into the recording and the thumbnail. Turning it on
+  turns the studio's own kill feed off; the look, text and effects still
+  work over it. In a frame narrower than 4:3 (9:16, 1:1) the message log
+  keeps the game's 4:3 screen across the top of the frame, so its letters
+  are not squeezed; in a vertical Short they are small, as the game's are
+  at that width. The setting goes with a shared edit and a kept clip.
 - Share this edit: name it and click Share this edit. The link is copied:
   paste it in Discord or send it. Whoever opens it gets the studio on your
   clip with its cameras (yours too), slow motion, the hit's pin, look, text,

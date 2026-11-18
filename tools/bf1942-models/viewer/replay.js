@@ -330,14 +330,19 @@ class ReplayPlayer {
   }
 
   /** What the game's minimap marks at the clock (replay-minimap.js): both
-   *  sides, and the followed player as its ring while the camera is his. In
+   *  sides, and the followed player as its ring while the camera is his (or
+   *  a clip's, with the game's HUD in its picture). In
    *  his first person the ring turns with his view, as the player's turns
    *  with the camera in play: no heading of its own, so the page's camera's.
    *  Worked out once for each clock, camera and set of built hulls, however
    *  many surfaces ask. */
   minimapMarks() {
     const t = this.time;
-    const followPid = this.camera.mode !== 'free' && !this.camera.rig ? this.followPid : null;
+    // A clip filmed with the game's HUD in the picture (the creator's
+    // `edits.hud`) is the followed player's: his minimap, whatever camera the
+    // clip films him with.
+    const hudClip = Boolean(this.camera.rig) && Boolean(this.creator?.edits?.hud);
+    const followPid = hudClip || (this.camera.mode !== 'free' && !this.camera.rig) ? this.followPid : null;
     const pov = this.camera.mode === 'pov';
     const built = this.hulls.size;
     const cached = this.minimap;
@@ -1485,6 +1490,12 @@ export function createReplayController(ctx) {
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {
       return guarded('the feed rate', () => player.feedRate(), 1);
+    },
+    /** The message log's screen for a stage `w` x `h`: the stage, or the
+     *  studio's 4:3 box across the top of a narrow frame while the game's
+     *  HUD is in the clip's picture (replay-studio.js `syncHudBox`). */
+    commsSize(w, h) {
+      return guarded('the message log\'s size', () => player.creator?.studio?.commsSize?.(w, h) ?? null, null) ?? { w, h };
     },
     /** The followed player's HUD into the page's HUD variables, in his
      *  first person (replay-hud.js); `art` the page's sprite lookups. One

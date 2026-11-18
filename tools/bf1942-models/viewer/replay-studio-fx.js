@@ -60,6 +60,9 @@ export function defaultEdits() {
     lower: { on: false, text: '', t: null, dur: 3.5 },
     tag: { on: false, text: '' },
     feed: false,
+    // The game's own HUD in the picture: its message log (chat, kills,
+    // captures, as the game prints them) and its minimap, as on the page.
+    hud: false,
     safe: false,
     fadeIn: 0,
     fadeOut: 0,
@@ -94,6 +97,7 @@ export function editsOf(raw) {
     lower: text(raw.lower, d.lower),
     tag: { on: Boolean(raw.tag?.on), text: str(raw.tag?.text, 40) },
     feed: Boolean(raw.feed),
+    hud: Boolean(raw.hud),
     safe: Boolean(raw.safe),
     fadeIn: FADES.includes(raw.fadeIn) ? raw.fadeIn : 0,
     fadeOut: FADES.includes(raw.fadeOut) ? raw.fadeOut : 0,
@@ -110,6 +114,41 @@ export function editsOf(raw) {
         ? { kind: x.kind, t: num(x.t, 0, 600, 0), dur: FREEZES.includes(x.dur) && x.dur > 0 ? x.dur : 1 }
         : { kind: x.kind, t: num(x.t, 0, 600, 0) })),
   };
+}
+
+/**
+ * Where a layer of the page's own HUD over the view goes in the recorded
+ * frame (features/replay-creator-view, "The game's HUD in the recording"):
+ * `rect` its client rect, `view` the 3D canvas's client rect and `px` its
+ * size in pixels, `crop` the part of the canvas recorded (pixels), `out` the
+ * recorded frame's size. Null for a layer with no size. `right` keeps a
+ * layer pinned to the stage's right edge (the minimap) the same way inside
+ * a crop that would cut it off: its gap to the right edge kept, scaled.
+ */
+export function hudRect(rect, view, px, crop, out, { right = false } = {}) {
+  if (!rect || !view || !(rect.width > 0) || !(rect.height > 0) || !(view.width > 0) || !(view.height > 0)) return null;
+  const sx = px.w / view.width;
+  const sy = px.h / view.height;
+  const c = crop ?? { x: 0, y: 0, w: px.w, h: px.h };
+  const kx = out.w / c.w;
+  const ky = out.h / c.h;
+  let x = ((rect.left - view.left) * sx - c.x) * kx;
+  const y = ((rect.top - view.top) * sy - c.y) * ky;
+  const w = rect.width * sx * kx;
+  const h = rect.height * sy * ky;
+  if (right && x + w > out.w + 0.5) {
+    const gap = Math.max(0, (view.left + view.width - (rect.left + rect.width)) * sx * kx);
+    x = Math.max(0, out.w - gap - w);
+  }
+  return { x, y, w, h };
+}
+
+/** The game's message log's screen on a stage `w` x `h` narrower than 4:3:
+ *  a 4:3 box across its top, so the game's 800 x 600 screen is scaled
+ *  evenly rather than squeezed; null where the stage is the screen. */
+export function commsBox(w, h) {
+  if (!(w > 0) || !(h > 0) || w / h >= 4 / 3) return null;
+  return { w, h: Math.round((w * 3) / 4) };
 }
 
 /** Whether the edits draw anything over the footage or change its colour. */
