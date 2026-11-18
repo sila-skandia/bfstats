@@ -101,19 +101,28 @@ const TRAY_WORDS = Object.freeze({
   shoulder: 'Shoulder', chase: 'Chase', orbit: '360', incoming: 'From victim', victim: 'Circle victim', free: 'Replay cam',
 });
 
-const TABS = Object.freeze([
-  ['kills', 'Kills'],
-  ['camera', 'Camera'],
-  ['look', 'Look'],
-  ['text', 'Text'],
-  ['fx', 'Effects'],
-  ['montage', 'Montage'],
-  ['clips', 'Export'],
+/**
+ * The inspector's pages, a labelled glyph each on the rail down its outer
+ * edge (2026-11-18, the owner: seven tabs in one row were "getting super
+ * condensed"), in three groups: shooting the clip, its look, delivering it.
+ * `[id, label, glyph, what is on it, group]`.
+ */
+export const TABS = Object.freeze([
+  ['kills', 'Kills', 'kills', 'The round\'s kills: open one as a kill shot', 'shoot'],
+  ['camera', 'Camera', 'camera', 'Recipes, the clip\'s cameras, bullet time and the lens', 'shoot'],
+  ['look', 'Look', 'look', 'Recipes, colour and the frame\'s guides', 'style'],
+  ['text', 'Text', 'text', 'Titles, lower thirds, the kill feed and your tag', 'style'],
+  ['fx', 'Effects', 'fx', 'Fades, kill effects, placed effects and slow motion', 'style'],
+  ['montage', 'Montage', 'film', 'Kept clips, played and recorded together', 'ship'],
+  ['clips', 'Export', 'export', 'Record, Post as a Short, the game\'s HUD, sound and sharing', 'ship'],
 ]);
 
-/** Sizes the studio leaves the monitor, CSS px. */
+/** Sizes the studio leaves the monitor, CSS px: the inspector is its rail
+ *  and its page. */
 const TOP_H = 52;
-const SIDE_W = 356;
+const RAIL_W = 68;
+const PAGE_W = 344;
+const SIDE_W = RAIL_W + PAGE_W;
 const DOCK_H = 270;
 const GAP = 12;
 
@@ -357,6 +366,16 @@ export class Studio {
    *  at a time, its two ends. */
   key(e, once) {
     if (!this.open || this.recording) return false;
+    // Up and down the rail by the arrow keys while a page's button has the
+    // focus, as a tab list goes.
+    if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && e.target?.closest?.('.st-tab')) {
+      e.preventDefault?.();
+      const ids = TABS.map(([id]) => id);
+      const next = ids[(ids.indexOf(this.tab) + (e.code === 'ArrowDown' ? 1 : ids.length - 1)) % ids.length];
+      this.setTab(next);
+      this.tabBtns[next]?.focus();
+      return true;
+    }
     const creator = this.creator;
     const player = creator.player;
     const span = creator.span;
@@ -579,22 +598,41 @@ export class Studio {
     const side = el('aside', 'st-side');
     const tabs = el('nav', 'st-tabs');
     tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-orientation', 'vertical');
+    tabs.setAttribute('aria-label', 'Studio pages');
     this.tabBtns = {};
     this.pages = {};
+    const main = el('div', 'st-main');
+    // The open page's name and what is on it, over the page.
+    const head = el('header', 'st-pagehead');
+    this.pageTitle = el('h2', 'st-pagetitle', '');
+    this.pageWhat = el('p', 'st-pagewhat', '');
+    head.append(this.pageTitle, this.pageWhat);
     const body = el('div', 'st-body');
-    for (const [id, label] of TABS) {
-      const b = el('button', 'st-tab', label);
+    let group = null;
+    for (const [id, label, glyph, what, g] of TABS) {
+      if (group !== null && g !== group) tabs.append(el('i', 'st-tabrule'));
+      group = g;
+      const b = el('button', 'st-tab');
       b.type = 'button';
+      b.title = `${label}: ${what}`;
       b.setAttribute('role', 'tab');
+      b.setAttribute('aria-label', label);
+      b.dataset.tab = id;
+      const gl = icon(glyph);
+      if (gl) b.append(gl);
+      b.append(el('span', 'st-tablabel', label));
       b.addEventListener('click', () => this.setTab(id));
       this.tabBtns[id] = b;
       tabs.append(b);
       const page = el('section', 'st-page');
       page.setAttribute('role', 'tabpanel');
+      page.setAttribute('aria-label', label);
       this.pages[id] = page;
       body.append(page);
     }
-    side.append(tabs, body);
+    main.append(head, body);
+    side.append(main, tabs);
     this.buildKills(this.pages.kills);
     this.buildCamera(this.pages.camera);
     this.buildLook(this.pages.look);
@@ -943,8 +981,12 @@ export class Studio {
     for (const [tid, b] of Object.entries(this.tabBtns)) {
       b.classList.toggle('on', tid === id);
       b.setAttribute('aria-selected', String(tid === id));
+      b.tabIndex = tid === id ? 0 : -1;
       this.pages[tid].hidden = tid !== id;
     }
+    const [, label, , what] = TABS.find(([tid]) => tid === id) ?? [];
+    if (this.pageTitle) this.pageTitle.textContent = label ?? '';
+    if (this.pageWhat) this.pageWhat.textContent = what ?? '';
     this.refresh(true);
   }
 
@@ -1810,6 +1852,12 @@ const GLYPHS = Object.freeze({
   up: 'M12 19V5M5 12l7-7 7 7',
   down: 'M12 5v14M5 12l7 7 7-7',
   film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
+  // The rail's pages.
+  kills: 'M12 12m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0M12 2v5M12 17v5M2 12h5M17 12h5',
+  look: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M12 3v18M12 7l5.5-2.4M12 12h9M12 17l5.5 2.4',
+  text: 'M5 6V4h14v2M12 4v16M9 20h6',
+  fx: 'M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8',
+  export: 'M12 3v12M7 10l5 5 5-5M4 15v5h16v-5',
   help: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5',
 });
 
@@ -1906,14 +1954,41 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-frames { margin-right: 6px; }
 .st-frames .st-segbtn { min-height: 32px; }
 /* The inspector. */
-.st-side { position: absolute; top: ${TOP_H}px; right: 0; bottom: ${DOCK_H}px; width: ${SIDE_W}px; display: flex; flex-direction: column;
+.st-side { position: absolute; top: ${TOP_H}px; right: 0; bottom: ${DOCK_H}px; width: ${SIDE_W}px; display: flex; flex-direction: row;
   border-left: 1px solid rgba(200, 194, 152, .16); background: #13130f; }
-.st-tabs { display: flex; border-bottom: 1px solid rgba(200, 194, 152, .16); }
-.st-tab { appearance: none; flex: 1; height: 40px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--rp-muted);
-  font: 800 10px var(--rp-font); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
-.st-tab:hover { color: var(--rp-ink); }
-.st-tab.on { color: var(--rp-gold); border-bottom-color: var(--rp-gold); }
-.st-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 18px; scrollbar-width: thin; scrollbar-color: rgba(200, 194, 152, .38) transparent; }
+/* The rail: a labelled glyph per page down the inspector's outer edge, the
+   open one lit gold with a bar on the page's side. */
+.st-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.st-tabs { flex: 0 0 ${RAIL_W}px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 8px 0;
+  border-left: 1px solid rgba(200, 194, 152, .16); background: #0f0f0c; overflow-y: auto; scrollbar-width: none; }
+.st-tabrule { flex: 0 0 auto; height: 1px; margin: 6px 16px; background: rgba(200, 194, 152, .18); }
+.st-tab { appearance: none; position: relative; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; height: 56px; padding: 0 4px; border: 0; background: none; color: var(--rp-muted); cursor: pointer;
+  font: 800 9px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; transition: color .15s, background-color .15s; }
+.st-tab .st-glyph { width: 20px; height: 20px; stroke-width: 1.75; }
+.st-tab:focus-visible { outline-offset: -3px; }
+.st-tab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0;
+  background: var(--rp-gold); transform: scaleY(0); transition: transform .18s ease; }
+.st-tab:hover { color: var(--rp-ink); background: rgba(200, 194, 152, .05); }
+.st-tab.on { color: var(--rp-gold); background: rgba(232, 195, 90, .08); }
+.st-tab.on::before { transform: scaleY(1); }
+.st-tablabel { white-space: nowrap; }
+.st-pagehead { flex: 0 0 auto; padding: 14px 16px 10px; border-bottom: 1px solid rgba(200, 194, 152, .12); }
+.st-pagetitle { margin: 0; color: var(--rp-ink); font: 800 13px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
+.st-pagewhat { margin: 4px 0 0; color: var(--rp-muted); font: 12px/1.35 var(--rp-font); }
+/* A short window: the rail tightens, then keeps its glyphs alone (each
+   still named by its title and its label for a screen reader). */
+@media (max-height: 820px) {
+  .st-tab { height: 46px; gap: 3px; }
+  .st-tabrule { margin: 4px 16px; }
+  .st-pagehead { padding: 10px 16px 8px; }
+  .st-pagewhat { display: none; }
+}
+@media (max-height: 700px) {
+  .st-tab { height: 38px; }
+  .st-tablabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+.st-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 18px; scrollbar-width: thin; scrollbar-color: rgba(200, 194, 152, .38) transparent; }
 .st-page[hidden] { display: none; }
 .st-group { padding: 12px 0 6px; border-bottom: 1px solid rgba(200, 194, 152, .1); display: flex; flex-direction: column; gap: 8px; }
 .st-more:empty { display: none; }

@@ -46,8 +46,12 @@ The same tour as videos, a step each and one of the whole tour, is made by
   2.39:1), Thumbnail, Record, Post as a Short and Help. Esc or the cross leaves the studio.
 - The monitor is the 3D view in the shape of the frame. What it shows is
   what gets recorded, text and colour included.
-- The inspector on the right has seven tabs: Kills, Camera, Look, Text,
-  Effects, Montage and Export.
+- The inspector on the right is a page and the rail beside it, down the
+  window's edge: Kills and Camera (shooting the clip); Look, Text and
+  Effects (its look); Montage and Export (getting it out). Click a glyph to
+  open its page, which says at its top what is on it; with a page's glyph
+  focused, the up and down arrows go through them. In a short window the
+  rail keeps the glyphs alone; hover one for its name.
 - Under the monitor: the transport (start, frame back, play, frame on, end),
   the video's clock, the camera switch (Clip camera, Orbit, His eyes, Free
   fly, Game view) and Camera here; then the tray; then the timeline. Game

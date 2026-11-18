@@ -2491,3 +2491,33 @@ started placing at the roamed view (0.00 m) and Use this view made it
 yours there (0.08 m), ending the roam. The kill-shot probe (Bocage) ran
 clean through to its recording.
 
+### The inspector's rail (2026-11-18)
+
+The owner: "Can we redesign the studio kills / camera / look / text strip.
+It's getting super condensed". Seven tabs shared one 356 px row, about 50 px
+each, and EFFECTS, MONTAGE and EXPORT ran into each other.
+
+- **A rail** (replay-studio.js `TABS`, `.st-tabs`): a 68 px column down the
+  inspector's outer edge, a 20 px stroke glyph and its name per page, in
+  three groups split by a rule: Kills, Camera; Look, Text, Effects;
+  Montage, Export. The open page is gold, with a gold bar on the page's
+  side. New glyphs: kills (a sight), look (an aperture), text, fx (a
+  burst), export (a download); Camera and Montage keep `camera` and `film`.
+- **The page names itself**: a heading and a line on what is on it
+  (`.st-pagehead`), so the rail's labels can stay short.
+- **The page keeps its width**: 344 px (was 356 with the tabs over it);
+  the inspector is 412 px with the rail, the monitor 56 px narrower.
+- **Short windows**: under 820 px tall the rail's buttons are 46 px and
+  the page's line goes; under 700 px the rail keeps its glyphs alone (each
+  named by its title, its label kept for a screen reader).
+- **Keys**: a tab list, vertical; up and down with a page's glyph focused
+  (`Studio.key`, ahead of the replay's arrows, which follow another player).
+
+Measured in headless Chromium at 1600 x 900, 1366 x 768 and 1280 x 680: the
+rail fits without scrolling at each (578, 446 and 358 px tall), the labels
+shown at the first two and glyphs alone at the third, the page 343 px wide
+with nothing overflowing it; a click on Export opened it with its heading;
+four arrow presses from Export landed where they should with the focus,
+nothing roamed and the followed player held. The tour walked every step,
+each moved on by the studio's own state.
+
