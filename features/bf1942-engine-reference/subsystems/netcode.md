@@ -240,7 +240,11 @@ the record's velocity and his rotation is held (P-7). A turret is lerped from
 its whole ring and held at its newest past it (P-8: the extrapolation arm's
 "previous" record is the newest itself). The server's tick, which that
 clock follows, loses a stall of more than nine ticks for good (D-4, measured
-in P-10).
+in P-10). All of that is `PMLinear`, which is what retail runs: the global
+prediction mode defaults to 1 in both binaries' `NetworkManager`
+constructors, vanilla declares soldiers, guns and vehicles `PMLinear`, and
+nothing in vanilla switches on `PMCubic`, the Hermite spline through four
+records that `predict` also carries (P-11).
 
 ## 5. Rates and the choke
 
