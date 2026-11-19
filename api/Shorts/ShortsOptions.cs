@@ -53,6 +53,11 @@ public record ShortsOptions
     /// <summary>A Short weighed for retention with this many views or fewer is taken down.</summary>
     public int RetentionMaxViews { get; init; } = 1;
 
+    /// <summary>The ffmpeg that converts a studio share iPhones cannot play (VP9, Opus) to
+    /// H.264/AAC (<see cref="ShortTranscoder"/>). Empty turns the conversion off; the nightly
+    /// shorts-colour.mjs re-encode still puts such a share right.</summary>
+    public string? FfmpegPath { get; init; } = "ffmpeg";
+
     /// <summary>The largest video a Short of <paramref name="kind"/> may have.</summary>
     public long VideoLimit(string? kind) => ShortKinds.IsLandscape(kind) ? MaxRollVideoBytes : MaxVideoBytes;
 

@@ -20,7 +20,8 @@ public sealed class ShortService(
     IClock clock,
     IOptions<ShortsOptions> options,
     ILogger<ShortService> logger,
-    IVideoFlattener? flattener = null) : IShortService
+    IVideoFlattener? flattener = null,
+    IShortTranscoder? transcoder = null) : IShortService
 {
     public const int DefaultDays = 7;
     /// <summary>Ten years: a player's or a server's page asks for all of them.</summary>
@@ -446,11 +447,8 @@ public sealed class ShortService(
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
             // A studio share is whatever the player's browser recorded; the render job's are H.264.
             // One that is not (VP9 from Firefox) is still taken: it plays where it was made, and
-            // shorts-colour.mjs re-encodes it for iPhones.
-            if (flatten && Mp4Codecs.Unplayable(await Mp4Codecs.ReadAsync(videoFile, ct)) is { } unplayable)
-            {
-                logger.LogWarning("A studio share that iPhones cannot play, kept for re-encoding: {Why}", unplayable);
-            }
+            // ShortTranscoder swaps in an H.264 copy for iPhones once it is live.
+            var unplayable = flatten ? Mp4Codecs.Unplayable(await Mp4Codecs.ReadAsync(videoFile, ct)) : null;
             if (flatten && flattener is not null)
             {
                 await flattener.FlattenAsync(videoFile, ct);
@@ -471,6 +469,12 @@ public sealed class ShortService(
                 posterFile = null;
                 logger.LogInformation(
                     "Short {Slug} uploaded: {Key} ({Kind}), {Bytes} bytes", saved.Slug, saved.Key, saved.Kind, saved.VideoBytes);
+                if (unplayable is not null)
+                {
+                    var queued = transcoder?.Enqueue(saved.Slug) ?? false;
+                    logger.LogInformation("Short {Slug} is a share iPhones cannot play ({Why}); {Next}", saved.Slug, unplayable,
+                        queued ? "queued for conversion to H.264" : "left for the nightly re-encode");
+                }
             }
             return new ShortUploadResult(ShortDto.From(saved), created);
         }

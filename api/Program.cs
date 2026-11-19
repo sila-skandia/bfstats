@@ -473,6 +473,9 @@ try
     builder.Services.AddSingleton<api.Shorts.ShortStorage>();
     builder.Services.AddScoped<api.Shorts.IShortService, api.Shorts.ShortService>();
     builder.Services.AddSingleton<api.Shorts.IVideoFlattener, api.Shorts.Mp4Flattener>();
+    builder.Services.AddSingleton<api.Shorts.ShortTranscoder>();
+    builder.Services.AddSingleton<api.Shorts.IShortTranscoder>(sp => sp.GetRequiredService<api.Shorts.ShortTranscoder>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<api.Shorts.ShortTranscoder>());
     builder.Services.AddSingleton<api.Shorts.ShortViewCounter>();
     builder.Services.AddSingleton<api.Shorts.IShortViewCounter>(
         sp => sp.GetRequiredService<api.Shorts.ShortViewCounter>());

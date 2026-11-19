@@ -580,9 +580,11 @@ videos.
   `video/mp4` (Firefox, Chromium builds without an H.264 encoder) writes
   those, and iOS plays only H.264/AAC. The recorder now reports its real
   codecs (`recorder.mimeType`). A share is never refused for its codec (the
-  owner: it plays for the player who made it); the API logs it
-  (`Mp4Codecs`) and `scripts/shorts-colour.mjs` (in the nightly) re-encodes
-  any live video that is not H.264/AAC. To check one: `ffprobe` the
+  owner: it plays for the player who made it); the API converts it to
+  H.264/AAC seconds after it is live (`Mp4Codecs`, `ShortTranscoder`, the API
+  image's ffmpeg), and `scripts/shorts-colour.mjs` (in the nightly) re-encodes
+  any live video still not H.264/AAC (features/replay-shorts/README.md, "A
+  studio share iPhones cannot play"). To check one: `ffprobe` the
   `og:video` URL; it must say `h264` and `aac`.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went

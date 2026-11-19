@@ -221,6 +221,9 @@ spec:
           # also makes the runtime collect earlier instead of growing unchecked.
           # CPU is generous — throttling only slows the background aggregation
           # jobs, it doesn't kill them.
+          # ffmpeg runs inside this limit too: ShortTranscoder converts a VP9 studio
+          # share to H.264 (200-250 MB, one at a time), and starts only with 640 MiB
+          # of it free (features/replay-shorts/README.md).
           resources:
             requests:
               memory: "768Mi"

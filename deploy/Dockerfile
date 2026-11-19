@@ -33,9 +33,16 @@ RUN --mount=type=secret,id=sixlabors_lic,required=false \
 
 FROM base AS final
 ARG PROJECT_NAME
+# ffmpeg for the API only (--build-arg WITH_FFMPEG=1): it converts a studio share that iPhones
+# cannot play (VP9 and Opus, from Firefox) to H.264 (api/Shorts/ShortTranscoder.cs). Installed
+# before the publish is copied, so the layer is cached across code changes.
+ARG WITH_FFMPEG=""
+USER root
+RUN if [ -n "$WITH_FFMPEG" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*; \
+    fi
 WORKDIR /app
 COPY --from=publish /app/publish .
-USER root
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
     echo "exec dotnet /app/${PROJECT_NAME}.dll \"\$@\"" >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh

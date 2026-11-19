@@ -584,20 +584,86 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task Share_OfVp9InsideMp4_IsTaken_ForTheNightlyToReEncode()
+    public async Task Share_OfVp9InsideMp4_IsTaken_AndQueuedForConversion()
     {
-        // Firefox records VP9 and Opus into a bare video/mp4. It plays where it was made; the
-        // share goes up, and shorts-colour.mjs re-encodes it for iPhones (2026-11-19).
+        // Firefox records VP9 and Opus into a bare video/mp4. It plays where it was made, so the
+        // share goes up as it came and is queued for an H.264 copy for iPhones (2026-11-19).
         db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
         db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
         db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures");
+        var transcoder = new QueueTranscoder();
+        var converting = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+            NullLogger<ShortService>.Instance, transcoder: transcoder);
+        ShortsController Using(ClaimsPrincipal user) => new(converting, storage, counter, new ConfigurationBuilder().Build(),
+            MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }), MsOptions.Create(new RecordingsOptions()))
+        {
+            ControllerContext = Controller(user: user).ControllerContext,
+        };
 
-        var vp9 = Controller(user: User(false));
+        var vp9 = Using(User(false));
         await Body(vp9, ShareMeta(), video: await File.ReadAllBytesAsync(Path.Combine(fixtures, "fragmented-vp9.mp4")));
-        Assert.IsType<CreatedAtActionResult>((await vp9.Share(default)).Result);
-        Assert.Equal(1, await db.ReplayShorts.CountAsync());
+        var shared = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await vp9.Share(default)).Result).Value);
+        Assert.Equal([shared.Slug], transcoder.Queued);
+
+        // An H.264 share is left as it is.
+        var h264 = Using(User(false));
+        await Body(h264, ShareMeta(), video: await File.ReadAllBytesAsync(Path.Combine(fixtures, "fragmented.mp4")));
+        Assert.IsType<CreatedAtActionResult>((await h264.Share(default)).Result);
+        Assert.Equal([shared.Slug], transcoder.Queued);
+    }
+
+    [Fact]
+    public async Task Transcoder_SwapsInAnH264Copy_UnderANewVersion()
+    {
+        if (!OnPath("ffmpeg")) return; // the converter needs ffmpeg; the API image carries it
+        db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
+        db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var share = Controller(user: User(false));
+        await Body(share, ShareMeta(), video: await File.ReadAllBytesAsync(
+            Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures", "fragmented-vp9.mp4")));
+        var shared = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await share.Share(default)).Result).Value);
+
+        var transcoder = new ShortTranscoder(
+            new ServiceCollection().AddSingleton(db).BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            storage, MsOptions.Create(new ShortsOptions()), NullLogger<ShortTranscoder>.Instance);
+        Assert.True(await transcoder.ConvertAsync(shared.Slug, default));
+        Assert.Equal(["avc1", "mp4a"], await Mp4Codecs.ReadAsync(storage.VideoPath(shared.Slug), default));
+        db.ChangeTracker.Clear();
+        var row = await db.ReplayShorts.SingleAsync(s => s.Slug == shared.Slug);
+        Assert.Equal(new FileInfo(storage.VideoPath(shared.Slug)).Length, row.VideoBytes);
+        Assert.NotEqual(shared.VideoUrl, ShortDto.From(row).VideoUrl);
+        // Done once: an H.264 video is left alone.
+        Assert.False(await transcoder.ConvertAsync(shared.Slug, default));
+    }
+
+    [Fact]
+    public void Transcoder_ReadsTheContainersFreeMemory_FromCgroupV2()
+    {
+        var cgroup = Path.Combine(directory, "cgroup");
+        Directory.CreateDirectory(cgroup);
+        File.WriteAllText(Path.Combine(cgroup, "memory.max"), "3221225472\n");
+        File.WriteAllText(Path.Combine(cgroup, "memory.stat"), "anon 2147483648\nfile 900000000\n");
+        Assert.Equal(1073741824, ShortTranscoder.FreeBytes(cgroup));
+        File.WriteAllText(Path.Combine(cgroup, "memory.max"), "max\n");
+        Assert.Null(ShortTranscoder.FreeBytes(cgroup));
+        Assert.Null(ShortTranscoder.FreeBytes(Path.Combine(directory, "nowhere")));
+    }
+
+    private static bool OnPath(string exe) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator).Any(d => File.Exists(Path.Combine(d, exe)));
+
+    private sealed class QueueTranscoder : IShortTranscoder
+    {
+        public List<string> Queued { get; } = [];
+        public bool Enqueue(string slug)
+        {
+            Queued.Add(slug);
+            return true;
+        }
     }
 
     [Fact]

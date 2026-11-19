@@ -1353,6 +1353,30 @@ Short. A crawler rule in HAProxy could send it to the API too; not done.
 Discord caches an unfurl per URL, so a Short re-filmed under a new slug gets
 a fresh embed and a taken-down one keeps its old embed until the cache ages.
 
+### A studio share iPhones cannot play (2026-11-19)
+
+`2ywyeks3uj` would not play on any iPhone: VP9 and Opus inside an MP4. The
+studio asks the browser's MediaRecorder for H.264 first, but where it cannot
+(Firefox, Chromium builds without an H.264 encoder) the fallback, a bare
+`video/mp4`, writes VP9 and Opus, which iOS does not decode.
+
+A share is never refused for its codec (the owner: it plays for the player who
+made it, and refusing lost their edit). Instead:
+
+- The API reads each track's sample entry (`Mp4Codecs`) and queues a share that
+  is not H.264/AAC for `ShortTranscoder`, which swaps in an H.264/AAC copy at TV
+  range a few seconds after it is live, under a new `?v=`. It runs the API
+  image's ffmpeg (`deploy/Dockerfile`, `WITH_FFMPEG=1` for the API only), one at
+  a time, two threads, at low priority. On start it sweeps the live studio
+  shares for any a restart left.
+- Measured on the API's base image (ffmpeg 6.1, arm64): the worst case, 60 s of
+  1080x1920 VP9, converts in 18 s on two cores and needs 200-250 MB; with the
+  encoder's threads unpinned it was OOM-killed at 400 MB. ffmpeg shares the
+  API's 3 Gi cgroup, so it starts only with 640 MiB free of anonymous memory and
+  otherwise waits up to 30 minutes, then leaves it.
+- The nightly `scripts/shorts-colour.mjs` re-encodes any live video that is
+  still not H.264/AAC, so nothing is left behind if the API could not.
+
 ## 4. The strip and the player
 
 **The strip** sits at the top of REPLAY, above the recordings: "Shorts this
