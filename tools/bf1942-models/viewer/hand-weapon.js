@@ -318,6 +318,22 @@ export function createHandWeapon(page) {
     return true;
   }
 
+  /** The item a real server has in the soldier's hands (the relay's `st`
+   *  row `item`, net-room.js `keepItemWithServer`), raised here with no
+   *  press of its own: the server already holds it. A press the page refused
+   *  and the server took (a number key while the page still had him seated,
+   *  a round trip before the server's exit reached it) otherwise left the
+   *  page on one weapon and the server on another for the rest of the life:
+   *  the server threw grenades the page never drew (live, Liberation of
+   *  Caen, 2026-11-19). The server's own counts allowed it, so the page's
+   *  `cantSelectWhenNoAmmo` does not refuse it. True if the slot is in hand. */
+  function adoptServerItem(slot) {
+    if (!page.optOnFoot.checked || !page.soldier || page.optPilot.checked) return false;
+    const entry = soldierKit.kitWeaponSlots?.find(w => w.slot === slot);
+    if (!entry) return false;
+    return enableItem(entry, { force: true });
+  }
+
   /** The kit's counts for the item at `entry`, without creating them: null
    *  for an item not raised this life (the engine's is full). A weapon whose
    *  words say `setWeaponLink` counts its target's rounds (FA-8), once its
@@ -341,11 +357,11 @@ export function createHandWeapon(page) {
    * front of it: the automatic switch calls it directly. True if it came up
    * (or was already up).
    */
-  function enableItem(entry) {
+  function enableItem(entry, { force = false } = {}) {
     if (!entry) return false;
     if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
     const counts = itemEntry(entry);
-    if (counts?.cantSelect && totalAmmo(counts) === 0) return false;
+    if (!force && counts?.cantSelect && totalAmmo(counts) === 0) return false;
     soldierKit.handSlot = entry.slot;
     // The tick the raise's word runs on: `hand-fire.js` holds the new item's
     // trigger off from it (`RAISE_TICKS`, ledger FA-20).
@@ -984,6 +1000,7 @@ export function createHandWeapon(page) {
     packsLeft,
     playHandFire,
     selectKitWeapon,
+    adoptServerItem,
     selectBestLoadedWeapon,
     soldierMaxHp: loadout.soldierMaxHp,
     soldierTemplateFor,

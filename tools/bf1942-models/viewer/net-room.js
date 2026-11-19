@@ -44,7 +44,7 @@ import { indexRelayCopies, indexSceneCopies } from './relay-copies.js';
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`, `fireStateFor`,
- * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`, `world`,
+ * `dropEntryPoints`, `handWeapon`, `handSlot`, `adoptServerItem`, `playWorldReload`, `placeParkedHull`, `world`,
  * `currentRoot`, `collider`.
  */
 export function createNetRoom(page) {
@@ -3760,6 +3760,34 @@ export function createNetRoom(page) {
     room.netZoomFixes = (room.netZoomFixes ?? 0) + 1;
   }
 
+  /** The item in hand kept to the server's soldier, as the zoom is. The page
+   *  raises an item on its own press and the server on that press's
+   *  MenuSelect bit; a press one side refuses and the other takes leaves them
+   *  holding different items for good. A number key pressed in the round
+   *  trip after leaving a vehicle is the one that bit: the page still had
+   *  him seated, the server already had him on foot and raised his
+   *  grenades, and the page fired its Panzerschreck while the server threw
+   *  them, the second at his own feet (Liberation of Caen, 2026-11-19, a
+   *  235 ms server). The server's `item` (net-relay.js `selfItem`) is its
+   *  word once it has run the page's last item press (`lastItemPressSeq`,
+   *  so a switch of the page's own still on its way is never undone,
+   *  whatever the server's distance) and the two have stayed apart a
+   *  while after it. */
+  const ITEM_SETTLE_MS = 300;
+  let itemApartSince = null;
+  let lastItemPressSeq = 0;
+  function keepItemWithServer(now) {
+    const server = room.roomClient?.selfItem?.() ?? null;
+    const held = page.handSlot ?? null;
+    if (!relayUrl || server === null || held === null || page.soldierDead || !page.optOnFoot?.checked) { itemApartSince = null; return; }
+    if (server === held) { itemApartSince = null; return; }
+    if ((room.roomClient?.ackedSeq?.() ?? 0) < lastItemPressSeq) { itemApartSince = null; return; }
+    if (itemApartSince === null) { itemApartSince = now; return; }
+    if (now - itemApartSince < ITEM_SETTLE_MS) return;
+    itemApartSince = null;
+    if (page.adoptServerItem?.(server)) room.netItemFixes = (room.netItemFixes ?? 0) + 1;
+  }
+
   // `look` is the pair the local world turned by; `wire` the device's axis
   // before the zoom factor (local-player.js `sampleInput`). A real server
   // applies the zoom to the record it receives (BFSoldier::handlePlayerInput
@@ -3769,7 +3797,7 @@ export function createNetRoom(page) {
   // state of its own, so it keeps `look`.
   room.sendTickInputs = (ticks, input, look, dt, wire = look) => {
     if (relayUrl && Number.isFinite(wire?.x) && Number.isFinite(wire?.y)) look = wire;
-    if (relayUrl && room.roomJoined) keepZoomWithServer(performance.now());
+    if (relayUrl && room.roomJoined) { keepZoomWithServer(performance.now()); keepItemWithServer(performance.now()); }
     paceToServer(dt);
     // Cheap and idempotent: the world is rebuilt at every level load, and
     // this is the one call the page makes every frame with a world up.
@@ -3818,6 +3846,8 @@ export function createNetRoom(page) {
       const base = P.length - owed * TICK_POSE;
       for (let i = 0; i < ticks; i++) {
         const seq = room.roomClient.sendInput(input, look);
+        // The word that carries an item press (keepItemWithServer).
+        if (seq && input.menu) lastItemPressSeq = seq;
         // This frame's ticks are the world's last `ticks`, one word each.
         if (seq && page.world) inputIndex.noteSent(page.world.ticks - ticks + 1 + i, seq);
         // How long this word's tick had been due when its frame ran it: the

@@ -1670,6 +1670,14 @@ export function createRelayState() {
     seatRoot: (nid) => seatOf(nid).root,
     jointsAt,
     roundRows,
+    // The kit item the server has in the acked soldier's hands (`st` rows'
+    // `item`, `loadouts.json` `weapons[].slot`), or null: no acked soldier,
+    // nothing in hand, or a dead one's sentinel (0xffffffff).
+    selfItem() {
+      const id = st.selfAim?.id;
+      const item = Number.isInteger(id) ? st.states.get(id)?.item : null;
+      return Number.isInteger(item) && item > 0 && item < 32 ? item : null;
+    },
     isHull,
     playerOwned,
     slotOfPid,
@@ -2082,6 +2090,14 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
    *  or null when unknown (no soldier, or an older relay). */
   out.selfZoom = () => (st.selfAim && st.selfAim.ack === st.ack && typeof st.selfAim.zoom === 'boolean'
     ? st.selfAim.zoom : null);
+
+  /** The kit item the server has in this player's soldier's hands (the `st`
+   *  rows' `item`, `loadouts.json` `weapons[].slot`), or null when unknown
+   *  (no acked soldier, none in hand, a dead one's sentinel). */
+  out.selfItem = () => pure.selfItem();
+
+  /** The newest of the page's input words the server has run (its seq), 0 before any. */
+  out.ackedSeq = () => st.ack;
 
   /** `{ seq, index }`: the newest acked page word and the input index the
    *  server ran it at (ledger DEV-14), or null. */

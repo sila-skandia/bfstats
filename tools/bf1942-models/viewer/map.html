@@ -3511,7 +3511,7 @@ const room = createNetRoom(bag(
   from(() => pageAudio, `claimVehicleAudio cutVehicleAudio playWorldReload playWorldShot releaseVehicleAudio
     remoteSoldierSoundTick`),
   from(() => pageInput, `captured lockHeld`),
-  from(() => soldierKit, `handWeapon loadouts soldierTemplateFor`),
+  from(() => soldierKit, `adoptServerItem handSlot handWeapon loadouts soldierTemplateFor`),
   from(() => footBodies, `soldierDress`),
   from(() => spawning, `deployJoined deployWaiting noteServerSpawnWait openDeploy reaskServerSpawn resumeServerLife setDeployTeam
     standServerSpawn`),
