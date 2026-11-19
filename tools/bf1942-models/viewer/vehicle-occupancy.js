@@ -60,6 +60,17 @@ export class VehicleOccupancy {
      *  the tower snapped to hull-forward — and would also re-capture the
      *  node's rest pose from a node that may not be at rest yet. */
     this.turrets = new Map();
+    /** Where the hull's guns were left when its last crew got out
+     *  (`VehicleRegistry.rigAngles`), or null: a seat's rig built for the
+     *  first time starts there instead of at rest. */
+    this.leftAngles = null;
+  }
+
+  /** Every built seat rig's axes as `[angle, speed]`, by seat id. */
+  rigAngles() {
+    const out = new Map();
+    for (const [id, rig] of this.turrets) out.set(id, (rig.axes ?? []).map((a) => [a.angle, a.speed]));
+    return out;
   }
 
   seatInfo(id) { return this.survey.seats.get(id); }
@@ -126,6 +137,9 @@ export class VehicleOccupancy {
     if (!rig) {
       rig = new TurretRig(seat, { keys });
       this.turrets.set(id, rig);
+      // Left where the last crew had it, and still (the servo at rest).
+      const left = this.leftAngles?.get(id);
+      if (left) rig.axes?.forEach((axis, i) => { if (Number.isFinite(left[i]?.[0])) { axis.hold(left[i][0]); axis.speed = 0; } });
     }
     // The nodes have been sitting wherever `applyRig` left them while this
     // seat was empty; put the rig's own angles back on before anything reads

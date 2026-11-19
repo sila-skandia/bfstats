@@ -202,6 +202,23 @@ export class VehicleRegistry {
      */
     this.rootFlights = new Map();
     /**
+     * root node -> Map<seatId, [[angle, speed] per axis]>: where each seat's
+     * gun was left when the hull's last man got out. A RotationalBundle's
+     * angle is the vehicle object's own state in the engine, kept whether
+     * anyone sits in it or not, but the page's rigs live in the instance,
+     * which lives only while the hull is crewed. On a real server a seat
+     * change is an exit and an enter, so the hull is empty between them:
+     * the instance went with the rigs, the gun came back at rest, and the
+     * server snapped it to where it had been left (owner, Berlin, a
+     * Hanomag's and a Kettenkrad's gun, 2026-11-19). A fresh instance's rigs
+     * start from it (`VehicleOccupancy.rigFor`), at rest. Only with
+     * `env.keepGunAngles` (the page on a real server): the page's own world
+     * keeps its hulls crewed across a seat change, and its bots' seeded
+     * matches are tuned on guns that come back at rest (Bocage, seeds 1-6:
+     * route failures 132 at the mean kept, 109 at rest).
+     */
+    this.rigAngles = new WeakMap();
+    /**
      * root node -> team: the hulls whose team count never comes back to 0.
      * A `teamOnVehicle` spawner's `spawnObject` (0x083140a0) calls the new
      * object's `setTeam` (vt+0x6c) with the spawner's team, with nobody
@@ -228,9 +245,12 @@ export class VehicleRegistry {
    *  a stamped hull's (`stamps`) when nobody is aboard. */
   teamOf(root) { return this.instances.get(root)?.team ?? this.stamps.get(root) ?? 0; }
   /** A `teamOnVehicle` spawner put `root` in the world as `team`'s. */
-  stampTeam(root, team) { if (root) this.stamps.set(root, team | 0); }
-  /** `root` is a fresh object: no stamp of an earlier life holds it. */
-  clearStamp(root) { this.stamps.delete(root); }
+  stampTeam(root, team) { if (root) { this.stamps.set(root, team | 0); this.rigAngles.delete(root); } }
+  /** `root` is a fresh object: no stamp of an earlier life holds it, and its
+   *  guns stand at rest (`rigAngles`). */
+  clearStamp(root) { this.stamps.delete(root); this.rigAngles.delete(root); }
+  /** `root`'s guns stand at rest: a fresh object in the same node. */
+  forgetRigAngles(root) { if (root) this.rigAngles.delete(root); }
   /** A player's side, as the world records it (0: none, see `mayEnterHull`). */
   playerTeam(playerId) { return this.env.world?.()?.player(playerId)?.team ?? 0; }
 
@@ -271,6 +291,7 @@ export class VehicleRegistry {
     if (fresh) {
       inst = new VehicleInstance(root, this.env.classes ?? {});
       inst.team = this.stamps.get(root) ?? 0;
+      if (this.env.keepGunAngles) inst.occupancy.leftAngles = this.rigAngles.get(root) ?? null;
     }
     const seat = seatId || inst.rootId;
     if (inst.holder(seat) != null) return null;
@@ -398,6 +419,7 @@ export class VehicleRegistry {
       if (inst.team && inst.root?.userData?.physics?.dontClearTeamOnExit === true) {
         this.stamps.set(inst.root, inst.team);
       }
+      if (this.env.keepGunAngles) this.rigAngles.set(inst.root, inst.occupancy.rigAngles());
       this.instances.delete(inst.root);
     }
     this.env.onChange?.(inst);

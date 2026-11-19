@@ -407,4 +407,38 @@ results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === d
   results.destroyOnExit = r;
 }
 
+// A gun stays where its crew left it across an empty hull (a real server's
+// seat change is an exit and an enter, so the hull is empty between them),
+// and a fresh object stood in the same node starts at rest.
+{
+  const w = new World({ collider, extras: EXTRAS });
+  w.addPlayer('gunner', { team: 1 });
+  const reg = new VehicleRegistry({ world: () => w, keepGunAngles: true });
+  const hull = sherman();
+  const gun = 'shermanBrowning_PCO1';
+  const first = reg.enter(hull, gun, 'gunner');
+  first.turret.axes[0].hold(73);
+  first.turret.axes[0].speed = 12;
+  reg.leave('gunner', { exited: true });
+  const again = reg.enter(hull, gun, 'gunner');
+  const r = { left: 73, back: +again.turret.axes[0].angle.toFixed(3), speed: again.turret.axes[0].speed,
+              freshInstance: again.instance !== first.instance };
+  reg.leave('gunner', { exited: true });
+  reg.clearStamp(hull);
+  r.afterFreshObject = +reg.enter(hull, gun, 'gunner').turret.axes[0].angle.toFixed(3);
+  reg.leave('gunner', { exited: true });
+  const other = reg.enter(hull, gun, 'gunner');
+  other.turret.axes[0].hold(-40);
+  reg.leave('gunner', { exited: true });
+  reg.forgetRigAngles(hull);
+  r.afterForget = +reg.enter(hull, gun, 'gunner').turret.axes[0].angle.toFixed(3);
+  // Without the option (the page's own world) the gun comes back at rest.
+  const plainReg = new VehicleRegistry({ world: () => w });
+  const h2 = sherman();
+  plainReg.enter(h2, gun, 'gunner').turret.axes[0].hold(50);
+  plainReg.leave('gunner', { exited: true });
+  r.withoutOption = +plainReg.enter(h2, gun, 'gunner').turret.axes[0].angle.toFixed(3);
+  results.gunLeft = r;
+}
+
 process.stdout.write(JSON.stringify(results));

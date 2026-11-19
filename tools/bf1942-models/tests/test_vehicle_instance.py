@@ -252,5 +252,19 @@ class HullTeamTests(unittest.TestCase):
         self.assertEqual({"destroyed": False, "calls": 0}, r["plain"])
 
 
+    def test_a_gun_stays_where_it_was_left_across_an_empty_hull(self) -> None:
+        # The engine keeps a RotationalBundle's angle on the vehicle object;
+        # the page's rigs lived only while someone sat in the hull, so a real
+        # server's seat change (an exit and an enter) brought the gun back
+        # at rest and the server snapped it to where it had been left
+        # (owner, Berlin, 2026-11-19). A fresh object starts at rest.
+        r = self.results["gunLeft"]
+        self.assertTrue(r["freshInstance"])
+        self.assertEqual(r["back"], r["left"])
+        self.assertEqual(r["speed"], 0)
+        self.assertEqual(r["afterFreshObject"], 0)
+        self.assertEqual(r["afterForget"], 0)
+        self.assertEqual(r["withoutOption"], 0)
+
 if __name__ == "__main__":
     unittest.main()

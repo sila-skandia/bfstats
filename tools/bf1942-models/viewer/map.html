@@ -1454,6 +1454,9 @@ onSoundChange(settings => {
 // and rebuilt when either changes under him (`syncLocalSeat`).
 const vehicles = new VehicleRegistry({
   classes: { Aircraft, GroundVehicle, TrackedVehicle, Ship },
+  // A real server's seat change empties the hull between an exit and an
+  // enter; there the guns keep where they were left (`rigAngles`).
+  keepGunAngles: !!params.get('relay'),
   buildDrive: instance => buildHullDrive(instance),
   world: () => level.world,
   guns: null,      // `guns` is built further down; set there
@@ -3500,6 +3503,7 @@ const room = createNetRoom(bag(
   // Whether the vote plate is drawn (`scoreboard-votes.js`): then a vote's
   // question is on it and not in the message log.
   { votePlateReady: () => scoreboard.votes?.plateReady() ?? false },
+  { get vehicles() { return vehicles; } },
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `carryParkedHull carryShip followServerCarriers ownerIsShip placeParkedHull rebaseDeckSpawns standSpawnedObject syncVehicleSpawnOwnership`),

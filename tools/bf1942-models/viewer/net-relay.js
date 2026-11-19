@@ -1258,6 +1258,10 @@ export function createRelayState() {
   // that embrace the render time, extrapolated a little past the newest.
   // `t` is in the relay's clock; null is the newest sample, un-lerped (the
   // reconciler and the seat code read the wire, never the blend).
+  // `xfAt`'s jolt guard: a last pair this many times faster than the one
+  // before it, plus this many m/s, is carried at the earlier pair's speed.
+  const JOLT_FACTOR = Number(globalThis.__JOLT_FACTOR ?? 3);
+  const JOLT_SLACK = Number(globalThis.__JOLT_SLACK ?? 5);
   function xfAt(nid, t = null) {
     const h = st.track.get(nid);
     if (t == null || !h || h.length < 2) return st.xform.get(nid) ?? null;
@@ -1288,7 +1292,21 @@ export function createRelayState() {
       // newest, p90 10.4 degrees off the server's facing carried against 3.1
       // held, 992 draws over 20 degrees against 741).
       const k = past / gap;
-      return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k,
+      // A jolt is not carried on: a pair whose speed is far past the pair
+      // before it (a ram, a shove, a hull knocked a metre and a half in one
+      // tick) is carried at the earlier pair's velocity instead. On the
+      // client's clock the drawn time runs a round trip and more past the
+      // newest sample (0.17 s at a 240 ms server), and the jolt's 41 m/s
+      // carried that long drew a Kettenkrad 7 m past the server's and back
+      // the next sample (Berlin, 2026-11-19).
+      let vx = (b.x - a.x) / gap, vy = (b.y - a.y) / gap, vz = (b.z - a.z) / gap;
+      const p = h.length >= 3 ? h[h.length - 3] : null;
+      if (p && a.at - p.at > 0) {
+        const g0 = a.at - p.at;
+        const ux = (a.x - p.x) / g0, uy = (a.y - p.y) / g0, uz = (a.z - p.z) / g0;
+        if (Math.hypot(vx, vy, vz) > JOLT_FACTOR * Math.hypot(ux, uy, uz) + JOLT_SLACK) { vx = ux; vy = uy; vz = uz; }
+      }
+      return { x: b.x + vx * past, y: b.y + vy * past, z: b.z + vz * past,
                q: isSoldier(nid) ? b.q : extrapolateQ(a.q, b.q, k), at: t };
     }
     if (t <= h[0].at) return h[0];
@@ -1541,7 +1559,9 @@ export function createRelayState() {
     return out;
   }
 
-  function playerRow(slot, t = null) {
+  // `footAt(nid, t)` draws a soldier on foot instead of the raw track: the
+  // client passes its eased draw (`drawnXf`), the one its hulls take.
+  function playerRow(slot, t = null, footAt = null) {
     const r = st.roster.get(slot);
     if (!r) return null;
     const nid = st.control.get(r.pid);
@@ -1549,7 +1569,7 @@ export function createRelayState() {
     // In a hull the soldier is not sent (his own object rides it); he is
     // alive and where the hull is.
     const hullXf = inVehicle ? xfAt(seatOf(st.boarded.get(r.pid)).root, t) : null;
-    const footXf = Number.isInteger(nid) ? xfAt(nid, t) : null;
+    const footXf = Number.isInteger(nid) ? (footAt && t != null && !inVehicle ? footAt(nid, t) : xfAt(nid, t)) : null;
     const xf = inVehicle ? (hullXf ?? footXf) : footXf;
     const { yaw, pitch } = soldierYawPitch(xf?.q);
     const stance = Number.isInteger(nid) ? stanceOf(nid) : { prone: false, crouch: false };
@@ -1969,16 +1989,28 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   // always, and each new sample moves the extrapolated path a little
   // (`createRemoteBlend`): the drawn pose eases across it.
   const blends = new Map();      // id -> createRemoteBlend
-  function drawnXf(id, t) {
+  // A soldier's blend eases faster than a hull's: he turns and stops in a
+  // stride where a hull cannot, and every 1/20 s of ease is drawn behind
+  // where the server will have him. The Berlin session replayed through
+  // this client at 60 fps (2026-11-19, 240 ms): moving frames that stepped
+  // back 9.96% raw, 0.76 / 0.53 / 0.43% at tau 0.03 / 0.05 / 0.1 s; drawn
+  // off the server's later track p90 0.48 m raw, 0.65 / 0.75 / 0.97 m.
+  const SOLDIER_BLEND = { tau: 0.05 };
+  function drawnXf(id, t, opts = undefined) {
     if (remoteClock !== 'retail') return pure.xfAt(id, t);
     let b = blends.get(id);
-    if (!b) { b = createRemoteBlend(); blends.set(id, b); }
+    if (!b) { b = createRemoteBlend(opts); blends.set(id, b); }
     const h = st.track.get(id);
     const xf = b.draw(h?.length ? h[h.length - 1].at : null, t, (tt) => pure.xfAt(id, tt));
     if (!xf) blends.delete(id);
     return xf;
   }
-  out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
+  // A soldier on foot is drawn as a hull is (`drawnXf`): on the client's
+  // clock he is past his newest sample nearly always, carried on along his
+  // last pair, and the raw carry jumped to each new sample's twenty times a
+  // second (Berlin, a 240 ms server, 2026-11-19: one moving frame in ten
+  // stepped back against his run).
+  out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at), (nid, t) => drawnXf(nid, t, SOLDIER_BLEND));
   /** The remotes' render time for page ms `at`, in the server's seconds
    *  (null before the first sample): what a probe sets the drawn pose
    *  against the server's track by. */

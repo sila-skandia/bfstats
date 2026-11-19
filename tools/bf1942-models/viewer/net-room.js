@@ -44,7 +44,7 @@ import { indexRelayCopies, indexSceneCopies } from './relay-copies.js';
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`, `fireStateFor`,
- * `dropEntryPoints`, `handWeapon`, `handSlot`, `adoptServerItem`, `playWorldReload`, `placeParkedHull`, `world`,
+ * `dropEntryPoints`, `handWeapon`, `handSlot`, `adoptServerItem`, `vehicles`, `playWorldReload`, `placeParkedHull`, `world`,
  * `currentRoot`, `collider`.
  */
 export function createNetRoom(page) {
@@ -2458,6 +2458,9 @@ export function createNetRoom(page) {
     const record = pads?.roundRecords?.find(r => r.baked === node);
     if (record) pads.setRoundLive(record, true);
     page.padWorld?.spawn?.(node);
+    // A fresh object in the node: its guns stand at rest, not where the
+    // last hull here was left (vehicle-instance.js `rigAngles`).
+    page.vehicles?.forgetRigAngles?.(node);
     const pose = room.roomClient?.remoteVehicle?.(id);
     if (!pose || !Number.isFinite(pose.x + pose.y + pose.z)) return;
     _poolPos.set(pose.x, pose.y, pose.z);
