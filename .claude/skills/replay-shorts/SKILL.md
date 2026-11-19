@@ -579,10 +579,11 @@ videos.
   studio share): VP9 and Opus inside an MP4. A browser asked for a bare
   `video/mp4` (Firefox, Chromium builds without an H.264 encoder) writes
   those, and iOS plays only H.264/AAC. The recorder now reports its real
-  codecs (`recorder.mimeType`), `shareable` refuses non-H.264, the API
-  refuses the share (415, `Mp4Codecs`), and `scripts/shorts-colour.mjs` (in
-  the nightly) re-encodes any live video that is not H.264/AAC. To check
-  one: `ffprobe` the `og:video` URL; it must say `h264` and `aac`.
+  codecs (`recorder.mimeType`). A share is never refused for its codec (the
+  owner: it plays for the player who made it); the API logs it
+  (`Mp4Codecs`) and `scripts/shorts-colour.mjs` (in the nightly) re-encodes
+  any live video that is not H.264/AAC. To check one: `ffprobe` the
+  `og:video` URL; it must say `h264` and `aac`.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the

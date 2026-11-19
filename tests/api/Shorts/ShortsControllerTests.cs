@@ -584,9 +584,10 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task Share_OfVp9InsideMp4_IsRefused_H264IsTaken()
+    public async Task Share_OfVp9InsideMp4_IsTaken_ForTheNightlyToReEncode()
     {
-        // Firefox records VP9 and Opus into a bare video/mp4, and no iPhone plays it (2026-11-19).
+        // Firefox records VP9 and Opus into a bare video/mp4. It plays where it was made; the
+        // share goes up, and shorts-colour.mjs re-encodes it for iPhones (2026-11-19).
         db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
         db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
         db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
@@ -595,14 +596,8 @@ public sealed class ShortsControllerTests : IDisposable
 
         var vp9 = Controller(user: User(false));
         await Body(vp9, ShareMeta(), video: await File.ReadAllBytesAsync(Path.Combine(fixtures, "fragmented-vp9.mp4")));
-        var refused = Assert.IsType<ObjectResult>((await vp9.Share(default)).Result);
-        Assert.Equal(StatusCodes.Status415UnsupportedMediaType, refused.StatusCode);
-        Assert.Contains("VP9", JsonSerializer.Serialize(refused.Value));
-        Assert.Equal(0, await db.ReplayShorts.CountAsync());
-
-        var h264 = Controller(user: User(false));
-        await Body(h264, ShareMeta(), video: await File.ReadAllBytesAsync(Path.Combine(fixtures, "fragmented.mp4")));
-        Assert.IsType<CreatedAtActionResult>((await h264.Share(default)).Result);
+        Assert.IsType<CreatedAtActionResult>((await vp9.Share(default)).Result);
+        Assert.Equal(1, await db.ReplayShorts.CountAsync());
     }
 
     [Fact]

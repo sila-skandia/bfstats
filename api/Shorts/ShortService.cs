@@ -445,9 +445,11 @@ public sealed class ShortService(
             }
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
             // A studio share is whatever the player's browser recorded; the render job's are H.264.
+            // One that is not (VP9 from Firefox) is still taken: it plays where it was made, and
+            // shorts-colour.mjs re-encodes it for iPhones.
             if (flatten && Mp4Codecs.Unplayable(await Mp4Codecs.ReadAsync(videoFile, ct)) is { } unplayable)
             {
-                throw new RecordingRejectedException(unplayable, StatusCodes.Status415UnsupportedMediaType);
+                logger.LogWarning("A studio share that iPhones cannot play, kept for re-encoding: {Why}", unplayable);
             }
             if (flatten && flattener is not null)
             {

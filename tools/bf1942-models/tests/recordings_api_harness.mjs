@@ -323,7 +323,7 @@ results.share = [
   share.shareable({ mime: 'video/mp4', frame: '169', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
   share.shareable({ mime: 'video/webm', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
   share.shareable({ mime: 'video/mp4', frame: '916', replayUrl: 'replays/bocage.ndjson' }),
-  // What Firefox writes into a bare video/mp4: no iPhone plays it (2026-11-19).
+  // What Firefox writes into a bare video/mp4 is still a Short; the API converts it (2026-11-19).
   share.shareable({ mime: 'video/mp4;codecs=vp9,opus', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
   share.shareable({ mime: 'video/mp4; codecs="avc1.64002a, mp4a.40.2"', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
   share.shareable({ mime: 'video/mp4;codecs=avc1,opus', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
