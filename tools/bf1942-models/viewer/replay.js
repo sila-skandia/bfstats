@@ -330,7 +330,8 @@ class ReplayPlayer {
   }
 
   /** What the game's minimap marks at the clock (replay-minimap.js): both
-   *  sides, and the followed player as its ring while the camera is his (or
+   *  sides (only the followed player's in the studio or a clip with the
+   *  game's HUD), and the followed player as its ring while the camera is his (or
    *  a clip's, with the game's HUD in its picture). In
    *  his first person the ring turns with his view, as the player's turns
    *  with the camera in play: no heading of its own, so the page's camera's.
@@ -343,17 +344,22 @@ class ReplayPlayer {
     // clip films him with.
     const hudClip = Boolean(this.camera.rig) && Boolean(this.creator?.edits?.hud);
     const followPid = hudClip || (this.camera.mode !== 'free' && !this.camera.rig) ? this.followPid : null;
+    // The studio and a clip with the game's HUD are a video of one player's
+    // game: his map marks his own side only, as the game's does. Both sides
+    // there read to viewers as the uploader hacking (2026-11-19).
+    const ownSide = hudClip || Boolean(this.creator?.studio?.open);
     const pov = this.camera.mode === 'pov';
     const built = this.hulls.size;
     const cached = this.minimap;
     if (cached && cached.t === t && cached.followPid === followPid && cached.pov === pov
-        && cached.built === built) return cached.marks;
+        && cached.built === built && cached.ownSide === ownSide) return cached.marks;
     const model = this.highlights?.model;
     const where = model ? model.where : (pid, at) => whereIs(this.rec, pid, at, this.kills);
     this.minimapPids ??= [...new Set([...this.rec.players.keys(), ...(this.rec.playerNids?.keys() ?? [])])];
-    const marks = minimapMarksAt(this.rec, t, { where, pids: this.minimapPids, hullLives: this.hulls.keys(), followPid });
+    const marks = minimapMarksAt(this.rec, t, { where, pids: this.minimapPids, hullLives: this.hulls.keys(), followPid,
+                                                    sideOf: ownSide ? (this.followPid ?? null) : undefined });
     if (pov && marks.focus) marks.focus.dir = null;
-    this.minimap = { t, followPid, pov, built, marks };
+    this.minimap = { t, followPid, pov, built, ownSide, marks };
     return marks;
   }
 

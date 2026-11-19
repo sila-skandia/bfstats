@@ -45,9 +45,19 @@ const wrecked = (life, t) => {
  * x, z, dir, team, fresh }` with `team` 0 for a hull nobody is in; `fresh`
  * false for a last sighting.
  */
-export function minimapMarksAt(rec, t, { where, pids, hullLives = [], followPid = null }) {
+export function minimapMarksAt(rec, t, { where, pids, hullLives = [], followPid = null, sideOf: sidePid } = {}) {
+  // `sideOf`, a pid (or null for nobody): that player's map as the game draws it for him, his
+  // side only (map-friendlies.js, map-vehicle-marks.js: enemy men and
+  // enemy-crewed hulls are never on a player's map; empty hulls are). A clip
+  // filmed with the game's HUD puts that map in a video, and both sides there
+  // read as a wallhack (2026-11-19). A side the recording cannot say marks
+  // nobody.
+  const ownSide = sidePid !== undefined;
+  const side = ownSide ? teamOf(where, sidePid, t) : null;
+  const shown = team => !ownSide || (side !== null && team === side);
   const soldiers = [];
   const crews = new Map();          // hull life -> its mark, crewed by the lowest seat's side
+  const hidden = new Set();         // hulls crewed only by the side `sideOf` hides
   let focus = null;
   let focusHull = null;
   for (const pid of pids) {
@@ -57,6 +67,11 @@ export function minimapMarksAt(rec, t, { where, pids, hullLives = [], followPid 
     if (pid === followPid && w.fresh) {
       focus = { x: w.pos[0], z: w.pos[2], dir };
       if (w.state === 'vehicle') focusHull = w.life;
+      continue;
+    }
+    if (!shown(w.team)) {
+      // An enemy-crewed hull is not an empty one: it is not marked at all.
+      if (w.state === 'vehicle' && w.life) hidden.add(w.life);
       continue;
     }
     if (w.state === 'foot') {
@@ -76,7 +91,7 @@ export function minimapMarksAt(rec, t, { where, pids, hullLives = [], followPid 
     hulls.push(mark);
   }
   for (const life of hullLives) {
-    if (crews.has(life) || life === focusHull) continue;
+    if (crews.has(life) || hidden.has(life) || life === focusHull) continue;
     if (!(t >= life.created && t < life.destroyed)) continue;
     if (life.killedAt !== undefined && t >= life.killedAt) continue;
     if (!isReplicated(life, t) || wrecked(life, t)) continue;
@@ -85,6 +100,14 @@ export function minimapMarksAt(rec, t, { where, pids, hullLives = [], followPid 
     hulls.push({ life, tmpl: life.tmpl, x: p[0], z: -p[2], dir: headingAt(life, t), team: 0, fresh: true });
   }
   return { focus, soldiers, hulls };
+}
+
+/** The followed player's side at `t`, or null: his last known, so a man
+ *  who is dead or out of range still keeps his map to his own side. */
+function teamOf(where, pid, t) {
+  if (pid === null || pid === undefined) return null;
+  const team = where(pid, t)?.team;
+  return team ? team : null;
 }
 
 /** A ground heading `[dx, dz]` as the map surfaces' screen angle: 0 up the

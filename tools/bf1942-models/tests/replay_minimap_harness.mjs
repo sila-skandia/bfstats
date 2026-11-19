@@ -81,6 +81,13 @@ results.followA1 = view(at(5, 1));
 results.followDriver = view(at(5, 3));
 results.followGunner = view(at(5, 4));
 results.followG1 = view(at(5, 5));
+// The studio: one player's own map (`sideOf`), as a clip filmed with the
+// game's HUD shows it.
+const own = (t, followPid, sideOf) => M.minimapMarksAt(rec, t, { where, pids, hullLives, followPid, sideOf });
+results.studioA1 = view(own(5, 1, 1));
+results.studioB1Free = view(own(5, null, 2));
+results.studioG1Gone = view(own(5, 5, 5));
+results.studioNobody = view(own(5, null, null));
 results.key = {
   same: M.minimapMarksKey(at(5, null)) === M.minimapMarksKey(at(5, null)),
   followChanges: M.minimapMarksKey(at(5, null)) !== M.minimapMarksKey(at(5, 1)),

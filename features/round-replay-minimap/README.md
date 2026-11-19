@@ -52,3 +52,11 @@ moments. The test bounds the median at one 60 fps frame, not the worst call:
 an 8 ms bound on the worst call failed under load (load average 25). The
 page caches the marks per clock, camera and built-hull count, so the map's
 repaint key costs one call a frame.
+
+## Except in the studio (2026-11-19)
+
+In the creator studio, and in any clip filmed with the game's HUD, the map
+marks only the followed player's side, as the game's own map does: both
+sides in a creator's video read as the uploader hacking. See
+`features/replay-creator-view/README.md`, "The studio's minimap marks one
+side".

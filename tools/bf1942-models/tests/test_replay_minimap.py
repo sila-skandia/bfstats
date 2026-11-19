@@ -120,6 +120,44 @@ class ReplayMinimapTests(unittest.TestCase):
         self.assertTrue(self.r["key"]["followChanges"])
 
 
+class StudioMinimapTests(unittest.TestCase):
+    """The studio's minimap is one player's game: his side only, as retail
+    draws it. The 2026-11-19 report: "we should not show the other players
+    in the minimap like we do on a regular recording play back. It's causing
+    confusion among players thinking the uploader is hacking."
+    """
+
+    def setUp(self) -> None:
+        self.r = run_harness()
+
+    def test_an_axis_players_map_has_no_allies(self) -> None:
+        marks = self.r["studioA1"]
+        self.assertEqual({s["team"] for s in marks["soldiers"]}, {1})
+        self.assertIn(5, by_pid(marks))
+        self.assertNotIn(2, by_pid(marks))
+        # The Allied-crewed Sherman is gone; the empty Tiger stays, grey.
+        self.assertNotIn("Sherman", by_tmpl(marks))
+        self.assertEqual(by_tmpl(marks)["Tiger"]["team"], 0)
+        self.assertIsNotNone(marks["focus"])
+
+    def test_the_side_holds_without_the_ring(self) -> None:
+        # A camera of the clip's own (no ring): still B1's side, the Allies.
+        marks = self.r["studioB1Free"]
+        self.assertIsNone(marks["focus"])
+        self.assertEqual({s["team"] for s in marks["soldiers"]}, {2})
+        self.assertEqual(by_tmpl(marks)["Sherman"]["team"], 2)
+
+    def test_a_player_out_of_range_keeps_his_side(self) -> None:
+        marks = self.r["studioG1Gone"]
+        self.assertEqual({s["team"] for s in marks["soldiers"]}, {1})
+        self.assertNotIn("Sherman", by_tmpl(marks))
+
+    def test_nobody_followed_marks_nobody(self) -> None:
+        marks = self.r["studioNobody"]
+        self.assertEqual(marks["soldiers"], [])
+        self.assertEqual({h["team"] for h in marks["hulls"]}, {0})
+
+
 class ReplayMinimapRealRoundTests(unittest.TestCase):
     """The owner's Bocage round, when it is on disk."""
 

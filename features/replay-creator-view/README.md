@@ -2683,3 +2683,30 @@ stance, ammunition and tickets on the monitor; a recording of 10:26-10:32
 carries them with no crosshair; at 9:16 the HUD and the log 315 x 236 in a
 315 x 560 frame.
 
+
+## The studio's minimap marks one side (2026-11-19)
+
+The owner: "On the studio / creator mode - we should not show the other
+players in the minimap like we do on a regular recording play back. It's
+causing confusion among players thinking the uploader is hacking."
+
+A replay's corner map marks both sides (`features/round-replay-minimap`):
+nobody's side, a spectator's view. A clip with the game's HUD in its picture
+is one player's game, and with enemies on its map it read as a wallhack. So
+while the studio is open, or a clip films with `edits.hud`, the map is the
+followed player's as the game draws it for them: their own side's men and
+hulls, hulls nobody is in (grey), and no enemy, enemy-crewed hulls included
+(`replay-minimap.js` `minimapMarksAt(..., { sideOf })`, wired in
+`replay.js` `minimapMarks`). Their side is their last known team, so it
+holds while they are dead or out of range; with nobody followed the map marks
+no men at all. Plain playback is unchanged.
+
+Verified: `test_replay_minimap.StudioMinimapTests` (an Axis player's map
+has no Allies and no Allied-crewed Sherman, the empty Tiger stays; the side
+holds on a camera with no ring and for a man out of range; nobody followed
+marks nobody). The first run of those tests caught an enemy-crewed tank
+falling through to the empty-hull pass as a grey mark; fixed. In the page
+(Bocage feed recording `zz4g8tz9ph`, the tour's kill, studio open with the
+HUD on): 7-10 soldiers and 10-11 hulls, all of the followed player's team 2,
+over 3 s of the clip; with the studio closed the same moment marks 13-14
+Axis and 8-9 Allied soldiers again.

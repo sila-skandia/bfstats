@@ -449,7 +449,9 @@ clips keeps one style.
 - The game's HUD (In the picture): the game's own message log and minimap
   over the clip, as the game draws them: the chat, the kill lines and the
   flags taken in the game's own face and team colours at the top left, the
-  minimap at the top right with the clip's player as its ring, the tickets,
+  minimap at the top right with the clip's player as its ring and only
+  their own side marked on it (as the game shows them; the enemy is never
+  on a player's map, so a clip cannot look like a wallhack), the tickets,
   the player's health, ammunition and vehicle panel whatever camera films
   them (as the game's third person shows them), and their crosshair
   whenever the camera is through their eyes. They show
