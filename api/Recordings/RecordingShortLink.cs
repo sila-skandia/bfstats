@@ -54,7 +54,7 @@ public static class RecordingShortLink
             ?? recording.Round?.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
-        html.Append("<meta name=\"color-scheme\" content=\"dark light\">\n");
+        html.Append("<meta name=\"color-scheme\" content=\"dark\">\n");
         Tag(html, "title", $"{title} · BattleView | bfstats.io");
         Meta(html, "http-equiv", "refresh", $"0; url={watch}");
         Meta(html, "property", "og:site_name", "bfstats.io");
@@ -66,10 +66,17 @@ public static class RecordingShortLink
         Meta(html, "name", "twitter:card", cover is null ? "summary" : "summary_large_image");
         Meta(html, "name", "theme-color", "#a39c6c");
         html.Append($"<link rel=\"canonical\" href=\"{Encode(self)}\">\n");
-        html.Append("</head>\n<body>\n");
-        html.Append($"<p><a href=\"{Encode(watch)}\">{Encode(title)}</a></p>\n");
-        html.Append("</body>\n</html>\n");
+        AppendShareLinkBody(html, watch, title);
         return html.ToString();
+    }
+
+    // The browser can paint while the refresh is waiting for the player page.
+    // Keep a click-through for script-disabled browsers out of the usual first paint.
+    internal static void AppendShareLinkBody(StringBuilder html, string watch, string title)
+    {
+        html.Append("</head>\n<body>\n");
+        html.Append($"<noscript><p><a href=\"{Encode(watch)}\">{Encode(title)}</a></p></noscript>\n");
+        html.Append("</body>\n</html>\n");
     }
 
     /// <summary><c>Mustang bomb · skandia's edit</c>; an edit by an account with no linked

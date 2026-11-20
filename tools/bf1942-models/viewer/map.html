@@ -15,36 +15,28 @@
 // a bare `map.html?mod=xpack1` that dropped it would land the player on
 // vanilla's level list having asked for Road to Rome's.
 //
-// Here, first thing in <head>, and not in the module below: play.bfstats.io's
-// root IS this page (HAProxy rewrites `/` to it), and the module's imports
-// are the whole game, about 360 files, every one fetched before a line of it
-// runs. Handing over from there cost the front page twelve seconds and a
-// flash of the mesh site's bar. `window.stop()` ends the parse here, so none
-// of the rest is fetched or drawn.
+// Do this before fetching the game modules or painting the map inspector.
+// This also handles older links to the play host root that carry a query.
 (() => {
   const params = new URLSearchParams(location.search);
-  if (params.has('map') || params.has('replay') || params.has('shots')
-      || params.has('relay') || params.get('dev') === '1') return;
-  const menu = new URL('./play/index.html', location.href);
-  const mod = params.get('mod');
-  if (mod && mod !== 'bf1942') menu.searchParams.set('mod', mod);
-  window.stop();
-  location.replace(menu);
-})();
-// A join through the relay (`?relay=`) is the game from its first frame: no site bar, no flythrough panel, no
-// browser page at all, only retail's connect screen, the menu's soldier over
-// black with "CONNECTING TO <server>" on the loading plate. The module below
-// takes an age to arrive (every file of the game), and until it sets
-// `shell-playing` the site's bar would be what shows. So the class goes on
-// here, and `#preboot` (first in <body>, styled below) draws the same screen
-// the load overlay will (progress.js, `begin` with the join's headline), and
-// stays on top until that overlay has faded in under it.
-// `?server=` is the server's name, which the app knows from its list; without
-// it the screen says CONNECTING until the join names the address.
-(() => {
-  const params = new URLSearchParams(location.search);
-  if (!params.has('relay') || params.has('replay')) return;
-  document.documentElement.classList.add('shell-playing', 'preboot');
+  const watching = params.has('replay');
+  const relay = params.has('relay');
+  if (!params.has('map') && !watching && !params.has('shots')
+      && !relay && params.get('dev') !== '1') {
+    const menu = new URL('./play/index.html', location.href);
+    const mod = params.get('mod');
+    if (mod && mod !== 'bf1942') menu.searchParams.set('mod', mod);
+    window.stop();
+    location.replace(menu);
+    return;
+  }
+  // Matches and recordings own the viewport from first paint. Relay joins
+  // also have their own connect screen until the game loader takes over.
+  const root = document.documentElement;
+  if (watching || relay || params.has('team') || params.has('room')) {
+    root.classList.add('shell-playing');
+  }
+  if (relay && !watching) root.classList.add('preboot');
 })();
 </script>
 <style>
@@ -872,9 +864,8 @@ try {
  *  a bare `map.html?map=` is the flythrough a visitor browses in. The first two
  *  take the shell down for the whole match (`shell-playing` in map.css), the
  *  third keeps it: the tabs above the stage are how you leave this page.
- *  Set here, before the level loads, so a match never flashes a bar it is about
- *  to drop; the spawn screen, which the flythrough can open too, refines it in
- *  `paintPlayingShell` below. */
+ *  The script in <head> sets the first-paint state. The spawn screen, which the
+ *  flythrough can open too, refines it in `paintPlayingShell` below. */
 const IN_MATCH = params.has('team') || params.has('room') || params.has('relay');
 /** A recorded round to watch (`?replay=`) owns the screen the way a match does
  *  (features/round-replay-ux), from its loading screen on. */
@@ -882,7 +873,6 @@ const WATCHING = params.has('replay');
 // The proving ground (features/proving-ground): `?proving=1&map=<battle>`
 // loads no level but a construct built over that battle's kits and vehicles.
 const PROVING = params.has('proving') && !params.has('replay') && !params.has('relay');
-document.documentElement.classList.toggle('shell-playing', IN_MATCH || WATCHING);
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');

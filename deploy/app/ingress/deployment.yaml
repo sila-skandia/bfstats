@@ -34,7 +34,8 @@ data:
       acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
       acl host_play_bfstats req.hdr(host) -i play.bfstats.io
       acl host_replay_bfstats req.hdr(host) -i replay.bfstats.io
-      acl is_play_root path -i /
+      acl is_root path /
+      acl has_query query -m reg .
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
       # Exactly /netcode (the WebSocket) and /netcode/... (the rooms list):
@@ -50,20 +51,16 @@ data:
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"
 
-      # play.bfstats.io — the playable map page. The mesh nginx keeps its
-      # catch-all server block, so no nginx change is needed: HAProxy routes
-      # on Host and the mesh service already resolves. The root path is
-      # rewritten to the map page (a set-path, not a redirect, so the browser
-      # stays on /); every other path — /map.html, /vendor/, /models/, /maps/
-      # — is served by the same block the mesh host uses. The /netcode route
-      # below is path-based and rides this host too.
-      http-request set-path /map.html if host_play_bfstats is_play_root
+      # Send the bare play host directly to the game menu. Old root URLs
+      # with a map, recording, or mod in the query still enter via map.html.
+      http-request redirect location /play/index.html code 302 if host_play_bfstats is_root !has_query
+      http-request set-path /map.html if host_play_bfstats is_root
 
       # replay.bfstats.io/<slug>, a shared recording's short link: the path
       # becomes the API's /replay/<slug> (the play host's /replay/<slug>
       # below, its first form, which links already handed out still use).
       # The bare host goes to the feed.
-      http-request redirect location https://play.bfstats.io/play/?tab=replay code 302 if host_replay_bfstats { path / }
+      http-request redirect location https://play.bfstats.io/play/?tab=replay code 302 if host_replay_bfstats is_root
       http-request set-path /replay%[path] if host_replay_bfstats
 
       # Dedicated mesh viewer host — before the shared /stats and default UI routes

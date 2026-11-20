@@ -45,7 +45,7 @@ public static class ShortLink
         var posterHeight = Text(s.Landscape ? RollPosterHeight : Height);
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
-        html.Append("<meta name=\"color-scheme\" content=\"dark light\">\n");
+        html.Append("<meta name=\"color-scheme\" content=\"dark\">\n");
         Tag(html, "title", $"{s.Title} · Replay Shorts | bfstats.io");
         Meta(html, "http-equiv", "refresh", $"0; url={watch}");
         Meta(html, "property", "og:site_name", "bfstats.io · Replay Shorts");
@@ -73,9 +73,7 @@ public static class ShortLink
         Meta(html, "name", "twitter:player:stream:content_type", "video/mp4");
         Meta(html, "name", "theme-color", "#a39c6c");
         html.Append($"<link rel=\"canonical\" href=\"{Encode(self)}\">\n");
-        html.Append("</head>\n<body>\n");
-        html.Append($"<p><a href=\"{Encode(watch)}\">{Encode(s.Title)}</a></p>\n");
-        html.Append("</body>\n</html>\n");
+        AppendShareLinkBody(html, watch, s.Title);
         return html.ToString();
     }
 

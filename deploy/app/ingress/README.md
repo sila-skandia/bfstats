@@ -75,17 +75,14 @@ host 1033s, check which tunnel its CNAME points at before touching ingress
 rules; everything here forwards to the same HAProxy, so the backend config is
 shared and rarely the cause.
 
-## `play.bfstats.io` — the playable map page
+## `play.bfstats.io` — the game menu, maps, and BattleView
 
-The mesh nginx answers both hosts, so this host needs no new pod and no nginx
-change (`mesh/nginx.conf` keeps its catch-all `server_name _`; HAProxy has
-already routed on Host by the time the request arrives). Three changes:
+The play and mesh hosts share nginx and the asset volume. HAProxy routes by
+host and nginx redirects page bookmarks to the app that owns them.
 
-1. `deployment.yaml`'s ConfigMap: `acl host_play_bfstats req.hdr(host) -i
-   play.bfstats.io`, `http-request set-path /map.html if host_play_bfstats
-   is_play_root` (so `/` serves the map page, the browser staying on `/`),
-   and `use_backend mesh_frontend if host_play_bfstats`. No new backend, so
-   no `init-addr` line and no ordering hazard.
+1. `deployment.yaml` sends the bare play root straight to `/play/index.html`.
+   Old root URLs with a query still go through `/map.html` so map, replay,
+   and mod bookmarks work.
 2. `cloudflared-tunnel.yml`: the hostname rule to the same haproxy service.
 3. DNS: CNAME `play` -> `<tunnel-id>.cfargotunnel.com`, proxied — same
    `cert.pem` zone trap as `mesh` above.
@@ -110,16 +107,15 @@ host's catch-all): a shared recording's short link, answered with a page that
 goes on to the replay and carries the recording's preview tags
 (features/replay-feed, "Short links"). Apply and restart HAProxy as above.
 
-Since 2026-09-27 the map page is this host's alone: `mesh/nginx.conf` sends
-`mesh.bfstats.io/map.html` and `/play/…` here with a 301, keyed on `$host`, so
-HAProxy needs no change for it
-([mesh-site](../../../features/mesh-site/README.md#maps-moved-to-playbfstatsio-2026-09-27)).
+`mesh/nginx.conf` sends map, school and `/play/…` bookmarks on the mesh host
+to the play host. It sends model and kit inspector bookmarks on the play host
+to the mesh host. Both redirects preserve the query, and asset URLs still work
+on both hosts.
 
-## `replay.bfstats.io` — recordings' short links
+## `replay.bfstats.io` — share links
 
-`replay.bfstats.io/<slug>` is a shared recording's short link
-(features/replay-feed, "Short links"). Like the play host it needs no pod of
-its own:
+`replay.bfstats.io/<slug>` shares a recording and
+`replay.bfstats.io/s/<slug>` shares a Short. HAProxy routes both to the API:
 
 1. `deployment.yaml`'s ConfigMap: `acl host_replay_bfstats`, a 302 from the
    bare host to the feed, `http-request set-path /replay%[path]` (so `/<slug>`
@@ -130,9 +126,9 @@ its own:
    proxied (the same `cert.pem` zone trap as `mesh` above).
 
 Apply both ConfigMaps, then restart cloudflared and HAProxy as for the play
-host. The API's page for a short link sends the browser to the play host
-(`Recordings__PlayOrigin`) and names the short link's host in its preview
-tags (`Recordings__ShortLinkOrigin`).
+host. The API returns HTML with per-share preview tags for Discord and other
+link previews. A zero-delay refresh takes browsers to the player on
+`Recordings__PlayOrigin`. The preview uses `Recordings__ShortLinkOrigin`.
 
 ## The netcode room server route (`/netcode`)
 

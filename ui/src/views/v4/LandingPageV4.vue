@@ -980,7 +980,12 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
         class="mm-landing__busiest"
         data-testid="landing-busiest-map"
       >Busiest · {{ busiest.mapName }} on {{ $pn(busiest.name) }}</span>
-      <MmInstallationLinks />
+      <div class="mm-landing__actions">
+        <a class="mm-btn mm-btn--strong mm-landing__play" href="https://play.bfstats.io/play/index.html">
+          Play Battlefield 1942 in your browser
+        </a>
+        <MmInstallationLinks />
+      </div>
     </div>
 
     <!-- Toolbar & Slicers -->
@@ -1703,6 +1708,18 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 .mm-landing__top > :not(.mm-map-backdrop) {
   position: relative;
   z-index: 1;
+}
+
+.mm-landing__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.mm-landing__play {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .mm-landing__busiest {

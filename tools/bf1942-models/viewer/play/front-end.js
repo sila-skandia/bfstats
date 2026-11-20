@@ -35,6 +35,7 @@ const canvasOpt = document.getElementById('screen-opt');
 const canvasRp = document.getElementById('screen-rp');
 const canvasPg = document.getElementById('screen-pg');
 const status = document.getElementById('status');
+const playTitle = document.title;
 
 // SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
 // its own slot; INTRO and CREDITS, which this site does not answer for, are
@@ -308,7 +309,7 @@ function show(id) {
   if (id === tab && !CANVASES[id].hidden) return;
   tab = id;
   // The replay feed is replay.bfstats.io's landing page; the rest is the game.
-  document.title = id === 'replay' ? 'BattleView | bfstats.io' : 'BF1942.exe';
+  document.title = id === 'replay' ? 'BattleView | bfstats.io' : playTitle;
   // CAMPAIGN is under SINGLEPLAY: the tab row keeps SINGLEPLAY lit for it.
   screen.strip?.setActive(id === 'campaign' ? 'singleplay' : id);
   campaign.setActive(id);

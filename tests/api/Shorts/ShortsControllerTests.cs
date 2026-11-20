@@ -903,6 +903,8 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Contains($"<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/shorts/{dto.Slug}.jpg?v={Jpeg.Length}\">", html);
         Assert.Contains("<meta name=\"twitter:card\" content=\"player\">", html);
         Assert.Contains("<meta property=\"og:description\" content=\"skandia → Rut · M2 · 412 m · Midway\">", html);
+        Assert.Contains("<meta name=\"color-scheme\" content=\"dark\">", html);
+        Assert.Contains($"<body>\n<noscript><p><a href=\"https://play.bfstats.io/play/?tab=replay&amp;short={dto.Slug}\">", html);
         // A title is free text: markup in it is text.
         Assert.DoesNotContain("<b>", html);
         Assert.Equal("nosniff", controller.Response.Headers.XContentTypeOptions.ToString());
