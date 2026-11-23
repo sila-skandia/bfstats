@@ -218,6 +218,13 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.MapName);
 
+        // Global map filter on the sessions listing (GET /stats/rounds?mapName=).
+        // IX_Rounds_MapName already serves COUNT; ORDER BY StartTime LIMIT n still
+        // sorts every row for that map on the volume (~56k for a popular name).
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.MapName, r.StartTime })
+            .HasDatabaseName("IX_Rounds_MapName_StartTime");
+
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.IsActive);
 
