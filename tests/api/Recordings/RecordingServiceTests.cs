@@ -496,6 +496,31 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(written.Length, (await fixture.Db.Recordings.AsNoTracking().SingleAsync()).ThumbnailBytes);
     }
 
+    /// <summary>The cover job's frame (scripts/recording-covers.mjs) is the cover of a
+    /// recording that has none, and never writes over one somebody picked.</summary>
+    [Fact]
+    public async Task SetFilmedThumbnail_CoversARecordingWithNone_AndLeavesACoverAlone()
+    {
+        var shared = await Share("t");
+        using var frame = new Image<Rgba32>(640, 360, new Rgba32(40, 60, 90, 255));
+        await using var jpeg = new MemoryStream();
+        await frame.SaveAsJpegAsync(jpeg);
+        jpeg.Position = 0;
+
+        var detail = await fixture.Service.SetFilmedThumbnailAsync(shared.Slug, jpeg, default);
+
+        Assert.StartsWith($"/stats/recordings/{shared.Slug}.jpg?v=", detail!.ThumbnailUrl, StringComparison.Ordinal);
+        var first = await File.ReadAllBytesAsync(fixture.Storage.ThumbnailPath(shared.Slug));
+        Assert.Equal(first.Length, (await fixture.Db.Recordings.AsNoTracking().SingleAsync()).ThumbnailBytes);
+
+        jpeg.Position = 0;
+        var again = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => fixture.Service.SetFilmedThumbnailAsync(shared.Slug, jpeg, default));
+        Assert.Equal(409, again.StatusCode);
+        Assert.Equal(first, await File.ReadAllBytesAsync(fixture.Storage.ThumbnailPath(shared.Slug)));
+        Assert.Null(await fixture.Service.SetFilmedThumbnailAsync("zzzzzzzzzz", jpeg, default));
+    }
+
     [Fact]
     public async Task SetThumbnail_RefusesAStrangerAndWhatIsNotAnImage()
     {

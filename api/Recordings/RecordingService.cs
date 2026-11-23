@@ -44,6 +44,11 @@ public interface IRecordingService
     /// <summary>Sets a recording's cover from an image in <paramref name="body"/>.</summary>
     Task<RecordingDetailDto?> SetThumbnailAsync(string slug, RecordingActor actor, Stream body, CancellationToken ct);
 
+    /// <summary>Sets the cover of a recording that has none from a frame the cover job filmed
+    /// (scripts/recording-covers.mjs). One that already has a cover keeps it and the call is
+    /// refused (409): a frame its uploader picked is never written over by the job.</summary>
+    Task<RecordingDetailDto?> SetFilmedThumbnailAsync(string slug, Stream body, CancellationToken ct);
+
     Task<PagedRecordingCommentsDto?> CommentsAsync(string slug, string? sort, int page, int pageSize, RecordingActor? actor, CancellationToken ct);
 
     Task<RecordingCommentDto?> AddCommentAsync(string slug, RecordingActor actor, CreateRecordingCommentRequest request, CancellationToken ct);
@@ -362,6 +367,22 @@ public sealed class RecordingService(
         var recording = await Find(slug).FirstOrDefaultAsync(ct);
         if (recording is null || recording.FileMissing) return null;
         Manage(recording, actor);
+        return await WriteThumbnailAsync(recording, actor, body, ct);
+    }
+
+    public async Task<RecordingDetailDto?> SetFilmedThumbnailAsync(string slug, Stream body, CancellationToken ct)
+    {
+        var recording = await Find(slug).FirstOrDefaultAsync(ct);
+        if (recording is null || recording.FileMissing) return null;
+        if (recording.ThumbnailBytes > 0)
+        {
+            throw new RecordingRejectedException("This recording already has a cover.", StatusCodes.Status409Conflict);
+        }
+        return await WriteThumbnailAsync(recording, null, body, ct);
+    }
+
+    private async Task<RecordingDetailDto> WriteThumbnailAsync(Recording recording, RecordingActor? actor, Stream body, CancellationToken ct)
+    {
         var jpeg = await RecordingThumbnails.NormalizeAsync(body, ct);
         var stored = await VolumeUsage.StoredBytesAsync(db, ct);
         if (storage.RoomFor(stored - recording.ThumbnailBytes, jpeg.Length) is { } full)

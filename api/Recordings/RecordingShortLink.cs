@@ -41,8 +41,13 @@ public static class RecordingShortLink
 
     /// <summary>The page for a recording: its preview tags, and a refresh to the replay on
     /// <paramref name="playOrigin"/> (a refresh replaces the history entry, so Back leaves the
-    /// replay for where the link was). <paramref name="linkOrigin"/> is the short link's host.</summary>
-    public static string Page(RecordingDetailDto recording, string playOrigin, string linkOrigin, int? at, RecordingEditDto? edit = null)
+    /// replay for where the link was). <paramref name="linkOrigin"/> is the short link's host.
+    /// <paramref name="levelArt"/> is the level's loading picture, a whole URL, shown when
+    /// neither the recording nor its round has a frame of its own, as its card in the feed
+    /// does (<see cref="RecordingLevelArt"/>).</summary>
+    public static string Page(
+        RecordingDetailDto recording, string playOrigin, string linkOrigin, int? at, RecordingEditDto? edit = null,
+        string? levelArt = null)
     {
         var watch = playOrigin + WatchPath(recording, at, edit?.Code);
         var self = edit is null ? $"{linkOrigin}/{recording.Slug}" : RecordingEditService.Link(linkOrigin, recording.Slug, edit.Code);
@@ -50,8 +55,7 @@ public static class RecordingShortLink
         // "Sharing an edit"), then the recording it is of.
         var title = edit is null ? recording.Title : EditTitle(edit);
         var description = edit is null ? Description(recording) : $"An edit of {recording.Title} · {Description(recording)}";
-        var cover = recording.ThumbnailUrl
-            ?? recording.Round?.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
+        var image = Cover(recording) is { } cover ? playOrigin + cover : levelArt;
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
         html.Append("<meta name=\"color-scheme\" content=\"dark\">\n");
@@ -62,8 +66,8 @@ public static class RecordingShortLink
         Meta(html, "property", "og:title", title);
         Meta(html, "property", "og:description", description);
         Meta(html, "property", "og:url", self);
-        if (cover is not null) Meta(html, "property", "og:image", playOrigin + cover);
-        Meta(html, "name", "twitter:card", cover is null ? "summary" : "summary_large_image");
+        if (image is not null) Meta(html, "property", "og:image", image);
+        Meta(html, "name", "twitter:card", image is null ? "summary" : "summary_large_image");
         Meta(html, "name", "theme-color", "#a39c6c");
         html.Append($"<link rel=\"canonical\" href=\"{Encode(self)}\">\n");
         AppendShareLinkBody(html, watch, title);
@@ -103,17 +107,28 @@ public static class RecordingShortLink
     public static int? Moment(string? t) =>
         t is { Length: > 0 and <= 6 } && t.All(char.IsAsciiDigit) ? int.Parse(t, CultureInfo.InvariantCulture) : null;
 
-    /// <summary><c>Midway · Conquest · 14:43 · MoonGamers.com · shared by skandia</c>.</summary>
+    /// <summary>The recording's own frame, else its round's first: root-relative, or null
+    /// when nobody set one.</summary>
+    internal static string? Cover(RecordingDetailDto recording) =>
+        recording.ThumbnailUrl
+        ?? recording.Round?.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
+
+    /// <summary><c>Midway · Conquest · 14:43 · MoonGamers.com · recorded by skandia</c>. The
+    /// player whose game recorded it is named; whoever shared it is too when that is someone
+    /// else, and alone when the file names no recorder (the server's own recorder).</summary>
     internal static string Description(RecordingDetailDto recording)
     {
-        var uploader = Shown(recording.UploaderName);
+        var recorder = Shown(recording.RecordedBy ?? "");
+        var uploader = Shown(recording.UploaderName ?? "");
+        var shared = uploader.Length > 0 && !string.Equals(uploader, recorder, StringComparison.OrdinalIgnoreCase);
         string?[] parts =
         [
             recording.Level.Length > 0 ? RecordingText.Titled(recording.Level) : null,
             recording.GameMode.Length > 0 ? RecordingText.Titled(recording.GameMode) : null,
             Clock(recording.DurationSeconds),
             Shown(recording.ServerName),
-            uploader.Length > 0 ? $"shared by {uploader}" : null,
+            recorder.Length > 0 ? $"recorded by {recorder}" : null,
+            shared ? $"shared by {uploader}" : null,
         ];
         return string.Join(" · ", parts.Where(p => !string.IsNullOrEmpty(p)));
     }

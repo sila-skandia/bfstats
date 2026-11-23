@@ -98,11 +98,14 @@ public class RecordingsController(
     /// page that goes on to the replay at <c>?t=</c>, with the title, round and cover for
     /// whatever unfurls the link. A slug retyped in capitals still finds its recording.
     /// <c>?edit=</c> names a creator's edit of a clip of it (features/replay-creator-view,
-    /// "Sharing an edit"): the unfurl names the edit, and the replay opens it.</summary>
+    /// "Sharing an edit"): the unfurl names the edit, and the replay opens it. A recording
+    /// with no frame of its own, nor its round's, is pictured by its level's loading screen.
+    /// The play host sends a link preview of a recording's page in the feed
+    /// (<c>/play/?tab=replay&amp;rec=&lt;slug&gt;</c>) here too (mesh/nginx.conf).</summary>
     [HttpGet("/replay/{slug}")]
     public async Task<ContentResult> ShortLink(
         string slug, [FromQuery] string? t, CancellationToken ct, [FromQuery] string? edit = null,
-        [FromServices] IRecordingEditService? edits = null)
+        [FromServices] IRecordingEditService? edits = null, [FromServices] IRecordingLevelArt? levelArt = null)
     {
         var detail = RecordingStorage.CleanSlug(slug.ToLowerInvariant()) is { } clean
             ? await recordings.GetAsync(clean, null, ct)
@@ -126,8 +129,12 @@ public class RecordingsController(
             ? await edits.GetAsync(code, ct)
             : null;
         if (shared is not null && shared.Slug != detail.Slug) shared = null;
+        var art = levelArt is not null && RecordingShortLink.Cover(detail) is null
+            ? await levelArt.UrlAsync(detail.Mod, detail.Level, ct)
+            : null;
         return Content(
-            RecordingShortLink.Page(detail, play, options.Value.ShortLinkOrigin.TrimEnd('/'), RecordingShortLink.Moment(t), shared),
+            RecordingShortLink.Page(
+                detail, play, options.Value.ShortLinkOrigin.TrimEnd('/'), RecordingShortLink.Moment(t), shared, art),
             "text/html; charset=utf-8");
     }
 
@@ -165,6 +172,31 @@ public class RecordingsController(
         try
         {
             return await recordings.SetThumbnailAsync(slug, actor, Request.Body, ct) is { } detail ? Ok(detail) : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return Rejected(ex);
+        }
+    }
+
+    /// <summary>Sets the cover of a recording that has none, from a frame the cover job
+    /// filmed (scripts/recording-covers.mjs, the nightly's): most recordings come straight from
+    /// a player's game with nobody at a browser to pick a frame, and a link to one previews
+    /// with its picture. The job sends the Shorts render job's key (<c>X-Shorts-Key</c>). A
+    /// recording that has a cover keeps it (409).</summary>
+    [HttpPut("{slug:length(10)}/filmed-cover")]
+    [RequestSizeLimit(RecordingThumbnails.MaxBytes + 1)]
+    public async Task<ActionResult<RecordingDetailDto>> SetFilmedCover(
+        string slug, [FromServices] IOptions<api.Shorts.ShortsOptions> shorts, CancellationToken ct)
+    {
+        var sent = Request.Headers[api.Shorts.ShortsController.KeyHeader].ToString();
+        if (!api.Shorts.ShortsController.KeyMatches(sent, shorts.Value.UploadKey))
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "The upload key is not right." });
+        }
+        try
+        {
+            return await recordings.SetFilmedThumbnailAsync(slug, Request.Body, ct) is { } detail ? Ok(detail) : NotFound();
         }
         catch (RecordingRejectedException ex)
         {

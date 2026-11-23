@@ -107,6 +107,13 @@ host's catch-all): a shared recording's short link, answered with a page that
 goes on to the replay and carries the recording's preview tags
 (features/replay-feed, "Short links"). Apply and restart HAProxy as above.
 
+A link preview (Discord, Slack, a messenger) of a recording's page in the
+feed (`/play/?tab=replay&rec=<slug>`) or of its replay (`/map.html?…&replay=`)
+never reaches those pages: `mesh/nginx.conf` answers it with a 302 to the
+recording's short link on `replay.bfstats.io`, below, whose page carries the
+recording's own tags (features/replay-feed, "Links pasted from the address
+bar"). HAProxy needs nothing for it.
+
 `mesh/nginx.conf` sends map, school and `/play/…` bookmarks on the mesh host
 to the play host. It sends model and kit inspector bookmarks on the play host
 to the mesh host. Both redirects preserve the query, and asset URLs still work

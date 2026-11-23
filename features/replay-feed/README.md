@@ -188,8 +188,10 @@ The API answers with a page, not a redirect: Discord, Slack and the messengers
 unfurl a link by reading the page it names, and behind a redirect they would
 read map.html's tags, the same for every recording. The page
 (`RecordingShortLink`) carries the title, a line like
-`Wake · Conquest · 2:43 · MoonGamers.com · shared by skandia`, the cover (the
-round's when the recording has none of its own), and a zero-second refresh to
+`Wake · Conquest · 2:43 · MoonGamers.com · recorded by skandia`, the cover (the
+round's when the recording has none of its own, the level's loading screen
+when the round has none either; below, "Links pasted from the address bar"),
+and a zero-second refresh to
 the address Copy link handed out before
 (`https://play.bfstats.io/map.html?mod=…&map=…&replay=/stats/recordings/<slug>.ndjson…`).
 A refresh replaces the history entry, so Back from the replay goes to the page
@@ -198,6 +200,50 @@ feed. The title is escaped, and the page loads nothing (`default-src 'none'`).
 `Recordings__PlayOrigin` (default `https://play.bfstats.io`) is where the page
 sends the browser and finds the cover; `Recordings__ShortLinkOrigin` (default
 `https://replay.bfstats.io`) is the host its tags name.
+
+### Links pasted from the address bar
+
+Reported 2026-11-23: `https://play.bfstats.io/play/?tab=replay&rec=fc4wb3tu6b`
+pasted into Discord previewed as "Play Battlefield 1942 in Your Browser" with
+the front page's description, the same for every recording. Copy link hands
+out the short link, but the address bar holds the recording's page in the feed
+(`/play/?tab=replay&rec=<slug>`) or its replay
+(`/map.html?…&replay=/stats/recordings/<slug>.ndjson`), and that is what
+people copy. Both are static pages, one file for every recording, and an
+unfurler reads tags without running script. Three changes:
+
+- **The play host sends link previews to the short link.** `mesh/nginx.conf`
+  knows the readers that unfurl links by their User-Agent (Discord, Slack,
+  Telegram, WhatsApp and Signal, X, Facebook and iMessage, LinkedIn, Reddit,
+  Mastodon, Bluesky, Matrix, Iframely, Embedly) and answers their request for
+  either address with a 302 to `replay.bfstats.io/<slug>`, `t` and `edit`
+  carried over. They follow it and read the recording's own tags. A browser
+  never matches and gets the page as before; so does anything on another host
+  (a page served from this PC). The play HTML is not held at Cloudflare's edge
+  (`cf-cache-status: DYNAMIC`) and the redirect says `no-store`, so a preview's
+  answer cannot be handed to a browser or the other way round. If the play
+  HTML is ever made cacheable at the edge, this rule has to move there with it.
+  Tests: `tools/bf1942-models/tests/test_unfurl_redirect.py` runs the maps'
+  expressions; the rule was also exercised in an nginx container (feed link,
+  `index.html`, watch link, `%2F`, `t`, `edit`, a browser, another host, a
+  slug that is not one).
+- **A recording with no cover is pictured by its level.** 21 of the newest 24
+  recordings had no cover: they come straight from a player's game, with nobody
+  at a browser to press F, so even the short link previewed as text.
+  `RecordingLevelArt` finds the level's loading screen the way the feed's card
+  does (`level-art.js`): the level's row in the mod's `maps.json` on the play
+  site, the same level in the vanilla game's trees, then the theatre picture.
+  Each list is read over HTTP and kept an hour; a candidate is asked for with a
+  HEAD before it is handed out, since a row can name a file a re-bake took
+  away; a lookup has four seconds, and failing it the preview is text, never an
+  error. Only a path inside the tree is taken from a row.
+- **The line says who recorded it.** `recorded by <player>` is the player
+  whose game wrote the file; `shared by <uploader>` follows when that is
+  someone else, and stands alone for a recording that names no recorder (the
+  server's own recorder).
+
+A recording's own frame still comes first, and the cover job gives every
+recording one (below, "Covers nobody picked").
 
 A page served from this PC hands out the short link for the live feed's
 recordings. For a recording on this PC's own API it hands out the long link,

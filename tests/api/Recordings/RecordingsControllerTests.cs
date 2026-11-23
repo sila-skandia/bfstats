@@ -95,7 +95,7 @@ public sealed class RecordingsControllerTests : IDisposable
             "<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/recordings/abcdefghjk.jpg?v=5\">", html);
         Assert.Contains("<meta name=\"twitter:card\" content=\"summary_large_image\">", html);
         Assert.Contains(
-            "<meta property=\"og:description\" content=\"Bocage · Conquest · 14:43 · MoonGamers.com · shared by skandia\">",
+            "<meta property=\"og:description\" content=\"Bocage · Conquest · 14:43 · MoonGamers.com · recorded by skandia\">",
             html);
         // A title is the uploader's free text: markup in it is text.
         Assert.DoesNotContain("<b>", html);
@@ -147,6 +147,89 @@ public sealed class RecordingsControllerTests : IDisposable
         Assert.DoesNotContain("og:image", bare);
         Assert.Contains("<meta name=\"twitter:card\" content=\"summary\">", bare);
         Assert.Contains("url=https://play.bfstats.io/map.html?mod=bf1942&amp;map=bocage&amp;replay=/stats/recordings/abcdefghjk.ndjson\"", bare);
+    }
+
+    /// <summary>A recording nobody set a cover on, in a round with none, is pictured by its
+    /// level's loading screen, as its card in the feed is: a link to it never previews as
+    /// text alone while the level has a picture. A recording with a cover is never asked
+    /// about its level.</summary>
+    [Fact]
+    public async Task ShortLink_WithNoCover_ShowsTheLevelsPicture()
+    {
+        const string art = "https://play.bfstats.io/maps/bocage/load.webp";
+        var levelArt = Substitute.For<IRecordingLevelArt>();
+        levelArt.UrlAsync("bf1942", "bocage", Arg.Any<CancellationToken>()).Returns(art);
+        recordings.GetAsync(Slug, null, Arg.Any<CancellationToken>()).Returns(Detail());
+
+        var bare = (await controller.ShortLink(Slug, null, CancellationToken.None, levelArt: levelArt)).Content!;
+
+        Assert.Contains($"<meta property=\"og:image\" content=\"{art}\">", bare);
+        Assert.Contains("<meta name=\"twitter:card\" content=\"summary_large_image\">", bare);
+
+        recordings.GetAsync(Slug, null, Arg.Any<CancellationToken>())
+            .Returns(Detail(thumbnailUrl: "/stats/recordings/abcdefghjk.jpg?v=5"));
+        levelArt.ClearReceivedCalls();
+
+        var covered = (await controller.ShortLink(Slug, null, CancellationToken.None, levelArt: levelArt)).Content!;
+
+        Assert.Contains("content=\"https://play.bfstats.io/stats/recordings/abcdefghjk.jpg?v=5\"", covered);
+        Assert.DoesNotContain(art, covered);
+        await levelArt.DidNotReceiveWithAnyArgs().UrlAsync(default!, default!, default);
+    }
+
+    /// <summary>The preview's line names the player whose game recorded the round; whoever
+    /// shared it too when that is someone else, and alone when the file names no recorder
+    /// (the server's own recorder writes none).</summary>
+    [Theory]
+    [InlineData("skandia", "skandia", "recorded by skandia")]
+    [InlineData("Rut", "skandia", "recorded by Rut · shared by skandia")]
+    [InlineData(null, "skandia", "MoonGamers.com · shared by skandia")]
+    [InlineData("Rut", "", "recorded by Rut")]
+    public void ShortLink_SaysWhoRecordedIt(string? recordedBy, string uploader, string expected)
+    {
+        var line = RecordingShortLink.Description(Detail() with { RecordedBy = recordedBy!, UploaderName = uploader });
+
+        Assert.EndsWith(expected, line, StringComparison.Ordinal);
+        Assert.StartsWith("Bocage · Conquest · 14:43 · MoonGamers.com", line, StringComparison.Ordinal);
+    }
+
+    /// <summary>The cover job's frame goes in with the Shorts render job's key and nothing
+    /// else: no key, a wrong one, or no key configured at all is a 401 that never reaches
+    /// the recording.</summary>
+    [Theory]
+    [InlineData("the-key", "the-key", true)]
+    [InlineData("the-key", "another", false)]
+    [InlineData("the-key", "", false)]
+    [InlineData("", "", false)]
+    public async Task SetFilmedCover_TakesTheRenderJobsKeyOnly(string configured, string sent, bool allowed)
+    {
+        recordings.SetFilmedThumbnailAsync(Slug, Arg.Any<Stream>(), Arg.Any<CancellationToken>()).Returns(Detail());
+        if (sent.Length > 0) controller.Request.Headers[api.Shorts.ShortsController.KeyHeader] = sent;
+        var shorts = Options.Create(new api.Shorts.ShortsOptions { UploadKey = configured });
+
+        var result = (await controller.SetFilmedCover(Slug, shorts, CancellationToken.None)).Result;
+
+        if (allowed)
+        {
+            Assert.IsType<OkObjectResult>(result);
+            return;
+        }
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>(result).StatusCode);
+        await recordings.DidNotReceiveWithAnyArgs().SetFilmedThumbnailAsync(default!, default!, default);
+    }
+
+    /// <summary>A recording that has a cover keeps it: the job is told so (409).</summary>
+    [Fact]
+    public async Task SetFilmedCover_LeavesACoverAlone()
+    {
+        recordings.SetFilmedThumbnailAsync(Slug, Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RecordingDetailDto?>>(_ => throw new RecordingRejectedException("This recording already has a cover.", StatusCodes.Status409Conflict));
+        controller.Request.Headers[api.Shorts.ShortsController.KeyHeader] = "the-key";
+
+        var result = (await controller.SetFilmedCover(
+            Slug, Options.Create(new api.Shorts.ShortsOptions { UploadKey = "the-key" }), CancellationToken.None)).Result;
+
+        Assert.Equal(StatusCodes.Status409Conflict, Assert.IsType<ObjectResult>(result).StatusCode);
     }
 
     [Theory]

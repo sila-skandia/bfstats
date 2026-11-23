@@ -448,6 +448,9 @@ try
     builder.Services.Configure<api.Recordings.RecordingsOptions>(
         builder.Configuration.GetSection(api.Recordings.RecordingsOptions.Section));
     builder.Services.AddSingleton<api.Recordings.IRecordingStorage, api.Recordings.RecordingStorage>();
+    // A link preview waits a few seconds at most: a level picture that slow is left out.
+    builder.Services.AddHttpClient(api.Recordings.RecordingLevelArt.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(4));
+    builder.Services.AddSingleton<api.Recordings.IRecordingLevelArt, api.Recordings.RecordingLevelArt>();
     builder.Services.AddScoped<api.Recordings.IRecordingService, api.Recordings.RecordingService>();
     builder.Services.AddScoped<api.Recordings.IRecordingEditService, api.Recordings.RecordingEditService>();
     builder.Services.AddScoped<api.Recordings.IRecordingUploadService, api.Recordings.RecordingUploadService>();
