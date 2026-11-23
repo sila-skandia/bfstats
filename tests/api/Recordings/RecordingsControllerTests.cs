@@ -218,6 +218,19 @@ public sealed class RecordingsControllerTests : IDisposable
         await recordings.DidNotReceiveWithAnyArgs().SetFilmedThumbnailAsync(default!, default!, default);
     }
 
+    /// <summary>A cover's body is an image, read by the action alone. Sent with a form's
+    /// content type (curl's default), MVC's form readers would parse the bytes before the
+    /// action ran and fail: a 500 on the live API, 2026-11-23.</summary>
+    [Theory]
+    [InlineData(nameof(RecordingsController.SetThumbnail))]
+    [InlineData(nameof(RecordingsController.SetFilmedCover))]
+    public void ACoversBody_IsNeverReadAsAForm(string action)
+    {
+        var method = typeof(RecordingsController).GetMethod(action)!;
+
+        Assert.NotEmpty(method.GetCustomAttributes(typeof(DisableFormValueModelBindingAttribute), false));
+    }
+
     /// <summary>A recording that has a cover keeps it: the job is told so (409).</summary>
     [Fact]
     public async Task SetFilmedCover_LeavesACoverAlone()
