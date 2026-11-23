@@ -218,6 +218,18 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.MapName);
 
+        // Global sessions listing (UI default minParticipants=1, sort StartTime DESC;
+        // also the unfiltered ORDER BY StartTime LIMIT n page). Without these, COUNT(*)
+        // WHERE ParticipantCount >= @n and the LIMIT page both walk Rounds on the
+        // volume — 51s + 11s with minParticipants, 0.8s + 62s unfiltered ASC LIMIT 1.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => r.ParticipantCount)
+            .HasDatabaseName("IX_Rounds_ParticipantCount");
+
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => r.StartTime)
+            .HasDatabaseName("IX_Rounds_StartTime");
+
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.IsActive);
 
