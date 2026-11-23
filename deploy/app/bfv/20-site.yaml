@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bfv-nginx-snippets
+  namespace: bfv
+data:
+  uploads.conf: |
+    location = /api/upload {
+        limit_except POST { deny all; }
+        client_max_body_size 64m;
+        proxy_request_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $http_cf_connecting_ip;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_pass http://127.0.0.1:8742;
+        add_header Cache-Control "no-store" always;
+        access_log off;
+    }
+    location ^~ /uploads/ {
+        types { application/json json; application/x-ndjson ndjson; }
+        add_header Cache-Control "no-cache" always;
+        location = /uploads/uploads.json {
+            try_files $uri =404;
+        }
+        location ~ "^/uploads/[0-9]{8}-[0-9a-f]{8}\.ndjson$" {
+            gzip_static always;
+            gunzip on;
+        }
+        return 404;
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bfv-site
+  namespace: bfv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bfv-site
+  template:
+    metadata:
+      labels:
+        app: bfv-site
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: nginx
+          image: anskia/bfv-site:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - { name: assets, mountPath: /usr/share/nginx/html/models,   subPath: models,   readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/maps,     subPath: maps,     readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/textures, subPath: textures, readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/glbs,     subPath: glbs,     readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/replays,  subPath: replays,  readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/media,    subPath: media,    readOnly: true }
+            - { name: assets, mountPath: /usr/share/nginx/html/uploads,  subPath: uploads,  readOnly: true }
+            - { name: snippets, mountPath: /etc/nginx/bfv.d, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 300m, memory: 64Mi }
+        - name: upload
+          image: python:3.13-alpine
+          command: ["python3", "/opt/bfv-upload/upload_service.py",
+                    "--uploads", "/data/uploads",
+                    "--key-file", "/run/bfv-upload/key",
+                    "--host", "127.0.0.1", "--port", "8742"]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: assets, mountPath: /data/uploads, subPath: uploads }
+            - { name: upload-code, mountPath: /opt/bfv-upload, readOnly: true }
+            - { name: upload-key, mountPath: /run/bfv-upload, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits:   { cpu: 300m, memory: 96Mi }
+      volumes:
+        - name: assets
+          persistentVolumeClaim:
+            claimName: bfv-assets
+        - name: snippets
+          configMap:
+            name: bfv-nginx-snippets
+        - name: upload-code
+          configMap:
+            name: bfv-upload-code
+        - name: upload-key
+          secret:
+            secretName: bfv-upload-key
+            defaultMode: 0400
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bfv-site
+  namespace: bfv
+spec:
+  selector:
+    app: bfv-site
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: web

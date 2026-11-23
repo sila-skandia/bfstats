@@ -33,6 +33,8 @@ data:
       # <tunnel-id>.cfargotunnel.com, proxied.
       - hostname: replay.bfstats.io
         service: http://haproxy-service.haproxy:80
+      - hostname: bfv.bfstats.io
+        service: http://haproxy-service.haproxy:80
       - hostname: seq.bfstats.io
         service: http://seq-service.seq:5341
       - service: http_status:404

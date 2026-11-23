@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bfv-assets
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: bfv
+    name: bfv-assets
+  hostPath:
+    path: /mnt/bfv-data/site
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bfv-assets
+  namespace: bfv
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  volumeName: bfv-assets
+  resources:
+    requests:
+      storage: 50Gi

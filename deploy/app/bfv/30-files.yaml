@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bfv-files
+  namespace: bfv
+spec:
+  replicas: 1
+  serviceName: bfv-files
+  selector:
+    matchLabels:
+      app: bfv-files
+  template:
+    metadata:
+      labels:
+        app: bfv-files
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: files
+          image: instrumentisto/rsync-ssh:alpine3.20
+          command: ["sleep", "infinity"]
+          workingDir: /data
+          env:
+            - { name: HOME, value: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: assets, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits:   { cpu: 400m, memory: 64Mi }
+      volumes:
+        - name: assets
+          persistentVolumeClaim:
+            claimName: bfv-assets
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
