@@ -3,8 +3,10 @@ kind: Namespace
 metadata:
   name: bfv
   labels:
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
 ---
 apiVersion: v1
 kind: ResourceQuota
@@ -17,6 +19,8 @@ spec:
     requests.memory: 128Mi
     limits.cpu: "1"
     limits.memory: 256Mi
+    requests.ephemeral-storage: 256Mi
+    limits.ephemeral-storage: 1Gi
     pods: "6"
     persistentvolumeclaims: "1"
     requests.storage: 50Gi
@@ -34,11 +38,14 @@ spec:
       default:
         cpu: 100m
         memory: 32Mi
+        ephemeral-storage: 64Mi
       defaultRequest:
         cpu: 5m
         memory: 8Mi
+        ephemeral-storage: 8Mi
       max:
         memory: 128Mi
+        ephemeral-storage: 256Mi
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

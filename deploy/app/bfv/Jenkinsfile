@@ -18,7 +18,7 @@ pipeline {
   }
   stages {
     stage('Checkout') {
-      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/pod.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
+      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/app/bfv/agent-tools.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
       steps {
         git url: env.BFV_REPO, branch: env.BFV_BRANCH, credentialsId: 'bfv-github-checks'
         script {
@@ -30,7 +30,7 @@ pipeline {
       }
     }
     stage('Build image') {
-      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/pod.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
+      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/app/bfv/agent-build.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
       steps {
         unstash 'src'
         container('dind') {
@@ -49,7 +49,7 @@ pipeline {
       }
     }
     stage('Deploy') {
-      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/pod.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
+      agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/app/bfv/agent-tools.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
       steps {
         unstash 'src'
         container('kubectl') {

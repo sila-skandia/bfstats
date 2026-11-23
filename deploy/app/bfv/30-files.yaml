@@ -37,11 +37,11 @@ spec:
             - { name: tmp, mountPath: /tmp }
           resources:
             requests: { cpu: 5m, memory: 8Mi }
-            limits:   { cpu: 400m, memory: 64Mi }
+            limits:   { cpu: 400m, memory: 64Mi, ephemeral-storage: 96Mi }
       volumes:
         - name: assets
           persistentVolumeClaim:
             claimName: bfv-assets
         - name: tmp
           emptyDir:
-            sizeLimit: 256Mi
+            sizeLimit: 64Mi

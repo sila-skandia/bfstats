@@ -1,0 +1,18 @@
+metadata:
+  labels:
+    app: jenkins-bfv-tools
+spec:
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  containers:
+    - name: jnlp
+      image: jenkins/inbound-agent:latest
+      resources:
+        requests:
+          cpu: "1m"
+    - name: kubectl
+      image: anskia/jenkins-build-agent:latest
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          memory: 256Mi

@@ -21,8 +21,12 @@ metadata:
   namespace: bfv
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets"]
-    verbs: ["get", "list", "watch", "patch"]
+    resources: ["deployments"]
+    resourceNames: ["bfv-site"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["list", "watch"]
   - apiGroups: ["apps"]
     resources: ["replicasets"]
     verbs: ["get", "list", "watch"]
