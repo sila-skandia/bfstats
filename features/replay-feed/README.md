@@ -245,6 +245,51 @@ unfurler reads tags without running script. Three changes:
 A recording's own frame still comes first, and the cover job gives every
 recording one (below, "Covers nobody picked").
 
+### Covers nobody picked
+
+The same report asked for the preview to be "ideally the frame of the
+recording". A cover was only ever set by the uploader pressing F in the
+replay, and most recordings are sent by bf42plus from a player's game with
+nobody at a browser. The cover job films one:
+
+- `scripts/recording-covers.mjs` lists the feed's newest recordings with no
+  cover (a round's card: its first recording, when no recording of the round
+  has one), opens each on the play site headless at 1280x720, and takes the
+  frame the way F does (`frameOf` in `replay-social.js`: the canvas read in
+  `afterRender`, cropped to 16:9, 640x360 JPEG).
+- **The moment** is a kill by the player who recorded the round, the one
+  nearest the middle; the replay is put 1.5 s before it and left to play, so
+  the frame is at about the kill. Then other players' kills with their killer
+  followed, then the middle of the round. Up to four moments are tried.
+- **The camera** is the game's chase view (the orbit for a seat with no
+  chase). The replay's first-person default framed a pillar and a wall on
+  Pavlov with nobody in the picture; from behind, the followed player is in
+  every frame.
+- **A bad frame is thrown away** and the next moment tried: nearly black,
+  nearly white, one flat colour, or a smooth gradient (open sky, a fog bank;
+  the mean step between neighbouring pixels under 2.5).
+- **Upload**: `PUT /stats/recordings/<slug>/filmed-cover` with the Shorts
+  render job's key (`X-Shorts-Key`), the JPEG as the body. The API re-encodes
+  it as any cover. A recording that has a cover answers 409 and keeps it: a
+  frame somebody picked is never written over, and F still replaces a filmed
+  one.
+- **The nightly runs it** (`scripts/shorts-nightly.sh`, after the Shorts
+  pass): the newest 12 with no cover. `RECORDING_COVERS=0` skips it. A
+  recording that gave no cover (its level is not in the viewer, the page never
+  loaded, four bad frames) leaves `<slug>.none` in `~/.cache/bfstats-covers`
+  and is left alone for a week.
+
+Measured 2026-11-23 on four recordings (Pavlov on FHSW Europe, Coral Sea,
+Kursk, Cassino): 70 to 163 s each, nearly all of it the level loading. The
+frames are plain game frames, a soldier, tank or aircraft from behind in its
+level, some of them dim where the level is.
+
+```bash
+node scripts/recording-covers.mjs --recordings=5 --gpu --channel=chrome           # film, keep the files
+SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/recording-covers.mjs --recordings=5 --gpu --channel=chrome --upload
+node scripts/recording-covers.mjs --recording=<slug> --gpu --channel=chrome       # one, cover or not
+```
+
 A page served from this PC hands out the short link for the live feed's
 recordings. For a recording on this PC's own API it hands out the long link,
 since no host answers a short link for that.
@@ -306,6 +351,7 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 | `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
 | `PATCH`, `DELETE /{slug}` | rename, remove (uploader or admin) |
 | `PUT /{slug}/thumbnail` | the cover, re-encoded by ImageSharp as a JPEG no wider than 640 px, so what is served is an image this code made |
+| `PUT /{slug}/filmed-cover` | the cover of a recording that has none, from the cover job, with the Shorts render job's key (`X-Shorts-Key`); 409 for one that has a cover, 401 without the key |
 | `POST /{slug}/views` | a view (202) |
 | `GET`, `POST /{slug}/comments`, `DELETE /{slug}/comments/{id}` | comments, each with its `reactions` (`[{ kind, count, mine }]`, below, "Likes and reactions"); `sort=time` is round order, `sort=top` the most reacted to first, then the newest. Deleting is for the author, the recording's uploader or an admin. |
 | `PUT`, `DELETE /{slug}/comments/{id}/reactions/{kind}` | like or react to a comment, or take it back; answers the comment's `reactions`. Any signed-in account, linked name or not. An unknown kind is a 400. |

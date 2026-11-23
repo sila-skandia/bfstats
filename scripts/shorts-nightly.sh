@@ -41,6 +41,17 @@ SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
   node scripts/shorts-runner.mjs --recordings=10 --max=3 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
   | { grep --line-buffered -v '^replay: ' || true; } || echo "the nightly pass failed (exit $?)"
 
+# Covers (features/replay-feed, "Covers nobody picked"): most recordings come
+# straight from a player's game with nobody at a browser to pick a frame, and
+# a link to one previews with its cover. Film a frame for the newest that have
+# none; one that has a cover is never touched. RECORDING_COVERS=0 skips it.
+if [[ ${RECORDING_COVERS:-1} == 1 ]]; then
+  echo "--- covers ---"
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
+    node scripts/recording-covers.mjs --recordings=12 --gpu --upload ${EXTRA[@]+"${EXTRA[@]}"} \
+    | { grep --line-buffered -v '^replay: ' || true; } || echo "the covers pass failed (exit $?)"
+fi
+
 # The week's Battlefield ASMR (the owner: "1 asmr clip a week"), on the first
 # night of each ISO week: the arsenal, each of the week's guns alone in its
 # level, its report then its rounds going past (--asmr-mix=week). A stamp marks the week
