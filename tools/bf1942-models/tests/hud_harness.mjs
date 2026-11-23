@@ -742,4 +742,28 @@ const grenadeVars = footPage({ weapon: grenade });
 results.grenadeBar = { heat: grenadeVars['Overheat/OverHeat'] ?? null,
                        ammoType: grenadeVars['Ammo/AmmoType'] ?? null };
 
+// The anchored layout (a 9:16 Short with the game's HUD): the transform each
+// group is drawn under, read off a context that records `setTransform`.
+function anchoredTransforms(W, H, anchored) {
+  globalThis.window ??= { devicePixelRatio: 1 };
+  let current = null;
+  const seen = {};
+  const ctx = {
+    setTransform(...m) { current = m; }, clearRect() {}, save() {}, restore() {}, globalAlpha: 1,
+  };
+  const canvas = { width: 0, height: 0, getContext: () => ctx };
+  const hud = new Hud({ canvas, sprite: () => null });
+  hud.ready = true;
+  hud.layout = { virtual: [800, 600] };
+  hud._groups = ['soldierIcon', 'tickets', 'crosshair'].map(key => ({ key, elements: [{ key }] }));
+  hud._paintElement = (_ctx, el) => { seen[el.key] = current; };
+  hud.paint(W, H, { anchored });
+  return seen;
+}
+results.anchored = {
+  tall: anchoredTransforms(540, 960, true),
+  tallOff: anchoredTransforms(540, 960, false),
+  wide: anchoredTransforms(1600, 900, true),
+};
+
 console.log(JSON.stringify(results));

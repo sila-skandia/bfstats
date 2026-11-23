@@ -51,6 +51,24 @@ class FillPictureGeometryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_a_tall_frame_anchors_the_panels_to_the_bottom_and_the_tickets_to_the_top(self) -> None:
+        # 540 x 960 (9:16) at 540/800 a pixel, no stretching: the soldier's
+        # panel under a shift that puts the game's bottom edge on the frame's,
+        # the tickets on its top edge, the crosshair stretched over the frame.
+        # The DPR is 1 headless.
+        tall = self.results["anchored"]["tall"]
+        u = 540 / 800
+        self.assertEqual(tall["soldierIcon"], [u, 0, 0, u, 0, 960 - 600 * u])
+        self.assertEqual(tall["tickets"], [u, 0, 0, u, 0, 0])
+        self.assertEqual(tall["crosshair"], [540 / 800, 0, 0, 960 / 600, 0, 0])
+
+    def test_anchoring_off_or_in_a_wide_frame_stretches_the_screen_as_before(self) -> None:
+        for key in ("tallOff", "wide"):
+            frame = self.results["anchored"][key]
+            self.assertEqual(frame["soldierIcon"], frame["crosshair"])
+            self.assertEqual(frame["soldierIcon"], frame["tickets"])
+        self.assertEqual(self.results["anchored"]["wide"]["tickets"], [2, 0, 0, 1.5, 0, 0])
+
     def test_the_combat_area_warning_wraps_into_its_own_plate(self) -> None:
         # The first leaf whose string is wider than its rect. `menu/InGame`
         # backs it with `textmessBG_3LINE_256x64` -- three lines of art for a

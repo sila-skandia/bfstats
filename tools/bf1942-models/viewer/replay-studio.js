@@ -289,18 +289,34 @@ export class Studio {
     return this.open && this.creator.edits.hud ? commsBox(w, h) : null;
   }
 
+  /**
+   * Whether the HUD's panels go to the bottom of the frame and its tickets to
+   * the top: the game's HUD in the clip's picture, in a frame narrower than
+   * 4:3. The log is boxed across the top (`commsSize`) and left there; the
+   * HUD had been boxed with it, which floated the soldier's and the vehicle's
+   * panels and the ammunition up under the log (2026-11-24, a Short on
+   * Guadalcanal), so it keeps the whole frame and `Hud.paint` lays it out.
+   */
+  hudAnchored(w, h) {
+    return this.commsSize(w, h) !== null;
+  }
+
   /** The log's canvas boxed to `commsSize`, or back to the stage's. */
   syncHudBox() {
     if (typeof document === 'undefined') return;
     const stage = this.stage;
     const size = this.open ? this.commsSize(stage.clientWidth, stage.clientHeight) : null;
     const h = size ? `${size.h}px` : '';
-    // The message log and the HUD share the game's screen.
-    for (const id of ['comms-canvas', 'hud-canvas']) {
-      const layer = document.getElementById(id);
-      if (!layer || layer.style.height === h) continue;
+    const layer = document.getElementById('comms-canvas');
+    if (layer && layer.style.height !== h) {
       layer.style.height = h;
       layer.style.bottom = size ? 'auto' : '';
+    }
+    // The HUD canvas is the whole frame, whatever the log is boxed to.
+    const hud = document.getElementById('hud-canvas');
+    if (hud && (hud.style.height || hud.style.bottom)) {
+      hud.style.height = '';
+      hud.style.bottom = '';
     }
   }
 
@@ -1758,6 +1774,12 @@ export class Studio {
     const hudNote = this.note('The game\'s whole HUD for the player followed: their health, ammunition and vehicle panel in any camera, their crosshair in first person, the chat, kills and flags as the game prints them, and the minimap at the top right, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
     const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
     const shortNote = this.note('');
+    // The same switch, where a Short is posted from: a Short is without the
+    // game's HUD unless it is asked for here (2026-11-24, a player's report).
+    const shortHud = this.check('Game HUD in the Short', () => creator.edits.hud,
+      v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s HUD in the picture' : null),
+      'Draw the game\'s own HUD in the Short: health and ammunition at the bottom, the chat at the top, the minimap and tickets');
+    const shortHudNote = this.note('Off by default: the Short is the world alone. On, the soldier\'s and the vehicle\'s panels sit along the bottom of the frame, the chat and kills along the top.');
     this.syncs.push(() => {
       const why = creator.shortBlocked();
       shortNote.classList.toggle('bad', Boolean(why));
@@ -1777,7 +1799,7 @@ export class Studio {
         + ' Post as a Short is always 1080 x 1920.';
     });
     page.append(
-      this.group('Post as a Short', short, shortNote),
+      this.group('Post as a Short', short, shortNote, shortHud, shortHudNote),
       this.group('In the picture', hud, hudNote),
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),

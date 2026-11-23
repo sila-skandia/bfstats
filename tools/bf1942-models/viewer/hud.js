@@ -112,11 +112,28 @@ export const DISCONNECT_MESSAGE_DEFAULT = {
   ],
 };
 
+/** A frame taller than 4:3 (a 9:16 Short) lays the game's screen out at one
+ *  scale across its width rather than stretched, so the letters keep their
+ *  shape, and each group keeps the edge it sits on in the game's own 800 x 600
+ *  screen: the soldier's and the vehicle's panels and the ammunition at the
+ *  bottom of the frame, the tickets and the messages at the top. Whatever is
+ *  in neither (the crosshair, the hit marks, the periscope) is the whole
+ *  frame, as before. */
+export const ANCHOR_BOTTOM = Object.freeze(new Set([
+  'soldierIcon', 'soldierAmmo', 'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
+  'supplyIcon', 'weaponBar', 'submarine',
+]));
+export const ANCHOR_TOP = Object.freeze(new Set(['tickets', 'spawnTimer', 'spawnText', 'statusMessage', 'disconnectMessage']));
+
 /** `groups` in `PAINT_ORDER`, then whatever else the file has. */
 export function paintOrder(groups) {
   const known = PAINT_ORDER.filter(key => groups[key]);
   const rest = Object.keys(groups).filter(key => !PAINT_ORDER.includes(key));
-  return [...known, ...rest].map(key => groups[key]);
+  // Each group knows its own name, for the anchored layout (`ANCHOR_BOTTOM`).
+  return [...known, ...rest].map(key => {
+    groups[key].key ??= key;
+    return groups[key];
+  });
 }
 
 /** `Ammo/Icon_demokit.tga` -> `['ammo_icon_demokit', 'icon_demokit']`,
@@ -735,9 +752,16 @@ export class Hud {
    *  Called once per RENDERED frame (HUD-3: the engine itself recomputes
    *  this HUD once per `Renderer_drawFrame`, not the 30 Hz tick) -- never
    *  more than that, and never at all when nothing changed. */
-  paint(stageW, stageH) {
+  paint(stageW, stageH, { anchored = false } = {}) {
     if (!this.ready || !this.canvas || !stageW || !stageH) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const [vw, vh] = this.layout?.virtual || DEFAULT_VIRTUAL;
+    // Anchored only where the frame is taller than the game's own screen.
+    anchored = anchored && stageW / stageH < vw / vh;
+    if (anchored !== this._anchored) {
+      this._anchored = anchored;
+      this._dirty = true;
+    }
     if (!this._isDirty(stageW, stageH, dpr)) return;
     const cw = Math.round(stageW * dpr);
     const ch = Math.round(stageH * dpr);
@@ -751,9 +775,15 @@ export class Hud {
     const s = this._scaleFor(stageW, stageH);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
     ctx.imageSmoothingEnabled = false;   // every asset here is point art
+    const u = stageW / vw;
     for (const group of this._groups) {
+      if (anchored && (ANCHOR_BOTTOM.has(group.key) || ANCHOR_TOP.has(group.key))) {
+        const oy = ANCHOR_BOTTOM.has(group.key) ? stageH - vh * u : 0;
+        ctx.setTransform(u * dpr, 0, 0, u * dpr, 0, oy * dpr);
+      } else ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
       for (const el of group.elements) this._paintElement(ctx, el);
     }
+    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
     ctx.globalAlpha = 1;
     for (const o of this.overlays) {
       ctx.save();

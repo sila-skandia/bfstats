@@ -2684,6 +2684,33 @@ carries them with no crosshair; at 9:16 the HUD and the log 315 x 236 in a
 315 x 560 frame.
 
 
+### The HUD at the bottom of a Short (2026-11-24)
+
+A player posting a Short on Guadalcanal (`guadalcanal-10m15s-10m23s.mp4`) had
+the game's HUD, the soldier's and the vehicle's panels and the ammunition,
+floating a third of the way down the frame, under the chat. The owner: make
+the HUD an option, and when it is drawn put it at the bottom.
+
+- **Why it floated.** In a frame narrower than 4:3 the HUD canvas shared the
+  chat's 4:3 box across the top (`syncHudBox`), and the HUD's own bottom row
+  landed at the bottom of that box.
+- **The fix.** Only the chat keeps the box. The HUD canvas is the whole frame
+  and `Hud.paint(w, h, { anchored: true })` (`hud.js`, `ANCHOR_BOTTOM`,
+  `ANCHOR_TOP`) lays the game's 800 x 600 screen out at one scale across the
+  frame's width: the panels, ammunition and weapon bar keep the game's bottom
+  edge, the tickets and status text its top edge, and the crosshair and hit
+  marks stay stretched over the frame. The letters are not squeezed.
+  `ReplayCreator.drawGameHud` needed no change: it reads the canvas's own
+  rect. `replayController.hudAnchored` (replay.js, from
+  `Studio.hudAnchored`) is what map.html passes.
+- **The option.** `edits.hud` was already the switch (off by default, on the
+  Export tab under In the picture). It is now also under Post as a Short, as
+  Game HUD in the Short, the same state, since the Short button asks nothing
+  else.
+- Tests: `test_hud.py` (the transform each group is drawn under, tall, tall
+  with it off, wide). Looked at headless with the real HUD pack at 540 x 960:
+  panels along the bottom, tickets top right, art in proportion.
+
 ## The studio's minimap marks one side (2026-11-19)
 
 The owner: "On the studio / creator mode - we should not show the other

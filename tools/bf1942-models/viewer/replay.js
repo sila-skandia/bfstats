@@ -1503,6 +1503,12 @@ export function createReplayController(ctx) {
     commsSize(w, h) {
       return guarded('the message log\'s size', () => player.creator?.studio?.commsSize?.(w, h) ?? null, null) ?? { w, h };
     },
+    /** Whether the game's HUD keeps its panels to the bottom of a tall
+     *  frame and its tickets to the top (hud.js `ANCHOR_BOTTOM`): while the
+     *  studio's clip has the game's HUD in its picture. */
+    hudAnchored(w, h) {
+      return guarded('the HUD\'s layout', () => Boolean(player.creator?.studio?.hudAnchored?.(w, h)), false);
+    },
     /** The followed player's HUD into the page's HUD variables, in his
      *  first person (replay-hud.js); `art` the page's sprite lookups. One
      *  that throws takes back whatever it had written. */
