@@ -210,6 +210,14 @@ class MountedFiles:
                     return mount[2].read(name).decode("latin-1")
         return None
 
+    def which(self, path: str) -> Path | None:
+        """The archive `read(path)` reads from: the one a modder repacks to change that file."""
+        lp = posixpath.normpath(path.replace("\\", "/")).lower().lstrip("/")
+        for mount in self._mounts:
+            if lp.startswith(mount[0]) and lp in self._index(mount):
+                return mount[1]
+        return None
+
     def list(self, prefix: str) -> list[str]:
         """Every entry under `prefix`, one per path, in no particular order."""
         lp = prefix.lower()
@@ -247,6 +255,8 @@ class Console:
     # Each id's template class (TEMPLATE_CLASSES' spelling); id 0 is a Camera.
     classes: list[str] = field(default_factory=lambda: ["Camera"])
     sources: list[str] = field(default_factory=lambda: ["code"])
+    lines: list[int] = field(default_factory=lambda: [0])   # each id's `ObjectTemplate.create` line in its source
+    _line: int = 0
     _seen: dict[str, int] = field(default_factory=lambda: {CODE_TEMPLATE.lower(): 0})
     variables: dict[str, str] = field(default_factory=dict)
     relative: bool = True
@@ -278,6 +288,7 @@ class Console:
         self.names.append(name)
         self.classes.append(cls)
         self.sources.append(source)
+        self.lines.append(self._line)
         if self.graph:
             self._active = {"name": name, "cls": cls, "info": None, "props": {}, "children": []}
             self.templates[key] = self._active
@@ -332,10 +343,11 @@ class Console:
         frames: list[list[bool]] = []     # [enclosing block runs, an arm was taken]
         active = True
         rem_depth = 0
-        for raw in text.splitlines():
+        for number, raw in enumerate(text.splitlines(), 1):
             words = _tokens(raw)
             if not words:
                 continue
+            self._line = number
             word = words[0].lower()
             # rem, beginRem and endRem are tested before anything else, and a
             # line inside an open beginRem is dropped whatever it says
@@ -550,3 +562,32 @@ def object_graph(console: Console) -> dict:
             for k, t in templates.items() if k in seen]
     return {"templates": rows, "infos": sorted(console.infos), "unique": sorted(console.unique_infos),
             "forced": sorted(console.forced_infos)}
+
+
+def template_sources(game_dir: Path, mod: str, level: str, names: list[str],
+                     mode: str | None = None) -> dict[str, dict]:
+    """Where a level load defines each named template, for a modder to open: `{name: {"archive": the .rfa, relative
+    to the install, "file": the .con inside it, "line": the ObjectTemplate.create line}}`. Names the load never
+    creates are left out."""
+    lv = level_name(level)
+    chain = mod_chain(Path(game_dir), mod)
+    files = MountedFiles(chain)
+    try:
+        console = Console(files, play_mode=PLAY_MODES.get(mode_name(mode), "GPM_CQ"))
+        root = f"bf1942/levels/{lv}/"
+        console.run(root + "init.con", [])
+        for path in sorted(files.list("objects/")):
+            if ".con" in path and "/ai/" not in path:
+                console.run(path, [])
+        out = {}
+        index = {n.lower(): i for i, n in enumerate(console.names)}
+        for name in names:
+            i = index.get(name.lower())
+            if i is None or console.sources[i] == "code":
+                continue
+            archive = files.which(console.sources[i])
+            out[name] = {"archive": archive.relative_to(Path(game_dir)).as_posix() if archive else None,
+                         "file": console.sources[i], "line": console.lines[i]}
+        return out
+    finally:
+        files.close()
