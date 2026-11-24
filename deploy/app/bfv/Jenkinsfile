@@ -23,7 +23,7 @@ pipeline {
         git url: env.BFV_REPO, branch: env.BFV_BRANCH, credentialsId: 'bfv-github-checks'
         script {
           env.GIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-          publishChecks name: 'bfv-deploy', title: 'Build and deploy', status: 'IN_PROGRESS',
+          publishChecks name: 'bfv-deploy', detailsURL: env.SITE_URL, title: 'Build and deploy', status: 'IN_PROGRESS',
             summary: "Building ${env.GIT_SHA.take(8)} for ${env.SITE_URL}"
         }
         stash name: 'src', includes: 'mesh/**,tools/bf1942-models/viewer/**,tools/bf1942-models/upload/upload_service.py'
@@ -69,19 +69,19 @@ pipeline {
   }
   post {
     success {
-      publishChecks name: 'bfv-deploy', title: 'Deployed', conclusion: 'SUCCESS',
+      publishChecks name: 'bfv-deploy', detailsURL: env.SITE_URL, title: 'Deployed', conclusion: 'SUCCESS',
         summary: "${env.GIT_SHA?.take(8)} is live on ${env.SITE_URL}"
     }
     failure {
       script {
         def tail = currentBuild.rawBuild.getLog(120).join('\n')
-        publishChecks name: 'bfv-deploy', title: 'Build or deploy failed', conclusion: 'FAILURE',
+        publishChecks name: 'bfv-deploy', detailsURL: env.SITE_URL, title: 'Build or deploy failed', conclusion: 'FAILURE',
           summary: "Failed at stage ${env.STAGE_NAME ?: 'unknown'}. Last 120 log lines below.",
           text: "```\n${tail.take(60000)}\n```"
       }
     }
     aborted {
-      publishChecks name: 'bfv-deploy', title: 'Cancelled', conclusion: 'CANCELED', summary: 'Build was cancelled or timed out'
+      publishChecks name: 'bfv-deploy', detailsURL: env.SITE_URL, title: 'Cancelled', conclusion: 'CANCELED', summary: 'Build was cancelled or timed out'
     }
   }
 }
