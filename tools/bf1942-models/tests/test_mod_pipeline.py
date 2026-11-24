@@ -239,6 +239,48 @@ class Resume(unittest.TestCase):
                       outputs=((str(self.out), 1),), tolerate_rc=(1,), done_marker="skins.json:")
         self.assertEqual("failed", self.run_one(step)["status"])
 
+    def gap_step(self, reason):
+        code = (f"import sys; open({str(self.out)!r},'w').write('x'); "
+                f"print('  level weapon unposed: GermanSoldier + Stg44 (through l1): {reason}', file=sys.stderr); "
+                "raise SystemExit(2)")
+        return M.Step("t", "test", cmds=(("python3", "-c", code),), outputs=((str(self.out), 1),),
+                      gap_rc=(2,), gap_marker="level weapon unposed:", gap_pattern=r"no \S+ state with a 3P clip")
+
+    def test_a_gap_in_the_mods_own_data_counts_as_done_and_is_not_rerun(self):
+        step = self.gap_step("no Ub_StandAimStg44 state with a 3P clip")
+        row = self.run_one(step)
+        self.assertEqual("done-with-findings", row["status"])
+        self.assertEqual(1, len(row["gaps"]))
+        self.assertEqual("done", self.state.get("t")["status"])
+        self.assertEqual(1, len(self.state.get("t")["gaps"]))
+        self.assertEqual("skipped-done", self.run_one(step)["status"])
+
+    def test_any_other_reason_for_the_same_exit_stays_a_failure(self):
+        row = self.run_one(self.gap_step("the pose export crashed"))
+        self.assertEqual("failed", row["status"])
+        self.assertEqual("failed", self.state.get("t")["status"])
+
+    def test_gaps_of_an_earlier_run_in_the_appended_log_are_not_this_runs(self):
+        log = "=== 2026-11-24T08:00:00 x\n  level weapon unposed: A + B (through l1): no clip state with a 3P clip\n" \
+              "=== rc=2 2026-11-24T08:01:00\n=== 2026-11-24T09:00:00 x\nall fine\n=== rc=2 2026-11-24T09:01:00\n"
+        step = self.gap_step("")
+        self.assertIsNone(M.known_gaps(step, 2, log))
+        self.assertEqual(1, len(M.known_gaps(step, 2, log.split("=== 2026-11-24T09")[0])))
+
+    def test_a_step_recorded_failed_before_gaps_counted_is_judged_from_its_log(self):
+        step = self.gap_step("no Ub_StandAimStg44 state with a 3P clip")
+        # the record an older pipeline left: failed, rc 2, the log it wrote
+        with mock.patch.object(M, "OUT_ROOT", Path(self.tmp.name)):
+            first = self.run_one(step)
+        self.assertEqual("done-with-findings", first["status"])
+        self.state.set("t", status="failed", gaps=None)
+        del self.state.data["steps"]["t"]["gaps"]
+        with mock.patch.object(M, "HERE", Path(self.tmp.name)):
+            self.state.set("t", log=str(Path(self.tmp.name) / "logs" / "t.log"))
+            row = self.run_one(step)
+        self.assertEqual("skipped-done", row["status"])
+        self.assertEqual("done", self.state.get("t")["status"])
+
     def test_nonzero_exit_fails_and_stops(self):
         row = self.run_one(self.step("raise SystemExit(3)"))
         self.assertEqual("failed", row["status"])

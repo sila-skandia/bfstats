@@ -176,6 +176,12 @@ class Step:
     fixes: str = ""
     tolerate_rc: tuple[int, ...] = ()   # exit codes that are findings, not a failure ...
     done_marker: str = ""               # ... when the log holds this line (the extractor's own summary)
+    # A step's own pipeline-gap exit (poses_kit's 2) that is judged by the findings the run printed: when every
+    # one of them matches `gap_pattern` (a gap in the mod's own data, e.g. a weapon with no third-person clip)
+    # the step is done, the gaps are recorded in its state row (`gaps`) and reported, and the next run skips it.
+    gap_rc: tuple[int, ...] = ()
+    gap_marker: str = ""                # the log line that starts one gap, e.g. "level weapon unposed:"
+    gap_pattern: str = ""               # the only reasons that are the mod's data, not the pipeline's
     # The extractor's own incremental flag (`--delta`), appended when the step
     # last finished with this very command and is re-run only because an input
     # set or an output moved (`wants_delta`): the extractor then builds only
@@ -255,6 +261,7 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/poses/*.pose.glb", 1),),
        after=("kits", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="kit-pose findings:",
+       gap_rc=(2,), gap_marker="level weapon unposed:", gap_pattern=r"no \S+ state with a 3P clip",
        delta_flag="--delta",
        fixes="bots hold the Colt where the kit's weapon has no pose; the player's third person "
              "keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, "
@@ -992,6 +999,27 @@ def now() -> str:
 # ---------------------------------------------------------------------------
 
 
+def last_run_log(text: str) -> str:
+    """The log text of the latest run: step logs are appended to, each run opening with an `=== <iso time> <argv>`."""
+    parts = re.split(r"(?m)^(?==== \d{4}-\d\d-\d\dT)", text)
+    return parts[-1] if parts else text
+
+
+def known_gaps(s: Step, rc: int, log_text: str) -> list[str] | None:
+    """The gap lines of a run that exited `rc` when the step may count them as done, else None. Every line the run
+    printed under `gap_marker` must give a reason matching `gap_pattern` (the mod's data lacks the clip); one that
+    gives any other reason is the pipeline's own failure and the step stays failed."""
+    if rc not in s.gap_rc or not s.gap_marker:
+        return None
+    lines = [l.strip() for l in last_run_log(log_text).splitlines() if s.gap_marker in l and not l.startswith("===")]
+    if not lines:
+        return None
+    pat = re.compile(s.gap_pattern) if s.gap_pattern else None
+    if pat and not all(pat.search(l) for l in lines):
+        return None
+    return lines
+
+
 class DiskGuardTripped(Exception):
     pass
 
@@ -1127,7 +1155,11 @@ def viewer_remote_args(mod: str) -> list[str]:
     """What the pipeline's viewer server may fetch from the volume: store
     blobs always (`evict_glbs.py`), and for a mod's run vanilla's files too.
     Vanilla's own run keeps its tree local only, so a file its bake missed is
-    an asset.404 there."""
+    an asset.404 there. `BF42UE_NO_NETWORK=1` (the Mod Workbench sets it: the modder's mod is unpublished and their
+    PC may not reach the site) serves local files only, and a file the tree lacks is a 404 the audits report."""
+    if (os.environ.get("BF42UE_NO_NETWORK", "").strip().lower() not in ("", "0", "false", "no")
+            or os.environ.get("BF_VIEWER_REMOTE", "").lower() in ("0", "off", "no", "false")):
+        return ["--no-remote"]
     return ["--remote-store-only"] if mod == "bf1942" else ["--remote-vanilla"]
 
 
@@ -1633,6 +1665,17 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
     missing = check_needs(s, ctx)
     outs = check_outputs(s, ctx)
     prior = state.get(s.name)
+    if (prior.get("status") == "failed" and prior.get("rc") in s.gap_rc and prior.get("hash") == h
+            and prior.get("inputs") == fp and prior.get("log") and not dry_run and not force):
+        # Recorded failed by a pipeline from before known gaps counted as done: the log it left is judged now, so a
+        # finished run that only lacked clips the mod's data never had is not repeated.
+        try:
+            gaps = known_gaps(s, prior["rc"], (HERE / prior["log"]).read_text(errors="replace"))
+        except OSError:
+            gaps = None
+        if gaps is not None and all(o["ok"] for o in outs):
+            state.set(s.name, status="done", gaps=gaps)
+            prior = state.get(s.name)
     same_cmd = prior.get("status") == "done" and prior.get("hash") == h
     inputs_changed = same_cmd and prior.get("inputs", "") != fp
     up_to_date = same_cmd and not inputs_changed and all(o["ok"] for o in outs)
@@ -1716,15 +1759,23 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
     row["rc"] = rc
     tolerated = (rc in s.tolerate_rc and rc != 0 and s.done_marker
                  and log.is_file() and s.done_marker in log.read_text(errors="replace"))
-    ok = (rc == 0 or tolerated) and all(o["ok"] for o in outs)
+    gaps = None
+    if rc and not tolerated and s.gap_rc and log.is_file():
+        gaps = known_gaps(s, rc, log.read_text(errors="replace"))
+    ok = (rc == 0 or tolerated or gaps is not None) and all(o["ok"] for o in outs)
+    if gaps is not None:
+        tolerated = True
+        row["gaps"] = gaps
     row["status"] = ("done-with-findings" if ok and tolerated else "done" if ok
                      else "failed-outputs" if rc == 0 else "failed-memory" if rc == 98
                      else "failed")
     if tolerated:
-        row["note"] = f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}"
+        row["note"] = (f"exit {rc} tolerated: {len(gaps)} known gaps in the mod's own data, see {_rel(log)}"
+                       if gaps is not None else
+                       f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}")
     # the inputs are fingerprinted again: this step may have rewritten one
     state.set(s.name, status="done" if ok else "failed", rc=rc, hash=row["hash"],
-              inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log))
+              inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log), gaps=gaps or [])
     return row
 
 

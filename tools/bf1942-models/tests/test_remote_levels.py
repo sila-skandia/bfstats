@@ -17,10 +17,12 @@ import hashlib
 import http.server
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 import urllib.request
 from functools import partial
 from pathlib import Path
@@ -381,6 +383,13 @@ class ServeViewerFallback(Tree):
         import mod_pipeline
         self.assertEqual(["--remote-store-only"], mod_pipeline.viewer_remote_args("bf1942"))
         self.assertEqual(["--remote-vanilla"], mod_pipeline.viewer_remote_args("bf1918"))
+
+    def test_the_pipeline_fetches_nothing_when_the_network_is_off(self) -> None:
+        import mod_pipeline
+        for var, val in (("BF42UE_NO_NETWORK", "1"), ("BF_VIEWER_REMOTE", "off")):
+            with mock.patch.dict(os.environ, {var: val}):
+                self.assertEqual(["--no-remote"], mod_pipeline.viewer_remote_args("bf1918"))
+                self.assertEqual(["--no-remote"], mod_pipeline.viewer_remote_args("bf1942"))
 
     def test_a_cached_scene_that_disagrees_with_the_marker_is_fetched_again(self) -> None:
         self.evict("bf1942", "bocage")
