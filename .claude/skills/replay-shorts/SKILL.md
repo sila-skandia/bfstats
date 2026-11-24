@@ -334,7 +334,7 @@ about.
 
 ## On the Mac (2026-11-07)
 
-The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly
+The development machine is now an Apple Silicon Mac: no systemd (the nightly
 timer is the Linux PC's), no Playwright Chromium, no extracted model trees.
 Add `--channel=chrome` (the installed Google Chrome); `--gpu` is Metal there.
 `modelsOf` reads the mod's `models.json` from the live play site when the tree

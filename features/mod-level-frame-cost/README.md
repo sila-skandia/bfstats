@@ -6,7 +6,7 @@ the mods, FHSW and EoD in particular. This pass recorded the numbers on his
 current machine, vanilla first and then the mods, and names what the frame is
 spent on where it is slow.
 
-Every number here is from an Apple M5 Max MacBook Pro (40-core GPU, 48 GB),
+Every number here is from an Apple Silicon Mac (40-core GPU, 48 GB),
 Google Chrome 157 driven by Playwright through `channel: 'chrome'`, on the
 built-in 120 Hz display. The earlier performance documents
 ([mesh-viewer-performance](../mesh-viewer-performance/README.md),

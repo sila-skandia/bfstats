@@ -5,7 +5,7 @@
 // match. The frame-time table in the README is a still camera with no bots at
 // a pixel ratio of 1; a match at a laptop's own size is another question. This
 // opens a level with bots in headless Google Chrome at 1728 x 1117 and a pixel
-// ratio of 2 (a 16-inch MacBook Pro's default), spawns the player on foot,
+// ratio of 2 (a typical retina laptop default), spawns the player on foot,
 // walks and turns for `--seconds`, and prints how many frames came late.
 //
 //   node tests/perf/remaster_match.mjs --base http://localhost:5273 \

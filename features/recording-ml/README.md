@@ -6,7 +6,7 @@ again. The rest waits for more recordings: [Parked](#parked) says for what.
 
 The owner's goals: learn from the recordings how good pilots fly, how good tank
 commanders position and aim, and which tactics win a round on each map. The
-trial runs locally on the owner's laptop (an M5 Max MacBook Pro, 48 GB).
+trial runs locally on an Apple Silicon Mac (48 GB).
 
 Every claim below carries its source:
 
