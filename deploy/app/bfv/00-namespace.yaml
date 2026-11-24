@@ -74,3 +74,21 @@ spec:
       ports:
         - port: 80
           protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: site-to-master-server
+  namespace: bfv
+spec:
+  podSelector:
+    matchLabels:
+      app: bfv-site
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 188.245.154.232/32
+      ports:
+        - port: 8080
+          protocol: TCP

@@ -31,6 +31,29 @@ data:
         }
         return 404;
     }
+    location = /master/api/live {
+        limit_except GET { deny all; }
+        proxy_pass http://188.245.154.232:8080/api/live;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 15s;
+        proxy_hide_header Set-Cookie;
+        proxy_hide_header Access-Control-Allow-Origin;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location ^~ /master/static/ {
+        location ~ "^/master/static/maps/[a-z0-9_-]+\.(?:webp|png|jpe?g)$" {
+            limit_except GET { deny all; }
+            rewrite ^/master(/static/.*)$ $1 break;
+            proxy_pass http://188.245.154.232:8080;
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 15s;
+            proxy_hide_header Set-Cookie;
+            add_header Cache-Control "public, max-age=3600" always;
+            add_header X-Content-Type-Options nosniff always;
+        }
+        return 404;
+    }
     location ^~ /api/replay/ {
         location ~ "^/api/replay/[0-9]{8}-[0-9a-f]{8}$" {
             limit_except POST { deny all; }
