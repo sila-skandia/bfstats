@@ -27,7 +27,8 @@ class TemplateSources(unittest.TestCase):
                 "objects/guns/objects.con": b"ObjectTemplate.create HandFireArms Colt\n"})
             out = template_sources(g, "m", "lvl", ["Sherman", "Colt", "Nothing"])
         self.assertEqual(out["Sherman"], {"archive": "Mods/M/Archives/objects.rfa",
-                                          "file": "objects/tanks/sherman/objects.con", "line": 3})
+                                          "file": "objects/tanks/sherman/objects.con", "line": 3,
+                                          "class": "PlayerControlObject"})
         self.assertEqual(out["Colt"]["archive"], "Mods/bf1942/Archives/objects.rfa")
         self.assertNotIn("Nothing", out)
 

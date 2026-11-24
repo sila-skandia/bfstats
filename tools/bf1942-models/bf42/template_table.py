@@ -567,7 +567,8 @@ def object_graph(console: Console) -> dict:
 def template_sources(game_dir: Path, mod: str, level: str, names: list[str],
                      mode: str | None = None) -> dict[str, dict]:
     """Where a level load defines each named template, for a modder to open: `{name: {"archive": the .rfa, relative
-    to the install, "file": the .con inside it, "line": the ObjectTemplate.create line}}`. Names the load never
+    to the install, "file": the .con inside it, "line": the ObjectTemplate.create line, "class": its template class}}`.
+    Names the load never
     creates are left out."""
     lv = level_name(level)
     chain = mod_chain(Path(game_dir), mod)
@@ -587,7 +588,7 @@ def template_sources(game_dir: Path, mod: str, level: str, names: list[str],
                 continue
             archive = files.which(console.sources[i])
             out[name] = {"archive": archive.relative_to(Path(game_dir)).as_posix() if archive else None,
-                         "file": console.sources[i], "line": console.lines[i]}
+                         "file": console.sources[i], "line": console.lines[i], "class": console.classes[i]}
         return out
     finally:
         files.close()
