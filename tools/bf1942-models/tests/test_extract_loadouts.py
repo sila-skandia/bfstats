@@ -852,6 +852,15 @@ class DeltaMergeTests(unittest.TestCase):
         self.assertNotIn("levelKits", out)
         self.assertEqual(out["pads"], {"old": ["A"]})
 
+    def test_a_refreshed_level_is_read_again_and_loses_what_the_edit_removed(self):
+        # A modder repacked "old": it now deals kit B and has no pad. Its old row and pad must not survive.
+        fresh = {"kits": {"B": {"items": ["z"]}},
+                 "levels": {"old": {"1": {"soldier": "S", "slots": {"0": "B"}}}}}
+        out = merge_delta(self.previous(), fresh, {"old", "gone"}, reread={"old"})
+        self.assertEqual(out["levels"]["old"]["1"]["slots"], {"0": "B"})
+        self.assertEqual(out["pads"], {"gone": ["A"]})
+        self.assertEqual(out["levels"]["gone"]["1"]["slots"], {"0": "A"})  # another level keeps its row
+
     def test_the_previous_file_is_not_modified(self):
         prev = self.previous()
         merge_delta(prev, None, {"old"})

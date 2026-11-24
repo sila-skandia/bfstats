@@ -585,7 +585,7 @@ def load_previous(path: Path) -> dict | None:
     return data
 
 
-def merge_delta(previous: dict, fresh: dict | None, wanted: set[str]) -> dict:
+def merge_delta(previous: dict, fresh: dict | None, wanted: set[str], reread: set[str] = frozenset()) -> dict:
     """`previous` with the levels `fresh` read merged in, and the rows of any
     level `wanted` (the maps.json set) no longer holds dropped.
 
@@ -599,10 +599,13 @@ def merge_delta(previous: dict, fresh: dict | None, wanted: set[str]) -> dict:
     one is added, and so is the AI table of any item it carries. The full
     pass (no --delta, `--force-steps` in the pipeline) rebuilds the file."""
     out = copy.deepcopy(previous)
-    out["levels"] = {k: v for k, v in out["levels"].items() if k in wanted}
+    # A level read again (`--refresh`, its archive was edited) loses its old rows first, so a kit or pad the edit
+    # removed does not linger.
+    keep = wanted - set(reread)
+    out["levels"] = {k: v for k, v in out["levels"].items() if k in keep}
     for key in ("levelKits", "pads"):
         if key in out:
-            out[key] = {k: v for k, v in out[key].items() if k in wanted}
+            out[key] = {k: v for k, v in out[key].items() if k in keep}
             if not out[key]:
                 del out[key]
     if fresh is not None:
@@ -644,6 +647,9 @@ def main() -> int:
                     help="with --maps and an existing --out: read only the levels the file "
                          "has no row for, merge them in, and drop the rows of levels --maps "
                          "no longer holds (merge_delta). The pipeline's level additions")
+    ap.add_argument("--refresh", action="append", default=[], metavar="LEVEL",
+                    help="with --delta: read this level again although the file has its row (its archive "
+                         "was edited); repeatable")
     args = ap.parse_args()
 
     chain = mod_chain(args.game_dir.expanduser(), args.mod)
@@ -663,7 +669,8 @@ def main() -> int:
         if previous is None:
             print("--delta: no readable previous file; a full pass", file=sys.stderr)
         else:
-            fresh = only - set(previous["levels"])
+            reread = {r.lower() for r in args.refresh} & only
+            fresh = (only - set(previous["levels"])) | reread
             print(f"--delta: {len(only & set(previous['levels']))} levels kept, "
                   f"{len(fresh)} to read, "
                   f"{len(set(previous['levels']) - only)} dropped", file=sys.stderr)
@@ -692,7 +699,7 @@ def main() -> int:
                               kept=previous["kits"] if previous is not None else None)
     if previous is not None:
         wanted = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
-        manifest = merge_delta(previous, manifest, wanted)
+        manifest = merge_delta(previous, manifest, wanted, reread=only)
     for level, own_rows in manifest.get("levelKits", {}).items():
         print(f"  {level}: its own {', '.join(own_rows)}", file=sys.stderr)
     bound = {name.lower() for level in manifest["levels"].values()

@@ -188,6 +188,11 @@ class Step:
     # what is missing and merges its indexes. Never on --force-steps, a changed
     # command, or a step that failed or never ran — those take the full pass.
     delta_flag: str = ""
+    # What `run --refresh` (the named levels' own archives changed) does to the step: "force" re-runs it in full
+    # (the level bake itself; kits, a few minutes), "delta" re-runs it incrementally even though its input sets are
+    # unchanged (an edited level keeps maps.json's set the same). `refresh_arg` names the levels to re-read.
+    refresh: str = ""
+    refresh_arg: str = ""
     memory_gb: float = 0.0             # its scope's memory cap; 0 is STEP_MEMORY_GB
 
 
@@ -216,6 +221,7 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_maps_all.py", "--mod", "{M}", "--levels", "{levels...}",
               "{skip_existing...}", "-j", "{jobs}", "--out", "{maps}"),),
        needs=("{models}/models.json",),
+       refresh="force",
        outputs=(("{maps}/maps.json", 1), ("{maps}/*/scene.json", "levels"),
                 ("{maps}/*/scene.glb", "levels"), ("{maps}/*/scene.glb.gz", "levels"),
                 ("{shared}/vehicle-sounds.json", 1)),
@@ -236,6 +242,7 @@ STEPS: tuple[Step, ...] = (
        inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_kits.py", "--mod", "{M}", "{kit_flags...}",
               "--maps", "{maps}/maps.json", "-j", "{jobs}", "--out", "{models}"),),
+       refresh="force",
        needs=("{maps}/maps.json",), outputs=(("{models}/kits.json", 1),),
        after=("levels",), touches_models=True,
        fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page; "
@@ -247,7 +254,7 @@ STEPS: tuple[Step, ...] = (
               "--maps", "{maps}/maps.json", "--out", "{shared}/loadouts.json"),),
        needs=("{maps}/maps.json",),
        outputs=(("{shared}/loadouts.json", 1),), after=("levels",),
-       delta_flag="--delta",
+       delta_flag="--delta", refresh="delta", refresh_arg="--refresh",
        fixes="soldiers spawn bare-handed and silent; a level addition re-runs it with --delta: "
              "only the new levels are read and merged (FHSWEurope 24 -> 39 min over three "
              "25-level batches as the tree grew, 2026-10-20)"),
@@ -262,7 +269,7 @@ STEPS: tuple[Step, ...] = (
        after=("kits", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="kit-pose findings:",
        gap_rc=(2,), gap_marker="level weapon unposed:", gap_pattern=r"no \S+ state with a 3P clip",
-       delta_flag="--delta",
+       delta_flag="--delta", refresh="delta",
        fixes="bots hold the Colt where the kit's weapon has no pose; the player's third person "
              "keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, "
              "RDG33); a weapon a level declares and hands out with no pose exits 2 and stops "
@@ -384,7 +391,7 @@ STEPS: tuple[Step, ...] = (
                 ("{models}/viewmodels/*.fp.glb", 1)),
        after=("kits", "levels", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="skins.json:",
-       delta_flag="--delta",
+       delta_flag="--delta", refresh="delta",
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
              "a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose "
              "clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a "
@@ -529,6 +536,7 @@ class Context:
     reuse: bool = False      # merge gate outputs a previous run left, instead of re-running
     rerun_behaviour: list[str] = field(default_factory=list)  # level names to re-stage only
     force: bool = False      # --force-steps: redo done steps, and re-bake levels that have a scene
+    refresh: list[str] = field(default_factory=list)   # run --refresh: these levels' own archives changed
     pick: dict | None = None   # what --pick chose, recorded in the state file
     # v_static: the fast static audits run in `verify` and after `run`. Off for
     # a Context built by hand (tests) and for --dry-run / --no-static; on from
@@ -1642,6 +1650,11 @@ class _ViewerHolder:
             self.server = None
 
 
+def refresh_force(s: Step, ctx: Context) -> bool:
+    """`run --refresh` re-runs this step in full (the edited levels' own bake, or a cheap whole-mod step)."""
+    return bool(ctx.refresh) and s.refresh == "force"
+
+
 def wants_delta(s: Step, *, same_cmd: bool, up_to_date: bool, force: bool) -> bool:
     """Whether a step re-run may pass its extractor's incremental flag.
 
@@ -1659,6 +1672,7 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
            dry_run: bool) -> tuple[dict, str]:
     """A step's row before anything runs, and what to do with it: `plan` (a dry
     run), `skip` (up to date), `fail` (its inputs or disk are missing) or `run`."""
+    force = force or refresh_force(s, ctx)
     argvs = build_argv(s, ctx)
     h = command_hash(build_argv(s, ctx, game_dir=False))   # the install's place is not the recipe
     fp = input_fingerprint(s, ctx)
@@ -1688,9 +1702,14 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
     # run is up to date either way.
     if wants_delta(s, same_cmd=same_cmd, up_to_date=up_to_date, force=force):
         row["delta"] = True
+    if ctx.refresh and s.refresh == "delta" and s.delta_flag and same_cmd and not force:
+        # An edited level leaves the input sets as they were; its rows are re-read incrementally all the same.
+        row["delta"], up_to_date = True, False
+        row["reason"] = "refreshed levels: " + ", ".join(ctx.refresh)
     if dry_run:
         present = bool(outs) and all(o["ok"] for o in outs)
-        row["status"] = ("up-to-date" if up_to_date else
+        row["status"] = ("up-to-date" if up_to_date and not force else
+                         "would-run (forced)" if up_to_date else
                          "blocked-needs" if missing else
                          "would-run (" + row["reason"] + ")" if inputs_changed else
                          "would-run (no state record; outputs already present)"
@@ -1719,9 +1738,12 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
     is this step's own."""
     step_ctx = copy.copy(ctx)
     step_ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
+    if refresh_force(s, ctx):
+        step_ctx.force = True
     argvs = build_argv(s, step_ctx)
     if row.get("delta") and s.delta_flag:
-        argvs = [[*argv, s.delta_flag] for argv in argvs]
+        extra = [a for lv in ctx.refresh for a in (s.refresh_arg, lv)] if s.refresh_arg else []
+        argvs = [[*argv, s.delta_flag, *extra] for argv in argvs]
         row["argv"] = [" ".join(a) for a in argvs]
     log = log_dir / f"{s.name}.log"
     state.set(s.name, status="running", hash=row["hash"], inputs=row["inputs"],
@@ -3908,6 +3930,10 @@ def _work_dir(ctx: Context) -> Path:
 def cmd_run(args) -> int:
     ctx = make_context(args)
     ctx.force = bool(args.force_steps)
+    if getattr(args, "refresh", False):
+        if not args.levels:
+            raise SystemExit("--refresh needs --levels: the levels whose archives changed")
+        ctx.refresh = list(ctx.levels)
     if not ctx.levels and not args.only_steps:
         raise SystemExit("no baked levels found: give --levels L1 L2 or --all-own-levels")
     work = _work_dir(ctx)
@@ -3950,6 +3976,9 @@ def cmd_run(args) -> int:
     if any(r["status"].startswith("failed") for r in results) and not args.dry_run:
         print("stopped at the first failed step; fix it and re-run (done steps are skipped)")
         return 2
+    if getattr(args, "no_verify", False):
+        print("verification not run (--no-verify)")
+        return 0
     rc = _gate_phase(args, ctx, work, state, record=not args.dry_run)
     if rc == 0 and ctx.static_levels and not args.dry_run and state.data.get("last_run"):
         state.data["last_run"]["verified"] = True
@@ -4055,6 +4084,13 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dry-run", action="store_true",
                    help="plan only: no extractor runs, no tree file is written; gates still run")
     r.add_argument("--force-steps", action="store_true", help="re-run steps already done")
+    r.add_argument("--refresh", action="store_true",
+                   help="the --levels named changed at source (a modder repacked their archives): re-bake them, "
+                        "re-run kits, and update loadouts, kit poses and first-person rigs for them "
+                        "incrementally instead of the whole mod")
+    r.add_argument("--no-verify", action="store_true",
+                   help="stop after the steps: no verification, no gates. For a caller that runs "
+                        "several step groups and verifies once after the last (mod_level.py)")
     r.add_argument("--no-behaviour-new", action="store_true",
                    help="skip v_behaviour_new, the quick behaviour audit of the levels this run "
                         "bakes (5-10 min a level, headless Chromium); the levels stay pending "

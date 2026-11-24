@@ -10,6 +10,7 @@ No game install and no extracted tree are needed except where a test says so
 from __future__ import annotations
 
 import glob
+import io
 import json
 import os
 import shutil
@@ -18,6 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -148,6 +150,45 @@ class RecipeShape(unittest.TestCase):
         self.assertNotIn("--skip-existing", M.build_argv(M.step_by_name("levels"), ctx)[0])
         args = M.build_parser().parse_args(["run", "--mod", "fh", "--no-gates"])
         self.assertTrue(args.no_gates)
+
+    def test_refresh_rebakes_the_level_and_updates_the_whole_mod_tables_incrementally(self):
+        ctx = M.Context(cfg=M.MODS["fh"], levels=["a"], level_names=["A"])
+        steps = {n: M.step_by_name(n) for n in ("levels", "kits", "loadouts", "poses_kit", "viewmodels", "optimise")}
+        with tempfile.TemporaryDirectory() as t:
+            state = M.State(Path(t) / "state.json")
+            for name, st in steps.items():
+                state.set(name, status="done", hash=M.command_hash(M.build_argv(st, ctx, game_dir=False)), inputs="fp")
+            with mock.patch.object(M, "input_fingerprint", return_value="fp"), \
+                    mock.patch.object(M, "check_needs", return_value=[]), \
+                    mock.patch.object(M, "check_outputs", return_value=[{"ok": True}]):
+                plain = {n: M._start(st, ctx, state, force=False, dry_run=False)[1] for n, st in steps.items()}
+                ctx.refresh = ["a"]
+                rows = {n: M._start(st, ctx, state, force=False, dry_run=False) for n, st in steps.items()}
+        self.assertEqual(set(plain.values()), {"skip"})  # an edited level leaves every input set the same
+        self.assertEqual(rows["levels"][1], "run")
+        self.assertEqual(rows["kits"][1], "run")
+        self.assertFalse(rows["kits"][0].get("delta"))
+        for n in ("loadouts", "poses_kit", "viewmodels"):
+            self.assertEqual(rows[n][1], "run", n)
+            self.assertTrue(rows[n][0].get("delta"), n)
+        self.assertEqual(rows["optimise"][1], "skip")
+        self.assertEqual(M.step_by_name("loadouts").refresh_arg, "--refresh")
+
+    def test_no_verify_stops_after_the_steps(self):
+        args = M.build_parser().parse_args(["run", "--mod", "fh", "--levels", "a", "--only-steps", "levels",
+                                            "--no-verify"])
+        self.assertTrue(args.no_verify)
+        ok = [{"status": "skipped-done", "step": "levels", "argv": [], "needs_missing": [], "outputs": []}]
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(M, "OUT_ROOT", Path(t)), \
+                mock.patch.object(M, "_work_dir", return_value=Path(t)), \
+                mock.patch.object(M, "make_context", return_value=M.Context(cfg=M.MODS["fh"], levels=["a"],
+                                                                            level_names=["A"])), \
+                mock.patch.object(M, "run_steps", return_value=ok), \
+                mock.patch.object(M, "_gate_phase") as gates, \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(M.cmd_run(args), 0)
+        gates.assert_not_called()
 
     def test_levels_expand_to_names_not_directories(self):
         ctx = M.Context(cfg=M.MODS["fh"], levels=["gold_beach-1944"],
