@@ -20,7 +20,10 @@ pipeline {
     stage('Checkout') {
       agent { kubernetes { cloud 'Local k8s'; yamlFile 'deploy/app/bfv/agent-tools.yaml'; nodeSelector 'kubernetes.io/hostname=bethany' } }
       steps {
-        git url: env.BFV_REPO, branch: env.BFV_BRANCH, credentialsId: 'bfstats-bfv-ci'
+        checkout([$class: 'GitSCM',
+          branches: [[name: "*/${env.BFV_BRANCH}"]],
+          userRemoteConfigs: [[url: env.BFV_REPO, credentialsId: 'bfstats-bfv-ci']],
+          extensions: [[$class: 'GitSCMStatusChecksExtension', skip: true]]])
         script {
           env.GIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
           publishChecks name: 'bfv-deploy', detailsURL: env.SITE_URL, title: 'Build and deploy', status: 'IN_PROGRESS',
