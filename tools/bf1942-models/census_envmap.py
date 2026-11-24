@@ -9,7 +9,7 @@ import re
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import RfaArchive
 
-INSTALL = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+from bf42.gamedir import DEFAULT_GAME_DIR as INSTALL  # noqa: E402
 
 def scan_archive(rfa_path: Path) -> tuple[int, list[tuple[str, str]]]:
     """Scan an .rfa for .rs files and return count and envmap details.

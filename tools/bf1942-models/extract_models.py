@@ -37,7 +37,7 @@ from bf42.assemble import Assembler, reaches_first_person
 from bf42.rfa import (ArchivePool, find_archives_dir, find_game_dir, find_levels_dir,
                       texture_name_keys)
 
-DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+from bf42.gamedir import DEFAULT_GAME_DIR  # noqa: E402  ($BF42_GAME_DIR, else the Wine prefix / a Windows install)
 
 MESH_ARCHIVES = ("standardmesh", "treemesh", "animations")  # animations: GeometryTemplate.setSkin
 TEXTURE_ARCHIVES = ("texture",)
@@ -1123,6 +1123,23 @@ def _vm_stat_bytes() -> int:
     return pages * page
 
 
+class _SerialExecutor:
+    """The slice of `concurrent.futures.Executor` the callers of
+    `forked_workers` use, run inline (a platform with no fork)."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        from concurrent.futures import Future
+        fut = Future()
+        try:
+            fut.set_result(fn(*args, **kwargs))
+        except BaseException as exc:  # noqa: BLE001 - the future carries it
+            fut.set_exception(exc)
+        return fut
+
+    def map(self, fn, *iterables, **_kw):
+        return map(fn, *iterables)
+
+
 @contextlib.contextmanager
 def forked_workers(jobs: int, initializer=None, initargs: tuple = ()):
     """A pool whose workers are forks of this process, holding everything it
@@ -1143,6 +1160,13 @@ def forked_workers(jobs: int, initializer=None, initargs: tuple = ()):
     """
     import gc
     import multiprocessing
+    if "fork" not in multiprocessing.get_all_start_methods():
+        # Windows has no fork: run the work in this process, one task after
+        # another, after the initializer a worker would have run.
+        if initializer is not None:
+            initializer(*initargs)
+        yield _SerialExecutor()
+        return
     # A fork takes the parent's unwritten output with it and writes it again.
     sys.stdout.flush()
     sys.stderr.flush()

@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bf42 import con as con_mod  # noqa: E402
 from extract_models import build_pools, mod_chain  # noqa: E402
 
-GAME = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+from bf42.gamedir import DEFAULT_GAME_DIR as GAME  # noqa: E402
 
 _CREATE = re.compile(r"^\s*(object|geometry)template\.create\s+(\S+)\s+(\S+)", re.I)
 _ACTIVE = re.compile(r"^\s*(object|geometry)template\.active\s+(\S+)", re.I)

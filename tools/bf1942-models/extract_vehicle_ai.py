@@ -45,7 +45,9 @@ from bf42 import roster as roster_mod  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 from extract_models import build_pools, discover_levels, mod_chain  # noqa: E402
 
-GAME = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+from bf42.gamedir import DEFAULT_GAME_DIR  # noqa: E402
+
+GAME = DEFAULT_GAME_DIR / "Mods"
 
 
 def _num(s: str) -> float | None:
@@ -1052,12 +1054,14 @@ def main() -> int:
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "viewer" / "maps" / "_shared" / "vehicle-ai.json")
+    ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR,
+                    help="the install (the folder that holds Mods/)")
     ap.add_argument("--radio-only", action="store_true",
                     help="rewrite only the `radio` key of an existing --out file from the mod's radio.con")
     a = ap.parse_args()
     if a.radio_only:
         data = json.loads(a.out.read_text())
-        radio = mod_radio(a.mod)
+        radio = mod_radio(a.mod, a.game_dir.expanduser())
         if radio is None:
             data.pop("radio", None)
         else:
@@ -1065,7 +1069,7 @@ def main() -> int:
         a.out.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
         print(f"{a.mod}: radio {len(radio) if radio is not None else 'none'} -> {a.out}")
         return 0
-    data = extract(a.mod)
+    data = extract(a.mod, a.game_dir.expanduser())
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
     print(f"{a.mod}: {len(data['vehicles'])} vehicles -> {a.out}")

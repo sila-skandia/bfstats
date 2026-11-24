@@ -49,7 +49,7 @@ from bf42.rfa import RfaArchive  # noqa: E402
 from extract_map_images import encode_png  # noqa: E402
 from extract_models import mod_chain  # noqa: E402
 
-DEFAULT_GAME_DIR = Path("~/.wine/drive_c/EA Games/Battlefield 1942").expanduser()
+from bf42.gamedir import DEFAULT_GAME_DIR  # noqa: E402
 VIEWER_DIR = Path(__file__).resolve().parent / "viewer"
 VIEWER_FONT_DIR = VIEWER_DIR / "fonts"
 FACE_ID = "bf1942"

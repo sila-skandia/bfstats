@@ -10,7 +10,7 @@ there is exactly one binding grammar in the codebase.
     python3 extract_profile_controls.py [--controls-dir DIR] [-o viewer/controls-defaults.js]
 
 The default controls dir is the Wine install the owner's profile lives in
-(`~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Settings/Default/Controls`).
+(`~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Settings/Default/Controls`; `$BF42_GAME_DIR` moves it).
 The generated module is committed, so this only needs re-running when the
 shipped maps are re-extracted.
 """
@@ -21,9 +21,10 @@ import argparse
 import json
 from pathlib import Path
 
+from bf42.gamedir import DEFAULT_GAME_DIR
+
 DEFAULT_CONTROLS_DIR = (
-    Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
-    / "Mods/bf1942/Settings/Default/Controls"
+    DEFAULT_GAME_DIR / "Mods/bf1942/Settings/Default/Controls"
 )
 
 # The four files a profile's Controls/ folder carries. Common carries the

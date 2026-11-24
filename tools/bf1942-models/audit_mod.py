@@ -3119,10 +3119,13 @@ def main(argv=None) -> int:
             [f.record() for f in findings], indent=1))
     if args.render:
         import subprocess
-        rc = subprocess.call(
-            ["flock", "/tmp/claude-1000/chromium.lock", "node",
-             str(HERE / "audit_render.mjs"), "--mod", tree.mod_id, "--url",
-             args.render_url, "--levels"], cwd=HERE)
+        from bf42.portable import FileLock, chromium_lock_path
+        # The lock `flock <file> node ...` took, taken in-process so it also
+        # works where there is no flock(1) (Windows).
+        with FileLock(chromium_lock_path()):
+            rc = subprocess.call(
+                ["node", str(HERE / "audit_render.mjs"), "--mod", tree.mod_id, "--url",
+                 args.render_url, "--levels"], cwd=HERE)
         failing += 1 if rc else 0
     return 1 if failing else 0
 

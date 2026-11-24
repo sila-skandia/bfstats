@@ -73,6 +73,11 @@ CANDIDATE_PATHS: list[Path] = [
     Path.home() / ".wine/drive_c/Program Files/EA GAMES/Battlefield 1942",
 ]
 
+# $BF42_GAME_DIR (and the Windows install folders on Windows) are probed first.
+from bf42.gamedir import candidate_game_dirs  # noqa: E402
+CANDIDATE_PATHS = [*candidate_game_dirs(),
+                   *(p for p in CANDIDATE_PATHS if p not in candidate_game_dirs())]
+
 DEFAULT_GAME_DIR: Path = CANDIDATE_PATHS[0]
 
 STANDARD_THEATERS: set[str] = {

@@ -65,8 +65,10 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from bf42 import remote_scene  # noqa: E402  (stdlib only: remote-only levels)
+from bf42 import portable  # noqa: E402  (stdlib only: locks, temp paths, process trees)
+from bf42.gamedir import DEFAULT_GAME_DIR  # noqa: E402  ($BF42_GAME_DIR, else the Wine prefix)
 VIEWER = HERE / "viewer"
-CHROMIUM_LOCK = "/tmp/claude-1000/chromium.lock"
+CHROMIUM_LOCK = portable.chromium_lock_path()   # POSIX: /tmp/claude-1000/chromium.lock, as `flock` jobs use
 OWNER_PORT = 5273
 DEFAULT_PORT = 5312
 DEFAULT_MIN_FREE_GB = 15.0
@@ -598,8 +600,34 @@ def _level_all_flags(ctx: Context) -> list[str]:
     return ["--level-all", "--variant-levels-from", _rel(maps_json)]
 
 
-def build_argv(step: Step, ctx: Context) -> list[list[str]]:
-    """Every command of the step as a concrete argv, one per entry of `cmds`."""
+# The recipe's scripts that take the install folder, and the flag each calls it.
+# `tests/test_mod_pipeline.py` checks the set against the scripts' own parsers.
+GAME_DIR_FLAGS: dict[str, str] = {
+    **{name + ".py": "--game-dir" for name in (
+        "extract_all", "extract_level_variants", "extract_maps_all", "patch_flag_cloth",
+        "extract_kits", "extract_loadouts", "extract_pose", "extract_effects",
+        "extract_weapon_sounds", "extract_soldier_sounds", "extract_collision_meshes",
+        "extract_part_mobility", "extract_tree_billboards", "extract_bot_names",
+        "extract_hud_mods", "extract_radio", "extract_capture_voices",
+        "extract_soldier_voices", "extract_ctf_voices", "extract_deployables",
+        "extract_dynamic_shadows", "extract_viewmodel", "extract_vehicle_ai",
+        "extract_loading_assets")},
+    "extract_menu_music.py": "--bf1942-dir",
+    "extract_menu_movie.py": "--bf1942-dir",
+}
+
+
+def set_game_dir(ctx: Context, game_dir: str | os.PathLike) -> None:
+    """Use `game_dir` as the install everywhere: the steps get `--game-dir`, and
+    anything that reads the default (`bf42.gamedir`) gets `$BF42_GAME_DIR`."""
+    ctx.game_dir = Path(game_dir).expanduser()
+    os.environ["BF42_GAME_DIR"] = str(ctx.game_dir)
+
+
+def build_argv(step: Step, ctx: Context, game_dir: bool = True) -> list[list[str]]:
+    """Every command of the step as a concrete argv, one per entry of `cmds`.
+    With `ctx.game_dir` set (`--game-dir`), each command whose script takes the
+    install folder gets it (`game_dir=False` leaves it out: the resume hash)."""
     multi: dict[str, list[str]] = {
         "{levels...}": list(ctx.level_names or ctx.levels),
         "{kit_flags...}": list(ctx.cfg.kit_flags),
@@ -615,6 +643,9 @@ def build_argv(step: Step, ctx: Context) -> list[list[str]]:
                 argv.extend(multi[tok])
             else:
                 argv.append(expand(tok, ctx))
+        flag = GAME_DIR_FLAGS.get(argv[1]) if len(argv) > 1 and argv[0] == "python3" else None
+        if game_dir and ctx.game_dir and flag:
+            argv += [flag, str(ctx.game_dir)]
         argvs.append(argv)
     return argvs
 
@@ -906,7 +937,7 @@ def reextract_models_subset(ctx: Context, templates: list[str], *, dry_run: bool
     models = ctx.paths["models"]
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix=f"subset-{ctx.cfg.id}-", dir=str(OUT_ROOT)))
-    argv = ["python3", "extract_models.py", "--mod", ctx.cfg.install, "--configuration-all",
+    argv = [portable.python_cmd(), "extract_models.py", "--mod", ctx.cfg.install, "--configuration-all",
             "--cockpit", "-j", str(ctx.jobs), "--out", str(scratch), *templates]
     if dry_run:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -1022,30 +1053,27 @@ def scoped_argv(argv: list[str], cap_gb: float) -> list[str]:
 
 def killed_at_cap(rc: int) -> bool:
     """A scoped command the kernel's OOM killer ended at its cap: SIGKILL."""
-    return rc in (-signal.SIGKILL, 128 + signal.SIGKILL)
+    return portable.killed_by_sigkill(rc)
 
 
 class chromium_lock:
-    """The same advisory lock `flock /tmp/claude-1000/chromium.lock <cmd>` takes,
-    held by this process, so a step's timeout starts when it has the browser and
-    not while it queues behind someone else's run."""
+    """The same advisory lock `flock /tmp/claude-1000/chromium.lock <cmd>` takes
+    (POSIX; `msvcrt.locking` on Windows), held by this process, so a step's
+    timeout starts when it has the browser and not while it queues behind
+    someone else's run."""
 
     def __enter__(self):
-        import fcntl
-        os.makedirs(os.path.dirname(CHROMIUM_LOCK), exist_ok=True)
-        self.fd = os.open(CHROMIUM_LOCK, os.O_CREAT | os.O_RDWR, 0o666)
-        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        self.lock = portable.FileLock(CHROMIUM_LOCK)
+        self.lock.acquire()
         # Another session films on the GPU while this flag exists; wait for it.
-        flag = Path("/tmp/bfstats-gpu-busy")
+        flag = portable.gpu_busy_flag_path()
         while flag.exists():
             print(f"chromium: waiting, {flag} exists", file=sys.stderr, flush=True)
             time.sleep(30)
         return self
 
     def __exit__(self, *exc):
-        import fcntl
-        fcntl.flock(self.fd, fcntl.LOCK_UN)
-        os.close(self.fd)
+        self.lock.release()
         return False
 
 
@@ -1062,12 +1090,13 @@ def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
                             chromium=False, env=env, memory_gb=memory_gb)
     log.parent.mkdir(parents=True, exist_ok=True)
     scoped = memory_scoped()
+    argv = portable.native_argv(argv)
     launch = scoped_argv(argv, memory_gb) if scoped else argv
     with open(log, "ab") as fh:
         fh.write(f"=== {now()} {' '.join(argv)}\n".encode())
         fh.flush()
         proc = subprocess.Popen(launch, cwd=HERE, stdout=fh, stderr=subprocess.STDOUT,
-                                start_new_session=True, env={**os.environ, **(env or {})})
+                                env={**os.environ, **(env or {})}, **portable.group_popen_kwargs())
         try:
             while True:
                 try:
@@ -1077,19 +1106,14 @@ def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
                     if guard and free_gb() < min_free_gb:
                         fh.write(f"=== GUARD: free disk {free_gb():.1f} GB < {min_free_gb} GB, "
                                  "killing the step\n".encode())
-                        os.killpg(proc.pid, signal.SIGTERM)
+                        portable.terminate_tree(proc)
                         time.sleep(5)
-                        try:
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        # Gone already. macOS answers EPERM, not ESRCH, for a
-                        # group whose only members are zombies (exited on the
-                        # SIGTERM, not yet reaped by the wait below).
-                        except (ProcessLookupError, PermissionError):
-                            pass
+                        # Gone already is fine (`terminate_tree` swallows it).
+                        portable.terminate_tree(proc, force=True)
                         proc.wait(timeout=10)
                         raise DiskGuardTripped(f"free disk below {min_free_gb} GB")
         except KeyboardInterrupt:
-            os.killpg(proc.pid, signal.SIGTERM)
+            portable.terminate_tree(proc)
             raise
         fh.write(f"=== rc={rc} {now()}\n".encode())
         if scoped and killed_at_cap(rc):
@@ -1136,8 +1160,9 @@ class ViewerServer:
             # The tree under audit is local files only: a remote-only level is
             # skipped by the audits with a count, never fetched into the cache
             # behind their back (`viewer_remote_args`).
-            ["python3", "serve_viewer.py", str(self.port), *viewer_remote_args(self.mod)], cwd=HERE,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            [portable.python_cmd(), "serve_viewer.py", str(self.port), *viewer_remote_args(self.mod)],
+            cwd=HERE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **portable.group_popen_kwargs())
         for _ in range(50):
             if self.proc.poll() is not None:
                 break
@@ -1151,7 +1176,7 @@ class ViewerServer:
 
     def __exit__(self, *exc):
         if self.proc and self.proc.poll() is None:
-            os.killpg(self.proc.pid, signal.SIGTERM)
+            portable.terminate_tree(self.proc)
             self.proc.wait(timeout=10)
         return False
 
@@ -1346,7 +1371,7 @@ def mem_available_gb() -> float:
 def static_audit_argv(ctx: Context, audit: str, js: Path) -> list[str]:
     """One audit's command: scoped to `ctx.static_levels` (and the model files
     written since `ctx.static_since`) when the pass is a run's own."""
-    argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", audit,
+    argv = [portable.python_cmd(), "audit_mod.py", "--mod", ctx.cfg.id, "--audit", audit,
             "--json", str(js), "-j", str(STATIC_AUDIT_JOBS)]
     if ctx.static_levels:
         argv += ["--levels", *ctx.static_levels]
@@ -1603,7 +1628,7 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
     """A step's row before anything runs, and what to do with it: `plan` (a dry
     run), `skip` (up to date), `fail` (its inputs or disk are missing) or `run`."""
     argvs = build_argv(s, ctx)
-    h = command_hash(argvs)
+    h = command_hash(build_argv(s, ctx, game_dir=False))   # the install's place is not the recipe
     fp = input_fingerprint(s, ctx)
     missing = check_needs(s, ctx)
     outs = check_outputs(s, ctx)
@@ -1943,7 +1968,7 @@ def gate_static(ctx: Context, work: Path) -> GateResult:
     if not script.is_file():
         return GateResult("static", "not-installed", "audit_mod.py is absent")
     out = work / "static.json"
-    argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "textures", "placement",
+    argv = [portable.python_cmd(), "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "textures", "placement",
             "sound", "models", "data", "--json", str(out)]
     if ctx.static_levels:   # `gates --levels`: those levels, not the tree
         argv += ["--levels", *ctx.static_levels]
@@ -1969,13 +1994,13 @@ def gate_completeness(ctx: Context, work: Path) -> GateResult:
     script = HERE / "audit_mod.py"
     if not script.is_file():
         return GateResult("completeness", "not-installed", "audit_mod.py is absent")
-    help_text = subprocess.run(["python3", "audit_mod.py", "--help"], cwd=HERE,
+    help_text = subprocess.run([portable.python_cmd(), "audit_mod.py", "--help"], cwd=HERE,
                                capture_output=True, text=True).stdout
     if "completeness" not in help_text:
         return GateResult("completeness", "not-installed",
                           "audit_mod.py has no `--audit completeness` section yet")
     out = work / "completeness.json"
-    argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "completeness",
+    argv = [portable.python_cmd(), "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "completeness",
             "--json", str(out)]
     if ctx.reuse and out.is_file():
         rows, lv = _load_rows(out)
@@ -3468,7 +3493,7 @@ def run_behaviour_new(ctx: Context) -> None:
     finish(summary)
 
 
-GPU_BUSY_FLAG = Path("/tmp/bfstats-gpu-busy")
+GPU_BUSY_FLAG = portable.gpu_busy_flag_path()   # POSIX: /tmp/bfstats-gpu-busy
 
 
 def wait_gpu_free(label: str = "") -> None:
@@ -3681,7 +3706,7 @@ def make_context(args) -> Context:
     if getattr(args, "behaviour_quick", False):
         ctx.behaviour_args = ["--quick"]
     if getattr(args, "game_dir", None):
-        ctx.game_dir = Path(args.game_dir)
+        set_game_dir(ctx, args.game_dir)
     if args.levels:
         ctx.level_names = list(args.levels)
     elif getattr(args, "pick", None):
@@ -3759,6 +3784,8 @@ def emit_scorecard(sc: dict, md_dir: Path | None, json_dir: Path) -> None:
 def cmd_steps(args) -> int:
     cfg = resolve_mod(args.mod) if args.mod else MODS["fh"]
     ctx = Context(cfg=cfg, jobs=args.jobs, port=args.port, levels=["<level>", "..."])
+    if args.game_dir:
+        set_game_dir(ctx, args.game_dir)
     for i, s in enumerate(select_steps(None, None, cfg), 1):
         print(f"{i:2d}. {s.name:15s} {s.title}")
         for argv in build_argv(s, ctx):
@@ -3772,7 +3799,7 @@ def cmd_pick(args) -> int:
     cfg = resolve_mod(args.mod)
     ctx = Context(cfg=cfg)
     if args.game_dir:
-        ctx.game_dir = Path(args.game_dir)
+        set_game_dir(ctx, args.game_dir)
     baked_dirs, _ = baked_levels(ctx)
     pick = pick_levels(own_level_archives(ctx), set(baked_dirs), args.pick,
                        prefer_sp=not args.pick_random, seed=args.seed)
@@ -3787,7 +3814,7 @@ def cmd_reextract(args) -> int:
     cfg = resolve_mod(args.mod)
     ctx = Context(cfg=cfg, jobs=args.jobs)
     if args.game_dir:
-        ctx.game_dir = Path(args.game_dir)
+        set_game_dir(ctx, args.game_dir)
     names = list(args.templates or [])
     if args.templates_file:
         names += [ln.strip() for ln in Path(args.templates_file).read_text().splitlines()
@@ -3802,7 +3829,7 @@ def cmd_reextract(args) -> int:
     print(f"reextract: {len(res['written'])} files written, {res['merged']} manifest rows merged, "
           f"{len(glbs)} glbs to optimise")
     if glbs:
-        subprocess.run(["python3", "optimise_mesh.py", *glbs, "-j", str(ctx.jobs)],
+        subprocess.run([portable.python_cmd(), "optimise_mesh.py", *glbs, "-j", str(ctx.jobs)],
                        cwd=HERE, check=True)
     state = State(Path(args.state_file) if args.state_file else _work_dir(ctx) / "state.json")
     with state.lock:
@@ -3945,7 +3972,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--port", type=int, default=DEFAULT_PORT,
                        help=f"viewer server port (never {OWNER_PORT}: the owner plays there)")
         p.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB)
-        p.add_argument("--game-dir")
+        p.add_argument("--game-dir", help="the Battlefield 1942 install (the folder that holds Mods/): "
+                       "passed to every step that takes one and exported as $BF42_GAME_DIR; "
+                       "default $BF42_GAME_DIR, else the Wine prefix (a Windows install on Windows)")
         p.add_argument("--reuse", action="store_true",
                        help="merge the gate outputs a previous run left under out/mod-pipeline/<id>/gates "
                             "instead of re-running the audits (rules and corpus always re-run)")
@@ -4011,6 +4040,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--mod")
     s.add_argument("--jobs", type=int, default=default_jobs())
     s.add_argument("--port", type=int, default=DEFAULT_PORT)
+    s.add_argument("--game-dir", help="show the steps with this install folder passed through")
     s.set_defaults(fn=cmd_steps)
 
     rx = sub.add_parser("reextract", help="re-extract named model templates into the tree "
@@ -4031,6 +4061,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    portable.ensure_utf8_mode()   # Windows: UTF-8 text mode (no-op elsewhere)
     args = build_parser().parse_args(argv)
     return args.fn(args)
 
