@@ -152,6 +152,17 @@ export function createSpawning(page) {
     // hands `BFfindEntryPoint` the group's team, which is the player's:
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
     const seatTeam = flagSide(flag) || spawning.deployTeamId;
+    // Which of the flag's points: `BFSpawnGroup::getSpawnPoint` 0x08166f60 takes
+    // `rand() % count` over the points `getActive` passes (0x08167033..0x08167049,
+    // SPAWNGRP-10), so each life of a human stands on a fresh one, as each bot's
+    // does (`bot-referee.js`). The per-player walk (`advance`, R on the screen)
+    // goes on from the draw. A spawn a real server already made keeps the
+    // server's pick (`served`). `page.spawnDraw` is the page's dice (a trace
+    // hands a seeded one); `Math.random` is the runner's seeded generator.
+    if (!advance && !served) {
+      page.world?.setSpawnIndex(page.LOCAL_PLAYER,
+        Math.floor((page.spawnDraw ? page.spawnDraw() : Math.random()) * 0x7fffffff));
+    }
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
       // A ship's deck ring, or one of a control point's two rings when both
       // groups spawn its side (`deploy-spots.js` `offeredGroupSpots`): the

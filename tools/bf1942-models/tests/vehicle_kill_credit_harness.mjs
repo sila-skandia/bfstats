@@ -60,13 +60,31 @@ const SHERMAN = {
 }
 
 {
-  // Hit into critical, then the burn finishes it: the burn is
-  // `giveDamage(..., attacker -1)` (0x0817322a), so nobody gets the crew.
+  // Hit into critical, then the burn finishes it: the burn is an attackerless
+  // damage call (0x0817322a) and the server swaps the Armor's last hitter in
+  // for it (0x0814b2e0, ledger OBS-7): his kill.
   const v = new DamageableVehicle(SHERMAN);
-  v.damage(95, 'local');
+  v.damage(95, 'local', { weapon: 'M1Garand', splash: false });
   let seconds = 0;
   while (!v.destroyed && seconds < 30) { v.update(1); seconds++; }
-  out.burnDown = { destroyed: v.destroyed, last: v.lastHitPlayer, killedBy: v.killedBy, seconds };
+  out.burnDown = { destroyed: v.destroyed, last: v.lastHitPlayer, killedBy: v.killedBy, killedWith: v.killedWith, seconds };
+}
+
+{
+  // A hull no player ever hit that burns (a scripted burn-down, DC's
+  // `flagkill`): nobody's.
+  const v = new DamageableVehicle({ ...SHERMAN, hitpoints: 10 });
+  let seconds = 0;
+  while (!v.destroyed && seconds < 30) { v.update(1); seconds++; }
+  out.burnUnhit = { destroyed: v.destroyed, killedBy: v.killedBy, seconds };
+}
+
+{
+  // Shot into critical, then the crash's call has no attacker: still his.
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(95, 'bot_2');
+  v.damage(100, null);
+  out.crashAfterHit = { destroyed: v.destroyed, killedBy: v.killedBy };
 }
 
 {

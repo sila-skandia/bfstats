@@ -186,6 +186,8 @@ export class SoldierBody {
     // static latch, the grip byte's 0x80 (PHY-2), which only the solve flips.
     this.friction = { x: 0, y: 0, z: 0 };
     this.frictionLatched = true;
+    /** The velocity the tick's contact test saw (`iv`, before the resolve clamps it): the friction handler's gate. */
+    this._impactV = { x: 0, y: 0, z: 0 };
     // What the terrain pushed out this tick (`soldier-resolve.js`
     // `settleFeet`): the face normal and the depth, for the speed adjustment
     // `solveImpulse` hands the next tick.
@@ -701,6 +703,7 @@ export class SoldierBody {
     if (this.swimming) this.#capSwimSpeed();
     // The impact velocity, captured before anything clamps it.
     const ivx = v.x, ivy = v.y, ivz = v.z;
+    this._impactV.x = ivx; this._impactV.y = ivy; this._impactV.z = ivz;
 
     // --- the contacts -----------------------------------------------------
     this._armed = false;
@@ -896,7 +899,18 @@ export class SoldierBody {
     const p = body.position;
     deckPointVelocity(this._deckTrack, this.world, this.floorOwner, p.x, p.y, p.z, dt, dv);
     const ux = v.x - dv.x, uy = v.y - dv.y, uz = v.z - dv.z;
-    const handled = ux * ux + uy * uy + uz * uz > SOLDIER_HANDLER_SPEED_SQ;
+    // The gate is the contact test's own speed, `getTangentSpeed(hit)` before the
+    // response: the velocity the integration left, not what the resolve then
+    // clamped (`checkVsTerrain` 0x0825afac, collision-response.md 6.2). A
+    // man standing on a static's floor has his `v.y` put back to 0 by the
+    // resolve (ours: the hull floor arm), so gated on the clamped velocity
+    // the friction was off below 0.316 m/s of sideways speed, and whatever
+    // speed a run left in him slid on for good (FEEDBACK 83: "they never
+    // stand still"). Before the clamp he still carries the tick's gravity,
+    // 0.33 m/s, which alone is over the gate (0.107 > 0.1).
+    const iv = this._impactV;
+    const hx = iv.x - dv.x, hy = iv.y - dv.y, hz = iv.z - dv.z;
+    const handled = hx * hx + hy * hy + hz * hz > SOLDIER_HANDLER_SPEED_SQ;
     const c = this.contactNormal;
     const nx = handled ? c.x : 0, ny = handled ? c.y : 0, nz = handled ? c.z : 0;
     const ny5 = ny * ny * ny * ny * ny;

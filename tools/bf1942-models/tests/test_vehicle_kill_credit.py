@@ -109,11 +109,25 @@ class HullKillCreditTests(unittest.TestCase):
     def test_a_respawned_hull_starts_clean(self) -> None:
         self.assertEqual({"last": None, "killedBy": None}, self.r["credit"]["afterReset"])
 
-    def test_a_burn_down_kills_with_nobody_behind_it(self) -> None:
+    def test_a_burn_down_is_the_last_hitters_kill(self) -> None:
+        # The burn is an attackerless damage call, and the server swaps the
+        # Armor's last hitter in for it (ledger OBS-7), so the crew's deaths
+        # are his.
         b = self.r["burnDown"]
         self.assertTrue(b["destroyed"])
         self.assertEqual("local", b["last"])
+        self.assertEqual("local", b["killedBy"])
+        self.assertEqual({"weapon": "M1Garand", "splash": False}, b["killedWith"])
+
+    def test_a_hull_nobody_hit_that_burns_has_no_killer(self) -> None:
+        b = self.r["burnUnhit"]
+        self.assertTrue(b["destroyed"])
         self.assertIsNone(b["killedBy"])
+
+    def test_a_crash_after_a_hit_is_the_last_hitters_kill(self) -> None:
+        c = self.r["crashAfterHit"]
+        self.assertTrue(c["destroyed"])
+        self.assertEqual("bot_2", c["killedBy"])
 
     def test_both_round_paths_carry_the_attacker(self) -> None:
         s = self.r["set"]

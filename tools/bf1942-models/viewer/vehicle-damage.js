@@ -279,8 +279,12 @@ export class DamageableVehicle {
      *  vtable +0x74 (0x0814b947) only when the attacker resolves to a player
      *  (`getBFPlayer`, 0x0814b92c). A player id, or null. */
     this.lastHitPlayer = null;
-    /** Who dealt the killing damage, or null when nobody did (a burn-down, a
-     *  hit with no player behind it). `_giveDamage` scores the crew's deaths
+    /** What that last hit was dealt with, `{ weapon, splash }` as `killedWith`
+     *  takes it, or null: the stamp a later burn-down's kill line carries. */
+    this.lastHitWith = null;
+    /** Who dealt the killing damage, or the last player to hurt the hull when
+     *  it died of its own burn (see `creditBurnDown`), or null when nobody did
+     *  (a hit with no player behind it, never hit before). `_giveDamage` scores the crew's deaths
      *  on the lethal call itself: it walks the hull's seats (`getPcos`,
      *  0x0814baea) and, per living occupant, gives that call's attacker an
      *  ordinary kill (score event 3, then `killPlayer(victim, true)`:
@@ -345,13 +349,36 @@ export class DamageableVehicle {
    *  Returns the HP actually lost. */
   damage(amount, attacker = null, how = null) {
     if (this.armor.destroyed) return this.armor.damage(amount);
-    if (attacker != null) this.lastHitPlayer = attacker;
+    if (attacker != null) {
+      this.lastHitPlayer = attacker;
+      this.lastHitWith = how ? { weapon: how.weapon ?? null, splash: !!how.splash } : null;
+    }
     const lost = this._hurt(amount);
     if (this.armor.destroyed) {
       this.killedBy = attacker ?? null;
       this.killedWith = attacker != null && how ? { weapon: how.weapon ?? null, splash: !!how.splash } : null;
+      // A lethal call with nobody behind it (a crash into the ground) is the
+      // last hitter's kill, as a burn-down is.
+      this.creditBurnDown();
     }
     return lost;
+  }
+
+  /**
+   * A hull that dies with no attacker on the lethal call (the critical burn,
+   * the upside-down and water bills, a crash) is the last player's to have
+   * hurt it. Retail's `Armor::update` damages through `IGameServer::giveDamage`
+   * with attacker -1 (0x0817322a, ledger AI-76), and `GameServer::giveDamage`
+   * (0x0814b2e0) substitutes the Armor's own last hitter (`Armor+0x14`) for a
+   * -1 attacker before `_giveDamage` scores the crew (ledger OBS-7). AI-76
+   * read the -1 without that substitution and billed the crew's death to
+   * nobody: a plane shot down and left to burn printed `is no more`. The
+   * hitter's own expiry timer (`Armor+0x2c`, length open) is not modelled.
+   */
+  creditBurnDown() {
+    if (this.killedBy != null || this.lastHitPlayer == null) return;
+    this.killedBy = this.lastHitPlayer;
+    this.killedWith = this.lastHitWith ?? { weapon: null, splash: false };
   }
 
   /** Where a hit landed, as its world x less the root's (`lastHitPlaceX`).
@@ -393,6 +420,7 @@ export class DamageableVehicle {
     this.submarineAccumulator = 0;
     this.deathAnnounced = false;
     this.lastHitPlayer = null;
+    this.lastHitWith = null;
     this.killedBy = null;
     this.killedWith = null;
   }
@@ -534,6 +562,7 @@ export class DamageableVehicle {
     if (submarine.hull > 0) tick = submarine.hull;
     const crew = submarine.crew;
 
+    if (this.armor.destroyed && !this.deathAnnounced) this.creditBurnDown();
     const died = this.armor.destroyed && !this.deathAnnounced;
     const tier = this.armor.destroyed
       // A hull in the water is touching it: its wet parts send

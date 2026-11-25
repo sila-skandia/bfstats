@@ -779,8 +779,10 @@ export function createBotUnits(env) {
 
   /** Who killed his hull: the attacker of the lethal hit, whom
    *  `GameServer::_giveDamage` credits with each crewman's death (lnxded
-   *  0x0814c122; `vehicle-damage.js` `killedBy`). Null for a hull that died
-   *  with nobody behind it, which the referee prints as `is no more`. */
+   *  0x0814c122; `vehicle-damage.js` `killedBy`), or for a hull that burned
+   *  down or crashed, the last player to hurt it (`creditBurnDown`, ledger
+   *  OBS-7). Null for a hull nobody hit, which the referee prints as `is no
+   *  more`. */
   units.attackerOf = bot => env.world()?.occupiedDamageable?.(bot.playerId)?.killedBy ?? null;
 
   /** What the lethal call was dealt with, `{ weapon, splash }`
