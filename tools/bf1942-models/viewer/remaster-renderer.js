@@ -4,6 +4,7 @@
 // 'three/webgpu' and 'three/tsl', which only the remaster import map names.
 
 import * as THREE from 'three/webgpu';
+import { installWebglShims, installSideRenderer } from './webgpu-side-renderer.js';
 import { FIRE, fireFlicker, flashKind, isFire, pickFlashSlot } from './remaster-lights.js';
 
 /**
@@ -126,27 +127,6 @@ function installAsyncPipelines(renderer) {
   };
   state.installed = true;
   return state;
-}
-
-/**
- * The few WebGLRenderer members the game's modules reach for that the
- * WebGPU renderer does not have, as harmless stand-ins: the warm-up asks
- * `properties.get(material)` for linked programs (none: WebGPU builds its
- * pipelines in `compileAsync`), the texture lists ask `capabilities` for the
- * anisotropy cap, and TEXTURE QUALITY's GL sampler pokes are skipped
- * (texture-quality.js checks `isRemaster`).
- */
-function installWebglShims(renderer) {
-  const none = Object.freeze({});
-  if (!renderer.properties) renderer.properties = { get: () => none };
-  if (!renderer.capabilities) {
-    renderer.capabilities = {
-      getMaxAnisotropy: () => renderer.getMaxAnisotropy(),
-      isWebGL2: false,
-      maxTextures: 16,
-    };
-  }
-  if (!renderer.extensions) renderer.extensions = { get: () => null, has: () => false };
 }
 
 /**
@@ -1138,19 +1118,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   };
   remasterHooks.scene = api;
   // A side view's own renderer (a tank's sight, the controls preview, the
-  // proving ground's card, the schools): the WebGPU build has no
-  // WebGLRenderer, so these get a WebGPU one, initialised in the background
-  // (a render before it is up is queued by three), with the same shims.
-  remasterHooks.sideRenderer = (options = {}) => {
-    const side = new THREE.WebGPURenderer({
-      canvas: options.canvas, antialias: options.antialias ?? true, alpha: options.alpha ?? false,
-      powerPreference: options.powerPreference ?? 'high-performance',
-    });
-    side.isRemaster = true;
-    installWebglShims(side);
-    side.init().catch(err => console.warn('[remaster] side renderer', err));
-    return side;
-  };
+  // proving ground's card, the schools): webgpu-side-renderer.js.
+  installSideRenderer(remasterHooks);
   if (new URLSearchParams(location.search).has('shots')) window.__remaster = api;
   return api;
 }

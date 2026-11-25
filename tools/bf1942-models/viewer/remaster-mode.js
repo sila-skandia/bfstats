@@ -46,12 +46,17 @@ export function remasterSupported(nav = globalThis.navigator) {
 /**
  * Whether a page runs remastered: `query` is the address's `remaster` value
  * (null when it has none), `stored` the player's choice, `supported` whether
- * the browser has WebGPU. The address wins over the choice, and nothing
- * turns it on in a browser that cannot draw it. map.html's first script
- * makes the same decision inline, before any module can load.
+ * the browser has WebGPU, `webglDead` whether its WebGL fails to start
+ * (Safari on some Macs loses every WebGL context the moment it is made, on
+ * every site, while WebGPU draws). With WebGL dead the remaster is the only
+ * build that draws, so it runs whatever was asked. Otherwise the address wins
+ * over the choice, and nothing turns it on in a browser that cannot draw it.
+ * map.html's first script makes the same decision inline, before any module
+ * can load, and leaves `globalThis.bfWebglDead` set when WebGL was dead.
  */
-export function chooseRemaster({ query = null, stored = null, supported = true } = {}) {
+export function chooseRemaster({ query = null, stored = null, supported = true, webglDead = false } = {}) {
   if (!supported) return false;
+  if (webglDead) return true;
   if (query !== null) return query !== '0';
   return stored === true;
 }
@@ -63,6 +68,7 @@ export const REMASTER = chooseRemaster({
   query: params.has('remaster') ? params.get('remaster') : null,
   stored: storedRemaster(),
   supported: remasterSupported(),
+  webglDead: globalThis.bfWebglDead === true,
 });
 
 /**

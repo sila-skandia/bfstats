@@ -458,12 +458,26 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   // --- the scene ----------------------------------------------------------------
   let gl = null;
+  /** True once no renderer would start: tried once, then said on the stage. */
+  let noRenderer = false;
   function renderer() {
     if (gl) return gl;
+    if (noRenderer) return null;
     let r;
     try {
       r = remasterSideRenderer({ canvas: ui.canvas, antialias: true, powerPreference: 'high-performance' });
-    } catch { return null; }
+    } catch (err) {
+      // No WebGL (and no WebGPU for dogfight.html's fallback): say so, rather
+      // than an empty stage that looks like it is still loading.
+      noRenderer = true;
+      console.warn('[dogfight] no renderer', err);
+      const note = document.createElement('p');
+      note.className = 'dfs-norender';
+      note.innerHTML = '<b>This browser will not draw 3D right now</b>'
+        + '<span>Its WebGL failed to start. Restarting the browser usually brings it back; the fight also plays in Chrome or Firefox.</span>';
+      ui.stage.append(note);
+      return null;
+    }
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
@@ -650,6 +664,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   /** The actors: a fighter each, its trail, its shadow's trail, its drop line. */
   function buildActors(fight) {
     const s = renderer();
+    if (!s) return;
     for (const a of s.actors) {
       s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker, a.gun);
       if (a.flash) { s.scene.remove(a.flash); a.flash.geometry.dispose(); }

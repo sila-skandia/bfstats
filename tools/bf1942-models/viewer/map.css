@@ -1980,6 +1980,12 @@ a { color: var(--accent); }
 .dfs-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 .dfs-canvas:active { cursor: grabbing; }
 .dfs-stage.is-empty .dfs-canvas, .dfs-stage.is-empty .dfs-meters, .dfs-stage.is-empty .dfs-captions, .dfs-stage.is-empty .dfs-tags { visibility: hidden; }
+.dfs-norender {
+  position: absolute; inset: 0; margin: 0; display: grid; place-content: center; justify-items: center; gap: 8px;
+  padding: 24px; text-align: center; color: var(--mm-ink-muted); font: 500 12px/1.5 var(--mm-font-display);
+}
+.dfs-norender b { color: var(--mm-ink); font: 600 13px/1.3 var(--mm-font-display); letter-spacing: 0.14em; text-transform: uppercase; }
+.dfs-norender span { max-width: 44ch; }
 .dfs-tags { position: absolute; inset: 0; pointer-events: none; }
 .dfs-tag {
   position: absolute; left: 0; top: 0;

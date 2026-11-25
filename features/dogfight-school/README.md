@@ -1472,6 +1472,61 @@ from there. So it has a page of its own, and the flying an arena of its own.
   pages): it needs that extraction and a publish. A dedicated arena map,
   rather than the Range's white floor, is the owner's "potentially".
 
+## When WebGL will not start (2026-11-26)
+
+A recorded fight opened from the simple server page
+(`dogfight.html?fight=rfgktkf8ua-8`) showed an empty stage in Safari: the
+ACE/YOU boxes blank, no planes, no clock. Driven through safaridriver on the
+owner's Mac (macOS 27.2.1, Safari 27.2), **every** WebGL context Safari made
+was lost the moment it was made, on every site (wikipedia.org, threejs.org),
+WebGL 1 and 2 alike, while WebGPU drew. `renderer()` then caught the failed
+`WebGLRenderer` and returned null on every frame, and `buildActors` threw on
+`s.actors`. Playwright's WebKit build loses every context the same way, so it
+cannot stand in for Safari's drawing here; Chromium played the fight in 5 s.
+
+- **The WebGPU build where WebGL is dead.** `webgl-fallback.js`, a classic
+  script ahead of the page's import map (copied into the page at image build
+  time, `data-inline`), makes a WebGL context and asks `isContextLost()`
+  (such a context is lost already when `getContext` returns it, so the test
+  is synchronous). Dead WebGL with `navigator.gpu` puts three's WebGPU import
+  map ahead of the WebGL one, as map.html's remaster does, and sets
+  `globalThis.bfWebglDead`. The page then takes its renderer from
+  `webgpu-side-renderer.js`: the dogfight and tank schools install its
+  `sideRenderer` on `bfRemasterHooks`, which their views already took a
+  renderer from under the remaster; the model and kit browsers (`index.html`,
+  `kits.html`) make one directly. The side renderer moved out of
+  `remaster-renderer.js` into that module so every page shares it.
+- **map.html too.** The fight's 3D map layer is map.html in an iframe, and
+  map.html was as blank (the replays, the play page). Its first script makes
+  the same test, and dead WebGL turns the remaster on whatever was stored or
+  asked (`chooseRemaster`'s `webglDead`), since it is then the only build
+  that draws.
+- **A WebGPU renderer before its device is up.** three r186 throws on a
+  `render` or a `clear` before `init()` has resolved, where a WebGLRenderer
+  draws at once; the tank school rendered once mid-load and failed the
+  matchup ("Did not load: .clear() called before the backend is
+  initialized"). The side renderer skips those calls until it is up and
+  carries `whenReady`: the tank school's stage and the two browsers draw
+  again then, and the tank school's pictures (drawn and read back in one go)
+  wait for it (`snapshotsReady`). This holds under map.html's remaster too.
+- **No renderer at all** (dead WebGL, no WebGPU): the theatre tries once and
+  says so on the stage ("This browser will not draw 3D right now") instead
+  of an empty stage that looks like it is loading; `buildActors` no longer
+  throws.
+- Checked in the owner's real Safari through safaridriver, on the local
+  server: `dogfight.html?fight=zejq6ugy69-1` plays on WebGPU and its 3D map
+  layer opens Tulagi on the map; map.html draws Wake; the tank school draws
+  the T-34 and Tiger with their hit faces and pictures; the model browser
+  draws the AichiVal and the kit browser the British anti-tank kit. The
+  stamped production map.html with `?remaster` (the same inline import map
+  arrangement) draws Wake in that Safari, and the stamper copies
+  `webgl-fallback.js` into all four pages ahead of their import map.
+  Chromium, where WebGL works, takes none of it: the four pages and map.html
+  run on WebGL with no flag and no errors. Playwright WebKit (no WebGPU)
+  shows the notice. Tests: `test_remaster_mode.py` (`chooseRemaster`'s
+  `webglDead`, map.html's first script and `webgl-fallback.js` against a
+  live, lost and missing context, and the four pages loading it first).
+
 ## How it is built
 
 | Module | What |

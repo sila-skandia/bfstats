@@ -40,7 +40,7 @@ import { resolveGlb } from './glb-store.js';
 import { BANDS, IMMUNE, CATCHER, bandOf, faceName, pricer, collisionFaces, bearingShots, faceTable, angleModOf, blastOf } from './tank-armour.js';
 import { splashSpec, damageFactor } from './projectile-damage.js';
 import { matchupWords, missAt, steadyWords, launcherWords, NO_ANSWER, hurtsAtAll, answers, sayShots } from './tank-words.js';
-import { snapshots } from './tank-snapshots.js';
+import { snapshots, snapshotsReady } from './tank-snapshots.js';
 import { createSightView, rigStemFor } from './tank-sight-view.js';
 import * as doctrine1918 from './tank-doctrine-1918.js';
 import * as doctrine1991 from './tank-doctrine-1991.js';
@@ -56,6 +56,10 @@ import { shotsFor } from './armour-damage.js';
 const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
   ?? new THREE.WebGLRenderer(options);
 
+
+// No WebGL here but WebGPU (webgl-fallback.js): the school's views draw on
+// WebGPU renderers, handed over through the remaster's hook.
+if (globalThis.bfWebglDead) (await import('./webgpu-side-renderer.js')).installSideRenderer();
 
 const params = new URLSearchParams(location.search);
 const KEY = 'tank-school';
@@ -520,6 +524,9 @@ function renderer() {
   stage.renderer = remasterSideRenderer({ canvas: ui.canvas, antialias: true, preserveDrawingBuffer: true });
   stage.renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
   stage.renderer.setClearColor(0x0c0c0c);
+  // A WebGPU renderer (webgpu-side-renderer.js) skips the frames before its
+  // device is up, and this stage draws only on demand: draw once it is.
+  stage.renderer.whenReady?.then(() => draw());
   return stage.renderer;
 }
 function resizeStage() {
@@ -1637,7 +1644,10 @@ async function loadEntry(t, attacker, onProgress) {
   if (!scene) throw new Error(`${t.template}: no model`);
   const ai = await vehicleAi(arenaMod);
   const tank = readTank(t.template, scene, t.row, ai);
-  if (!snapCache.has(t.template)) snapCache.set(t.template, snapshots(scene, { gunName: tank.gunNode }));
+  if (!snapCache.has(t.template)) {
+    await snapshotsReady();
+    if (!snapCache.has(t.template)) snapCache.set(t.template, snapshots(scene, { gunName: tank.gunNode }));
+  }
   return { key: `${t.template}<-${attacker.template}`, scene, tank, template: t.template, snaps: snapCache.get(t.template) };
 }
 

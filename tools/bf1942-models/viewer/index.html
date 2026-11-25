@@ -333,6 +333,7 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
 </script>
 
 <!-- The vendored example loaders import three by bare specifier. -->
+<script src="./webgl-fallback.js" data-inline></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -370,7 +371,10 @@ const MODELS_BASE = activeMod.paths.models;
 const main = document.querySelector('main');
 // preserveDrawingBuffer lets the headless checks read the canvas back after a
 // render; without it the buffer is cleared on composite and reads come back blank.
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+// Where WebGL is dead and WebGPU is not (webgl-fallback.js), a WebGPU one.
+const renderer = globalThis.bfWebglDead
+  ? (await import('./webgpu-side-renderer.js')).sideRenderer({ antialias: true })
+  : new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 main.appendChild(renderer.domElement);
@@ -500,6 +504,8 @@ function invalidate() {
     }
   });
 }
+// A WebGPU renderer skips the frames before its device is up: draw again then.
+renderer.whenReady?.then(() => invalidate());
 
 /** The model, then the hit regions over it in their own pass (model-armour.js). */
 // A frame can be asked for while the armour module is still loading its tables.

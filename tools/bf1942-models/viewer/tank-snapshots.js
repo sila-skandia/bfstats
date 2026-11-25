@@ -46,8 +46,20 @@ function gunNode(root, name) {
  * rear }`, each `{ url, width, height, pxPerM, pivot, tip, middle, groundY }`
  * in the picture's CSS pixels. `gunName` picks the main gun.
  */
-export function snapshots(source, { gunName = null, pxPerM = 34, pad = 0.5, dpr = 2 } = {}) {
+function snapRenderer() {
   renderer ??= remasterSideRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  return renderer;
+}
+
+/** Resolves once the pictures can be drawn: at once on WebGL; on WebGPU
+ *  (webgpu-side-renderer.js) when its device is up, since a picture is drawn
+ *  and read back in one go and a frame before then is skipped. */
+export function snapshotsReady() {
+  return snapRenderer().whenReady ?? Promise.resolve();
+}
+
+export function snapshots(source, { gunName = null, pxPerM = 34, pad = 0.5, dpr = 2 } = {}) {
+  snapRenderer();
   renderer.setClearColor(0x000000, 0);
   const model = source.clone(true);
   model.position.set(0, 0, 0);

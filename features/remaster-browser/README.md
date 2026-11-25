@@ -1263,6 +1263,11 @@ is bent and only for the shooter's own gun.
   dogfight and tank schools, tank snapshots); under the remaster they get a
   WebGPU renderer with the same shims. The proving ground's floor was a GLSL
   grid built with r169's uniform helpers; it has a node version.
+  (2026-11-26) That renderer lives in `webgpu-side-renderer.js` now, shared
+  with the pages that switch to WebGPU where Safari's WebGL is dead
+  (features/dogfight-school, "When WebGL will not start"), and it skips a
+  `render` or `clear` made before its device is up, which r186 throws on;
+  map.html turns the remaster on by itself in such a browser.
 - **Retail's material passes share `userData` between the per-mesh materials
   made from one glTF material**, and `tree-foliage.js` guards on it: only the
   first mesh's branch cards were processed. The remaster hooks run ahead of

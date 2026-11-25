@@ -82,6 +82,29 @@ class RemasterModeTests(unittest.TestCase):
         self.assertIsNone(inline["blocked"])
         self.assertEqual(webgpu, inline["blockedQueryOn"])
 
+    def test_dead_webgl_runs_the_remaster_wherever_webgpu_draws(self) -> None:
+        # Safari on some Macs loses every WebGL context as it is made: the
+        # WebGPU build is then the only one that draws, whatever was asked.
+        choose = self.results["choose"]
+        self.assertTrue(choose["deadWebgl"])
+        self.assertTrue(choose["deadWebglOverQueryOff"])
+        self.assertFalse(choose["deadWebglUnsupported"])
+        inline = self.results["inline"]
+        webgpu = "./vendor/three-webgpu/three.webgpu.js"
+        self.assertEqual({"inserted": webgpu, "flag": True}, inline["lostWebgl"])
+        self.assertEqual({"inserted": webgpu, "flag": True}, inline["noWebgl"])
+        self.assertEqual({"inserted": webgpu, "flag": True}, inline["lostWebglOverQueryOff"])
+        self.assertEqual({"inserted": None, "flag": None}, inline["lostWebglNoWebgpu"])
+
+    def test_the_schools_draw_on_webgpu_only_when_webgl_is_dead(self) -> None:
+        school = self.results["school"]
+        webgpu = "./vendor/three-webgpu/three.webgpu.js"
+        self.assertIsNone(school["live"])
+        self.assertEqual({"inserted": webgpu, "flag": True}, school["lost"])
+        self.assertEqual({"inserted": webgpu, "flag": True}, school["none"])
+        self.assertEqual({"inserted": None, "flag": None}, school["lostNoWebgpu"])
+        self.assertEqual({"dogfight.html": True, "tanks.html": True, "index.html": True, "kits.html": True}, self.results["schoolPages"])
+
 
 if __name__ == "__main__":
     unittest.main()

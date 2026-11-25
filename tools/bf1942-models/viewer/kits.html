@@ -110,6 +110,7 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
   <div id="rack"></div>
 </main>
 
+<script src="./webgl-fallback.js" data-inline></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -143,7 +144,10 @@ const stage = document.getElementById('stage');
 const statusLine = document.getElementById('status');
 const crumb = document.getElementById('crumb');
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+// Where WebGL is dead and WebGPU is not (webgl-fallback.js), a WebGPU one.
+const renderer = globalThis.bfWebglDead
+  ? (await import('./webgpu-side-renderer.js')).sideRenderer({ antialias: true })
+  : new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 stage.appendChild(renderer.domElement);
@@ -377,6 +381,8 @@ function invalidate() {
     renderer.render(scene, camera);
   });
 }
+// A WebGPU renderer skips the frames before its device is up: draw again then.
+renderer.whenReady?.then(() => invalidate());
 
 function startAnimating() {
   if (animating) return;

@@ -29,6 +29,10 @@ import * as jetAge from './dogfight-doctrine-1991.js';
 import { measureAirframe } from './dogfight-airframe.js';
 import { findTwoSeater, gunnersOf } from './dogfight-gunner-seats.js';
 
+// No WebGL here but WebGPU (dogfight.html's first script): the theatre draws
+// on a WebGPU renderer, handed over through the remaster's hook.
+if (globalThis.bfWebglDead) (await import('./webgpu-side-renderer.js')).installSideRenderer();
+
 const params = new URLSearchParams(location.search);
 const ARENA_KEY_VANILLA = 'dogfight-school:arena';
 /** The Range's school remembers your plane under the same name. */

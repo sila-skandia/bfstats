@@ -428,13 +428,24 @@
 // merge, the first definition of a specifier wins, so the retail map's
 // 'three' is then ignored.
 (() => {
-  // remaster-mode.js `chooseRemaster`, inline: never without WebGPU; then
-  // `?remaster` on the address (`=0` for off) wins, else the player's
-  // stored choice.
+  // remaster-mode.js `chooseRemaster`, inline: never without WebGPU; always
+  // when WebGL is dead; then `?remaster` on the address (`=0` for off) wins,
+  // else the player's stored choice.
   if (!navigator.gpu) return;
+  // WebGL that will not start (Safari on some Macs: every context is lost
+  // the moment it is made, on every site) leaves the remaster's WebGPU as
+  // the only build that draws. The test is synchronous: such a context is
+  // already lost when getContext returns it.
+  let dead = true;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+    dead = !gl || gl.isContextLost();
+    if (!dead) gl.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch { dead = true; }
   const p = new URLSearchParams(location.search);
   let on = false;
-  if (p.has('remaster')) on = p.get('remaster') !== '0';
+  if (dead) on = globalThis.bfWebglDead = true;
+  else if (p.has('remaster')) on = p.get('remaster') !== '0';
   else try { on = localStorage.getItem('bf42-mesh-remaster') === '1'; } catch { /* off */ }
   if (!on) return;
   const map = document.createElement('script');

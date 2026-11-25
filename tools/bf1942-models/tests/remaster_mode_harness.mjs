@@ -2,8 +2,9 @@
 // renderer, and how OPTIONS > VIDEO's REMASTER row is kept (see
 // `test_remaster_mode.py`). The module is imported from the viewer tree in
 // place through `sim/env.mjs`'s hooks, so the file under test is the file
-// the page loads. It also reads `map.html`'s first script, which makes the
-// same choice inline before any module can load, and runs it.
+// the page loads. It also runs `map.html`'s first script and the schools'
+// `webgl-fallback.js`, which make the same choice before any module can
+// load.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,6 +40,9 @@ results.choose = {
   queryOnOverStored: chooseRemaster({ query: '', stored: false }),
   unsupportedStoredOn: chooseRemaster({ stored: true, supported: false }),
   unsupportedQueryOn: chooseRemaster({ query: '', supported: false }),
+  deadWebgl: chooseRemaster({ webglDead: true }),
+  deadWebglOverQueryOff: chooseRemaster({ query: '0', stored: false, webglDead: true }),
+  deadWebglUnsupported: chooseRemaster({ webglDead: true, supported: false }),
 };
 results.supported = {
   webgpu: remasterSupported({ gpu: {} }),
@@ -59,24 +63,41 @@ storeRemaster(true, blocked);
 results.stored.blocked = storedRemaster(blocked);
 results.stored.noStorage = storedRemaster(null);
 
-// map.html's inline copy: the first script's body run against a fake page,
-// answering whether it inserted the remaster's import map.
-const html = fs.readFileSync(path.join(viewer, 'map.html'), 'utf8');
-const at = html.indexOf("// The three build is picked here");
-const inline = html.slice(at, html.indexOf('</script>', at));
-function inlineChoice(search, stored, webgpu = true) {
+// The pages' inline copies: the first script's body run against a fake page,
+// answering whether it inserted the remaster's import map, and whether it
+// left `bfWebglDead` set for remaster-mode.js. `webgl` is what a canvas
+// hands back: a live context, a lost one, or none.
+function inlineOf(file, marker) {
+  const html = fs.readFileSync(path.join(viewer, file), 'utf8');
+  const at = html.indexOf(marker);
+  if (at < 0) throw new Error(`${file}: no inline script at ${marker}`);
+  return html.slice(at, html.indexOf('</script>', at));
+}
+const mapInline = inlineOf('map.html', "// The three build is picked here");
+const schoolInline = fs.readFileSync(path.join(viewer, 'webgl-fallback.js'), 'utf8');
+// The pages without a remaster load it ahead of their import map (copied into the page
+// at image build time, `data-inline`).
+results.schoolPages = Object.fromEntries(['dogfight.html', 'tanks.html', 'index.html', 'kits.html'].map(file => {
+  const html = fs.readFileSync(path.join(viewer, file), 'utf8');
+  const tag = html.indexOf('<script src="./webgl-fallback.js" data-inline></script>');
+  return [file, tag >= 0 && tag < html.indexOf('<script type="importmap">')];
+}));
+function inlineChoice(search, stored, webgpu = true, webgl = 'live', inline = mapInline) {
   let inserted = null;
+  const context = webgl === 'none' ? null : { isContextLost: () => webgl === 'lost', getExtension: () => ({ loseContext() {} }) };
+  const global = {};
   const sandbox = {
     navigator: webgpu ? { gpu: {} } : {},
     location: { search },
     localStorage: stored === 'blocked' ? blocked : memoryStorage(stored),
+    globalThis: global,
     document: {
-      createElement: () => ({}),
+      createElement: tag => (tag === 'canvas' ? { getContext: () => context } : {}),
       currentScript: { after: el => { inserted = JSON.parse(el.textContent).imports.three; } },
     },
   };
   new Function(...Object.keys(sandbox), inline)(...Object.values(sandbox));
-  return inserted;
+  return webgl === 'live' ? inserted : { inserted, flag: global.bfWebglDead ?? null };
 }
 results.inline = {
   nothing: inlineChoice('', null),
@@ -88,6 +109,16 @@ results.inline = {
   blockedQueryOn: inlineChoice('?remaster', 'blocked'),
   noWebgpuStoredOn: inlineChoice('', '1', false),
   noWebgpuQueryOn: inlineChoice('?remaster', null, false),
+  lostWebgl: inlineChoice('', null, true, 'lost'),
+  noWebgl: inlineChoice('', null, true, 'none'),
+  lostWebglOverQueryOff: inlineChoice('?remaster=0', '0', true, 'lost'),
+  lostWebglNoWebgpu: inlineChoice('', null, false, 'lost'),
+};
+results.school = {
+  live: inlineChoice('?fight=x', null, true, 'live', schoolInline),
+  lost: inlineChoice('?fight=x', null, true, 'lost', schoolInline),
+  none: inlineChoice('?fight=x', null, true, 'none', schoolInline),
+  lostNoWebgpu: inlineChoice('?fight=x', null, false, 'lost', schoolInline),
 };
 
 console.log(JSON.stringify(results));
