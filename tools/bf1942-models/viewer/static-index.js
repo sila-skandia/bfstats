@@ -610,6 +610,9 @@ export class CollisionIndex {
       && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     const subs = this.subs;
     const triGroups = groups && this.groups ? this.groups : null;
+    // A round's query (its mask has `CG_PROJECTILES`): a material-90 face is
+    // not solid to it (`NON_SOLID_MATERIAL`, ledger COL-23).
+    const roundHoles = (groups & CG_PROJECTILES) ? this.materials : null;
     // The parts of the caller's own hull it still meets (`ownHits`).
     const ownGroups = ownHits && this.groups ? this.groups : null;
     // A segment cannot cross more cells than the grid has along both axes;
@@ -679,6 +682,7 @@ export class CollisionIndex {
               }
               if (subs && this.#subSkips(tri, onlySub)) continue;
               if (triGroups && (triGroups[tri] & groups)) continue;
+              if (roundHoles && roundHoles[tri] === NON_SOLID_MATERIAL) continue;
               const j = tri * 9;
               if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
                   || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
@@ -1311,6 +1315,17 @@ export class CollisionIndex {
 
 /** `c_CGProjectiles`: every projectile template is in it (FF-2). */
 export const CG_PROJECTILES = 8;
+/**
+ * Retail's hole for a projectile (ledger COL-23; collision-response.md, "Point
+ * bodies"): `isSolidMaterial` `0x08257010` is `!= 0x5a`, so the point-body
+ * sweep of a `CID_ProjectileTemplate` drops a hit on a material-90 face, while
+ * a soldier, a hull or a horse meets it like any other. These are the coarse
+ * blocking walls a mesh carries beside its detailed faces (the 3 m ring round
+ * `Stones_Africa_L_M1`'s boulders, 1,567 of Tobruk's 35,148 static faces; a
+ * third of the Spitfire's col1). Until 2026-11-25 a round stopped on them in
+ * mid air: fired from behind a Tobruk rock it met the ring and marked nothing.
+ */
+export const NON_SOLID_MATERIAL = 90;
 /**
  * The groups of a round's own hull it still meets: `c_CGLandscape`, which no
  * hull part a hull stands or is struck on carries, and FH's and FHSW's
