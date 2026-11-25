@@ -420,12 +420,15 @@ class ShipAgroundTests(unittest.TestCase):
         self.assertGreater(max(p["speed"] for p in moving), 5)
         stuck = [p for p in run["track"] if p["aground"]]
         self.assertTrue(stuck, "she never ran aground")
-        # The first sample is 4 s after she struck: on the server's law she
-        # meets the bank on an even keel (a Fletcher's trim stays at zero
-        # while her pitch rate is under 1e-3 rad/s, SHIPLAW-1), so the whole
-        # bow rides up onto it and the last of her way takes a little longer
-        # to go than it did with the old model's 0.13 degrees of trim.
-        self.assertLess(stuck[0]["speed"], 0.05)
+        # The first sample is 4 s after she struck. She grinds on there since
+        # the owner's FEEDBACK 83 ("it will make the grounding noise and
+        # eventually get stuck if you drive it up far enough"): the bed owes
+        # its friction on the part of her weight her floats do not carry
+        # (`ship.js` `bedBearing`), so a keel that has only just taken the shelf
+        # slows her over several seconds and a hull-length or three where the
+        # fixed 13.3 m/s^2 stopped her in one. Every later sample is stopped.
+        self.assertGreater(stuck[0]["speed"], 1.0)
+        self.assertLess(stuck[0]["speed"], 12.0)
         for point in stuck[1:]:
             self.assertLess(point["speed"], 0.01)
         for point in stuck:
@@ -446,6 +449,38 @@ class ShipAgroundTests(unittest.TestCase):
         self.assertLess(abs(run["heldAhead"]["moved"]), 0.5)
         self.assertLess(abs(run["heldAstern"]["moved"]), 0.5)
         self.assertTrue(run["heldAstern"]["aground"])
+
+
+class ShipGrindTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()
+
+    def test_she_grinds_up_a_gentle_shoal_and_lies_stuck(self):
+        """The owner (FEEDBACK 83): in retail a destroyer driven onto the shallows
+        makes the grounding noise and gets stuck if it is driven up far enough;
+        ours stopped dead at the edge. The bed owes its Coulomb friction on the
+        part of her weight her floats do not carry (`bedBearing`), so on a bank
+        that rises 3 cm a metre she slides on for tens of metres, rides up it,
+        and ends stopped."""
+        grind = self.out["grind"]
+        self.assertTrue(grind["struck"])
+        self.assertGreater(grind["slid"], 30.0)
+        self.assertLess(grind["slid"], 200.0)
+        self.assertGreater(grind["rose"], 0.8)
+        self.assertLess(grind["speed"], 0.05)
+        speeds = [p["speed"] for p in grind["track"]]
+        self.assertGreater(speeds[1], 0.5)   # still sliding five seconds after she struck
+
+    def test_a_craft_on_its_spawners_hold_stays_where_it_is_put(self):
+        """`hull-bodies.js` `holdSpawnedCraft` pins a held hull's pose and her
+        ship's velocity each tick: the law does not run, the helm's throttle is
+        what the spawner tests, and when she is let go she makes way."""
+        hold = self.out["craftHold"]
+        self.assertEqual(hold["held"]["moved"], 0)
+        self.assertEqual(hold["held"]["speed"], 0)
+        self.assertEqual(hold["held"]["holdRevs"], 1)
+        self.assertGreater(hold["released"]["moved"], 2.0)
 
 
 class ShipReefTests(unittest.TestCase):

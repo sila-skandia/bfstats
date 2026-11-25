@@ -353,6 +353,44 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
                                 aground: ship.aground };
 }
 
+// A shoal that rises gently (1.7 degrees, the first touch 5 m under her keel's 3.5 m draft): she grinds up it for tens of metres and then lies
+// stuck, where the fixed Coulomb disc stopped her in a second (the owner, FEEDBACK 83).
+{
+  const { hull, scene } = buildFletcher();
+  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+  ship.autoFirstPerson = false;
+  const slope = 0.03;
+  // Deep for the first 300 m of her run, then a bank rising `slope` a metre from 16.0 (her keel is 3.5 under the surface at 20).
+  const bed = (x, z) => (-z < 300 ? 0 : 16.0 + (-z - 300) * slope);
+  ship.groundHeight = bed;
+  ship.groundNormal = (x, z, out) => (-z < 300 ? out.set(0, 1, 0) : out.set(0, 1, slope).normalize());
+  ship.setInput('c_PIThrottle', 1);
+  let struck = -1, z0 = 0, peak = 0;
+  const track = [];
+  for (let i = 0; i < 3600; i++) {
+    ship.integrate(1 / 30);
+    if (struck < 0 && ship.aground) { struck = i; z0 = -ship.state.position.z; }
+    if (struck >= 0 && (i - struck) % 150 === 0) track.push({ t: +((i - struck) / 30).toFixed(1), speed: +ship.state.velocity.length().toFixed(3), slid: +(-ship.state.position.z - z0).toFixed(2) });
+    peak = Math.max(peak, ship.state.position.y);
+  }
+  out.grind = { struck: struck >= 0, track, slid: +(-ship.state.position.z - z0).toFixed(2), speed: +ship.state.velocity.length().toFixed(4), rose: +(peak - 20.225).toFixed(3) };
+}
+
+// A craft her ship's spawner holds does not integrate (its pose and her velocity are the hold's), and runs once it is let go.
+{
+  const { hull, scene } = buildFletcher();
+  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+  ship.autoFirstPerson = false;
+  ship.held = true;
+  ship.setInput('c_PIThrottle', 1);
+  const at = ship.state.position.clone();
+  for (let i = 0; i < 90; i++) ship.integrate(1 / 30);
+  const held = { moved: +ship.state.position.distanceTo(at).toFixed(6), speed: +ship.state.velocity.length().toFixed(6), holdRevs: ship.holdRevs };
+  ship.held = false;
+  for (let i = 0; i < 90; i++) ship.integrate(1 / 30);
+  out.craftHold = { held, released: { moved: +ship.state.position.distanceTo(at).toFixed(3) } };
+}
+
 // A hull dropped a metre above its draft comes back down to it and stays.
 {
   const { hull, scene } = buildFletcher();

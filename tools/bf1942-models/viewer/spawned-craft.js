@@ -150,8 +150,13 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
     // Harrier pads, so those lift straight off the deck; a node without the
     // word (an older export) keeps the hold every vanilla ship spawner sets.
     const local = heldLocal(host, o);
-    const air = o.userData.physics.vehicleCategory === 'VCAir' && o.userData.heldSpawner?.holdObject !== false;
-    if (air) {
+    // A landing craft is held the same way (every vanilla ship spawner sets
+    // `holdObject 1`, the Daihatsu's and the LCVP's too): it rides her until its
+    // helm opens the throttle. Left unheld it stayed where it was floated as she
+    // steamed away (the owner, FEEDBACK 83).
+    const category = o.userData.physics.vehicleCategory;
+    const holds = (category === 'VCAir' || category === 'VCSea') && o.userData.heldSpawner?.holdObject !== false;
+    if (holds) {
       // The spawner's pose on its ship, which is the pose the exporter baked,
       // plus its `spawnOffset` (`heldLocal`).
       spawnHolds.set(o, { host, local });
@@ -174,7 +179,7 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
       twin.userData.heldSlot = i;
       spawners.add(twin);
       twin.updateMatrixWorld(true);
-      if (air) spawnHolds.set(twin, { host, local });
+      if (holds) spawnHolds.set(twin, { host, local });
       craftSpawners.set(twin, { host, local });
       slots.push(twin);
       twins.push(twin);

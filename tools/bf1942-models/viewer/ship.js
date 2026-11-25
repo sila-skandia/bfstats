@@ -123,6 +123,7 @@ import {
 } from './body-friction.js';
 import { DEFAULT_TORQUE, shipSpec } from './ship-spec.js';
 import { heldAxisStep } from './vehicle-base.js';
+import { spawnHoldOf } from './spawned-craft.js';
 import { createShipLaw, shipTick, SHIP_TICK } from './ship-law.js';
 
 // Reading a ship out of its node tree (`hullGeometry`, `shipSpec`) is
@@ -218,6 +219,23 @@ const BED_HOLD_TICKS = 8;
 
 const _r = new THREE.Vector3();
 const _force = new THREE.Vector3();
+
+/**
+ * How much of her weight the bed carries: what the floats do not, and never
+ * less than `BED_BEARING_MIN` of it. The engine's Coulomb disc is a fixed
+ * 13.3 m/s^2 whatever the load (no normal load enters it), so a hull that
+ * touched the bottom with the water still holding her up stopped inside a
+ * second and a hull-length. The owner (FEEDBACK 83) says retail's destroyer
+ * grinds up the shallows and only grounds for good when it is driven up far
+ * enough: the bed owes its friction in proportion to the part of her weight it
+ * takes, with a floor over her engine's 1.5 m/s^2 so a keel on a flat shelf
+ * still stops her.
+ */
+const BED_BEARING_MIN = 0.2;
+function bedBearing(lift, gravity) {
+  if (!(lift >= 0) || !(gravity > 0)) return 1;
+  return Math.min(1, Math.max(BED_BEARING_MIN, 1 - lift / gravity));
+}
 const _arm = new THREE.Vector3();
 const _spin = new THREE.Vector3();
 const _rel = new THREE.Vector3();
@@ -610,8 +628,9 @@ export class Ship extends Aircraft {
     const friction = typeof this.seabedFriction === 'function'
       ? this.seabedFriction(s.position.x, s.position.z)
       : this.seabedFriction;
+    const bearing = bedBearing(this._floatLift, this.spec.gravity);
     const budget = Math.max(0, friction) * COULOMB_KINETIC_COEFFICIENT
-      * COULOMB_GRAVITY * h;
+      * COULOMB_GRAVITY * h * bearing;
     const speed = Math.hypot(s.velocity.x, s.velocity.z);
     if (speed <= budget) {
       s.velocity.x = 0;
@@ -736,6 +755,7 @@ export class Ship extends Aircraft {
   bodyForces(accel, moment, _h) {
     if (!this.floats?.length || !Number.isFinite(this.waterHeight)) return;
     const s = this.state;
+    let lift = 0;
     for (const float of this.floats) {
       _r.copy(float.local).applyQuaternion(s.orientation);
       _rel.copy(s.velocity).add(_spin.crossVectors(s.angularVelocity, _r));
@@ -749,11 +769,24 @@ export class Ship extends Aircraft {
         mass: this.spec.mass,
         areaXZ: this.footprint,
       });
+      // What the water carries of her weight, leaving out what her own
+      // heave adds or takes: the part a bed under her keel does not owe.
+      lift += floatAcceleration(float, {
+        nodeY: s.position.y + _r.y,
+        waterLevel: this.waterHeight,
+        verticalSpeed: 0,
+        angle: float.angle || 0,
+        sinkOffset: float.sinkOffset || 0,
+        drag: this.spec.drag,
+        mass: this.spec.mass,
+        areaXZ: this.footprint,
+      });
       if (a === 0) continue;
       _force.set(0, a, 0);
       accel.add(_force);
       moment.add(_arm.crossVectors(_r, _force));
     }
+    this._floatLift = lift;
   }
 
   /**
@@ -871,9 +904,28 @@ export class Ship extends Aircraft {
     return this.floats.map(float => float.sinkOffset || 0);
   }
 
+  /** What a holding spawner tests against 0.1: the helm's throttle (a ship's
+   *  Engine register only turns while she integrates, which she does not on
+   *  the hold). */
+  get holdRevs() { return Math.abs(this.input('c_PIThrottle')); }
+
+  #pinned() {
+    const law = this.law;
+    if (!law) return;
+    law.acc.set(0, -this.spec.gravity, 0);
+    law.racc.set(0, 0, 0);
+    law.fr.set(0, 0, 0);
+    law.rfr.set(0, 0, 0);
+    law.sleepiness = 100;
+  }
+
   /** The engine's own per-tick contact latch, cleared once a tick.
    *  Also latches `beachedThisTick` on the frame the keel first touches. */
   integrate(dt) {
+    // On her ship's davit (`hull-bodies.js` `holdSpawnedCraft` sets her pose and
+    // her ship's velocity each tick): no physics, and a fresh law when she is
+    // let go. `holdRevs` below is the helm's word the spawner tests.
+    if (this.held ?? spawnHoldOf(this.node)?.released === false) { this.#pinned(); return; }
     const wasAground = this.aground;
     this._touchedBed = false;
     if (this.law) this.#integrateLaw(dt);
