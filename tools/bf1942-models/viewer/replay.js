@@ -40,7 +40,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   parseRecording, kitAt, inferKits, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
-  markKits, nameAt, teamAt, positionAt, hpAt,
+  markKits, nameAt, teamAt, positionAt, hpAt, playFromOf,
 } from './replay-recording.js';
 import { ReplayCombatArea } from './replay-combat-area.js';
 import { SOLDIER_ORIGIN_UP } from './nametags.js';
@@ -1457,6 +1457,12 @@ export function createReplayController(ctx) {
     if (typeof window !== 'undefined') window.replay = player;
     extra("the page's additions to the replay bar", () => ctx.opened?.(player));
     await player.load();
+    // A file that holds rounds before the one it was recorded for (a server
+    // on one level writes them all into one file, replay-recording.js
+    // `playedRound`) opens where that round's play begins, not on the empty
+    // server before it. A link's own moment (`?t=`) still wins.
+    const from = playFromOf(rec);
+    if (from > 0) player.seek(from);
     return player;
   }
 

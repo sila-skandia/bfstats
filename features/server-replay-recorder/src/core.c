@@ -2516,12 +2516,59 @@ static void held_flush_locked(void)
     g_held_first = g_held_n = 0;
 }
 
-/* An event line: into the file, or held (or not) until there is one. */
+/* A round's PLAYING has been written in the open file. */
+static int g_round_played;
+/* A new round began on the same level: the sampler closes the file at its
+ * next pass (`split_file`, which only it may call), and until then every
+ * event is also held, so the next file opens on how things stand. */
+static volatile int g_round_split;
+
+/* A gameStatus line's status, -1 when it names none. */
+static int status_of(const char *line)
+{
+    const char *at = strstr(line, "\"status\":");
+    return at ? atoi(at + 9) : -1;
+}
+
+/* Hold an open file's line for the next one: stamped t 0 there, as what
+ * came before it is (its stamp is this file's clock). */
+static void held_take_next_locked(const char *line, int type, uint32_t id)
+{
+    char out[768];
+    const char *at = strstr(line, "\"t\":");
+    if (!at) { held_take_locked(line, type, id); return; }
+    const char *rest = at + 4;
+    while (*rest == '-' || *rest == '.' || (*rest >= '0' && *rest <= '9')) rest++;
+    snprintf(out, sizeof(out), "%.*s\"t\":0.000%s", (int)(at - line), line, rest);
+    held_take_locked(out, type, id);
+}
+
+/* An event line: into the file, or held (or not) until there is one.
+ *
+ * A server on one level on repeat never unloads it, so the level's own split
+ * never comes: owlserver's Berlin wrote two empty rounds, a round waited out
+ * alone and the 1v1 that followed into one 79-minute file (q8uwcxrjcg). A
+ * PREGAME after this file's PLAYING is a new round, whether or not an end
+ * came before it (a reset for the player minimum sends none): it goes to the
+ * next file, and so does what follows it. A join is sent the status again,
+ * so a status only repeated is not a change; one before PLAYING (the file
+ * opened in a pre-game) splits nothing. */
 static void emit_line(const char *line, int type, uint32_t id)
 {
     T->rec_lock();
-    if (file_is_open()) write_line_locked(line);
-    else held_take_locked(line, type, id);
+    if (file_is_open()) {
+        int status = type == 0x24 ? status_of(line) : -1;
+        if (status == 3 && g_round_played && !g_round_split) {
+            g_round_split = 1;
+            held_take_next_locked(line, type, id);
+        } else {
+            if (status == 1) g_round_played = 1;
+            write_line_locked(line);
+            if (g_round_split) held_take_next_locked(line, type, id);
+        }
+    } else {
+        held_take_locked(line, type, id);
+    }
     T->rec_unlock();
 }
 
@@ -4326,6 +4373,8 @@ static void reset_file_state(void)
     memset(g_chat_lines, 0, sizeof(g_chat_lines));
     T->rec_unlock();
     g_soldiers_n = 0;
+    g_round_played = 0;
+    g_round_split = 0;
     g_level_written = 0;
     g_level_name[0] = 0;
     g_anim_written = 0;
@@ -4415,6 +4464,14 @@ static void sampler_step(int tick_mode)
     }
 
     if (!om || om < T->min_addr) return;
+
+#if REC_STAGE3
+    /* A new round on the same level (emit_line): its events are held. */
+    if (g_round_split) {
+        split_file("round restarted");
+        return;
+    }
+#endif
 
     /* A map change: the world emptied (the level unloading -- a same-map
      * reload changes no name), or the setup names another level than the one

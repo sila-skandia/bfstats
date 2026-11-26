@@ -154,6 +154,82 @@ function chatSpeakers(lines) {
   return out;
 }
 
+/**
+ * The round a file was recorded for, out of every round it holds: `{ pregame,
+ * start, end }` (seconds; `pregame` null where the file joined a round in
+ * play, `end` Infinity where it never ended), or null for a file that names
+ * no round state at all.
+ *
+ * A server recording opens a new file only when the level unloads or
+ * changes, so a server that plays one level on repeat writes every round
+ * into one file: q8uwcxrjcg (owlserver, Berlin, 79 minutes) holds two empty
+ * rounds, a round heph waited out alone, and the 1v1 he and Black Mamba
+ * played, which began when the second player joined and the server reset
+ * the round (PREGAME at 3148 with no end before it, PLAYING at 3168). Taken
+ * as the first round, the file "ended" at 1220 s and every kill after it
+ * was dropped. The round taken is the one with the most score events in
+ * play; with none anywhere, the first, as before.
+ *
+ * A status the server only repeated (it sends it again at every join) is
+ * no change. A PREGAME after PLAYING is a new round whether or not an end
+ * came between: a reset for the player minimum sends none.
+ */
+export function playedRound(lines) {
+  const rounds = [];
+  let cur = null;
+  let last = null;
+  for (const line of lines) {
+    const status = line.includes('"gameStatus"');
+    if (!status && !(cur && line.includes('"e":"score"'))) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (r?.k !== 'e') continue;
+    const t = typeof r.t === 'number' ? r.t : 0;
+    if (r.e === 'score') {
+      if (cur && cur.end === Infinity && cur.start !== null) cur.activity++;
+      continue;
+    }
+    if (r.e !== 'gameStatus' || r.status === last) continue;
+    last = r.status;
+    if (r.status === 3) {
+      if (cur && cur.end === Infinity && cur.start !== null) cur.end = t;
+      if (!cur || cur.end !== Infinity) {
+        cur = { pregame: t, start: null, end: Infinity, activity: 0 };
+        rounds.push(cur);
+      }
+    } else if (r.status === 1) {
+      if (!cur || cur.end !== Infinity) {
+        cur = { pregame: null, start: t, end: Infinity, activity: 0 };
+        rounds.push(cur);
+      } else if (cur.start === null) {
+        cur.start = t;
+      }
+    } else if (r.status === 2 || r.status === 5) {
+      if (cur && cur.end === Infinity) cur.end = t;
+    }
+  }
+  if (!rounds.length) return null;
+  let best = rounds[0];
+  for (const round of rounds) if (round.activity > best.activity) best = round;
+  return { pregame: best.pregame, start: best.start, end: best.end, rounds: rounds.length };
+}
+
+/** Dead air longer than this before the recorded round is skipped. */
+const DEAD_AIR = 60;
+
+/** Where playback opens: a few seconds before the recorded round's play
+ *  begins when more than `DEAD_AIR` of other rounds or an empty server come
+ *  before it, else 0. */
+export function playFromOf(rec) {
+  const start = rec.roundStarted;
+  if (!Number.isFinite(start) || start <= DEAD_AIR) return 0;
+  return Math.max(0, Math.min(start - 3, rec.duration));
+}
+
 function qmul(a, b) {
   const [ax, ay, az, aw] = a;
   const [bx, by, bz, bw] = b;
@@ -607,6 +683,15 @@ export function parseRecording(text) {
   // Who the chat box names, for players nothing else introduces (see the
   // roster below): read first, so the feed's rows carry the names too.
   const spoken = chatSpeakers(lines);
+  // The round the file is about, of every round it holds (`playedRound`):
+  // its start and end are the recording's, and the rounds either side of it
+  // are dead air before and teardown after.
+  const played = playedRound(lines);
+  if (played) {
+    rec.roundEnded = played.end;
+    rec.roundStarted = played.pregame !== null ? played.start : null;
+    rec.rounds = played.rounds;
+  }
 
   const row = (t, kind, text) => {
     const entry = { t, kind, text, source: 'client' };
@@ -1011,17 +1096,19 @@ export function parseRecording(text) {
         return;
       }
       case 'gameStatus':
-        if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
+        if (!played && (r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
         // A server recording names the result at the end: the ScoreManager's
-        // winner and victory type (ROUND-5, ROUND-6). The first end's stands.
-        if ((r.status === 2 || r.status === 5) && Number.isInteger(r.winner) && !rec.roundResult) {
+        // winner and victory type (ROUND-5, ROUND-6). The played round's
+        // first end's stands.
+        if ((r.status === 2 || r.status === 5) && Number.isInteger(r.winner) && !rec.roundResult
+            && (!played || t >= rec.roundEnded)) {
           rec.roundResult = { t, winner: r.winner, victory: Number.isInteger(r.victory) ? r.victory : null };
         }
         // The round began inside the recording only when PREGAME (3) came
         // first: a join mid-round is sent PLAYING straight away
         // (replay_20260927-001120 joined 277 s into its round).
         if (r.status === 3) sawPregame = true;
-        if (r.status === 1 && rec.roundStarted === null && sawPregame) rec.roundStarted = t;
+        if (!played && r.status === 1 && rec.roundStarted === null && sawPregame) rec.roundStarted = t;
         // The server sends every client the status again whenever someone
         // joins (ten "round playing" in replay_20260927-203459, each a
         // millisecond after a createPlayer): a row is a change. A file begun

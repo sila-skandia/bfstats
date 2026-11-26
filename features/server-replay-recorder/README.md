@@ -70,7 +70,7 @@ python3 lab/lab.py stop
 ```
 
 Files land in `replays/replay_<unixts>[-<n>].ndjson` under the server's
-working directory, one per round. `lab.py stop` copies them into the run
+working directory, one per round ([One file a round](#one-file-a-round)). `lab.py stop` copies them into the run
 directory and prints a viewer link. Joining with a client is in the
 `bf1942-server-lab` skill.
 
@@ -202,6 +202,29 @@ of each, at most 1,024 with the oldest dropped first:
 
 Moments are not held: `clock`, `simStart`, `score`, chat, `radio`, `vote`,
 `hitFrom`, `special`, `roundStats`, `sessionId`, `flagHolder`, `heal` and `raw`.
+
+### One file a round
+
+A file is closed and the next opened when the level unloads, when the setup
+names another level, and (2026-11-26) when a round restarts on the same
+level: a PREGAME (gameStatus 3) after the file's PLAYING (1), with a round's
+end before it or not. A reset for the player minimum sends no end; a status
+the server only repeated for a join changes nothing. The event path cannot
+close a file (the sampler owns that), so it sets `g_round_split` and holds
+the PREGAME, stamped t 0, and every event after it until the sampler's next
+pass closes the file; the next file opens on them, then re-announces the
+level, objects, players and pools from its first sample as after any split.
+
+Before this, a server on one level on repeat wrote every round into one
+file. owlserver's `q8uwcxrjcg` (Berlin, 79 minutes, shared 2026-11-25) is
+two empty rounds (ending 1220 and 2450 s), a round heph waited out alone
+from 3046, the reset when Black Mamba joined (PREGAME 3148, no end before
+it) and the 1v1 (PLAYING 3168 to its end at 4731). The viewer read the first
+end as the recording's, and dropped every kill after it: no kill feed, no
+body fell, and the page opened on an empty server. The viewer now reads such
+a file as its most-scored round (`replay-recording.js` `playedRound`) and
+opens playback 3 s before that round's play when more than a minute comes
+before it (`playFromOf`; a link's `?t=` still wins).
 
 ### Chat
 
@@ -775,11 +798,15 @@ tests/run.sh
 ```
 
 builds `tests/core_harness.c`, a fake server laid out in memory, and drives
-the core through it. It does not touch the lab's installed `recorder.so`.
+the core through it. It does not touch the lab's installed `recorder.so`. It
+needs a real x86 host (CI's): under qemu (an `--platform linux/amd64`
+container on Apple silicon) `/proc/self/mem` is the emulator's, the fake
+target's reads all fail and every check finds no events, at HEAD as well.
 
 | check | what it covers |
 |---|---|
 | thread mode and tick mode | Events held and written at t 0, the join's events, fan-out to several clients written once, projectile pools, a new file when the level unloads, chat from pieces |
+| thread mode and tick mode, rounds | One level, three rounds, no unload: a file each, split at the PREGAME after PLAYING with an end before it or not, the PREGAME and the pre-game's rules at t 0 of the next file, a join's repeated status splitting nothing |
 | tick mode, live set | The register/unregister set, pools written again in the next file, destroys through the hooked slot |
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
@@ -899,6 +926,23 @@ in (`recorder.log`), and a round played to its time limit passes
 `node tests/viewer_check.mjs <replay>` on the file and the log copied back.
 A human playing too would show `hg` and `i` for a client's rounds, which the
 lab's bots-only rounds have not.
+
+The round split (2026-11-26, [One file a round](#one-file-a-round)) has met
+only the harness: a lab round on one level that restarts (`sv.startDelay`
+with a player minimum, or a round played to its end on a one-map rotation)
+should leave a file a round, each opening on its PREGAME at t 0.
+
+Where a hit lands against the hit soldier's recorded place, in owlserver's
+1v1 (`q8uwcxrjcg`, 296 `i` lines on a soldier): nearest the place he was
+recorded 0.1-0.2 s before the hit (0.29 m median, horizontal), 0.66 m at the
+hit's own time. The shooters' recorded aim is with their shots to a tick
+(yaw 0.04 degrees median against each `f`'s direction, pitch the same), so
+it is the target that is drawn ahead of where the server hit him: about half
+a metre at a run, which a player sees as hits that "had no right". Which
+side of the tick the sample reads a client-moved soldier, or whether the
+server hits a soldier where his client last put him, is unread; a lab round
+with a client strafing in front of a bot answers it (`tests/check_shots.py`
+beside the client's own recording of the round).
 
 To confirm in a live round (the 2026-10-12 changes have only met the
 harness):

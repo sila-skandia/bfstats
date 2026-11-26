@@ -952,6 +952,40 @@ static int events_main(void)
 }
 #endif
 
+/* `harness rounds`: one level, three rounds and no unload between them (a
+ * server on one level on repeat). A PREGAME after the file's PLAYING opens the
+ * next file, with an end before it or not (a reset for the player minimum
+ * sends none); a status repeated for a join, in play or in a pre-game, does
+ * not. */
+static int rounds_main(void)
+{
+    om_ptr = (uint32_t)(uintptr_t)fake_om;
+    fake.object_manager_ptr = (uint32_t)(uintptr_t)&om_ptr;
+    recorder_core_init(&fake);
+    fake_om[1] = 5000;                    /* the level is loaded: the file opens */
+    run_for(300);
+    ev(0, 0x24, 1);                       /* the round plays */
+    run_for(200);
+    ev(1, 0x24, 1);                       /* a join is sent it again */
+    run_for(200);
+    ev(0, 0x24, 2);                       /* the round ends */
+    run_for(200);
+    ev(0, 0x24, 3);                       /* the next one's pre-game: the second file */
+    ev(0, 0x16, 0);                       /* its rules, in the next file */
+    run_for(300);
+    ev(1, 0x24, 3);                       /* a join in the pre-game */
+    run_for(200);
+    ev(0, 0x24, 1);
+    run_for(200);
+    ev(0, 0x24, 3);                       /* a reset with no end: the third file */
+    run_for(300);
+    ev(0, 0x24, 1);
+    run_for(200);
+    recorder_core_shutdown();
+    fprintf(stderr, "harness: done\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     signal(SIGALRM, on_alarm); alarm(20);
     fake.vt_fire_arms = (uint32_t)(uintptr_t)vt_fa;
@@ -961,9 +995,8 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "world")) return world_main();
     if (argc > 1 && !strcmp(argv[1], "hits")) return hits_main();
     if (argc > 1 && !strcmp(argv[1], "events")) return events_main();
-#else
-    (void)argc; (void)argv;
 #endif
+    if (argc > 1 && !strcmp(argv[1], "rounds")) return rounds_main();
     om_ptr = (uint32_t)(uintptr_t)fake_om;
     fake.object_manager_ptr = (uint32_t)(uintptr_t)&om_ptr;
     recorder_core_init(&fake);

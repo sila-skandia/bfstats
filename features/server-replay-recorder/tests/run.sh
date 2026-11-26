@@ -89,6 +89,28 @@ if bad:
     sys.exit("recorder core: " + "; ".join(bad))
 print(f"recorder core ({'tick' if sys.argv[2] == '1' else 'thread'} mode): ok ({files[0].name}, {files[1].name})")
 PY
+# One level, rounds on repeat: a file a round (core_harness.c rounds_main).
+mkdir "$work/rounds$tick" && cd "$work/rounds$tick"
+printf 'recordReplays 1\nreplaySampleHz 10\n' > recorder.con
+mkdir replays
+timeout 30 ../harness rounds 2> harness.err || { cat harness.err; exit 1; }
+PYTHONPATH="$work" python3 - "$work/rounds$tick/replays" "$tick" <<'PY'
+import json, sys
+from files import recordings
+files = recordings(sys.argv[1])
+rows = [[json.loads(l) for l in f.read_text().splitlines()] for f in files]
+status = lambda r: [(e["status"], e["t"] == 0) for e in r if e.get("e") == "gameStatus"]
+got = [status(r) for r in rows]
+# A join's repeat is written where it came (the viewer reads it as no
+# change) and opens no file.
+want = [[(1, False), (1, False), (2, False)], [(3, True), (3, False), (1, False)], [(3, True), (1, False)]]
+assert got == want, f"rounds: {got}"
+assert all(r[-1]["k"] == "end" for r in rows), "a round's file without its end record"
+rules = [[e["t"] for e in r if e.get("e") == "gameRules"] for r in rows]
+assert rules[1] == [0], f"rounds: the pre-game's rules belong to its file: {rules}"
+print(f"recorder core ({'tick' if sys.argv[2] == '1' else 'thread'} mode, rounds): ok")
+PY
+cd "$work"
 if [ "$tick" = 1 ]; then
     # The live set (tick mode): a weapon looked at while new, then scenery.
     mkdir "$work/live" && cd "$work/live"
