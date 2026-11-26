@@ -2,9 +2,9 @@
 # Replay Shorts, nightly (features/replay-shorts, .claude/skills/replay-shorts):
 # film the best kills of the newest shared recordings and upload them, and on
 # the first night of a week the week's Battlefield ASMR and match recap. Run by the systemd
-# user timer bfstats-shorts.timer on Linux, or the launchd agent
-# io.bfstats.shorts on a Mac (both in deploy/shorts-nightly/), which runs it
-# from its own checkout brought up to origin/main first.
+# user timer bfstats-shorts.timer on Linux or the launchd agent
+# io.bfstats.shorts on macOS, through deploy/shorts-nightly/run.sh, from its
+# own checkout brought up to origin/main first (deploy/shorts-nightly/README.md).
 # The API's keys skip every kill already clipped, so a recording is only filmed
 # once whatever the window.
 set -euo pipefail
@@ -22,7 +22,7 @@ if [[ ! -s $KEY_FILE ]]; then
   exit 1
 fi
 
-# One headless browser at a time on this PC: wait up to 30 min for another
+# One headless browser at a time on this machine: wait up to 30 min for another
 # session's to finish, then leave it for tomorrow.
 for _ in $(seq 1 60); do
   if ! pgrep -f 'headless_shell|chrome.*--headless' > /dev/null; then break; fi

@@ -10,8 +10,8 @@ fields.
 ## Status
 
 Built (2026-11-03): the picker, the render job, the API and the strip and
-player. Section 5 (the recording cards) is not done. The render job runs by
-hand on this PC for now; a timer is not set up.
+player. Section 5 (the recording cards) is not done. The render job runs
+nightly on a machine with a GPU (`deploy/shorts-nightly/README.md`).
 
 ## As built (2026-11-03)
 
@@ -1288,11 +1288,12 @@ The job opens that address with `&shots` added (the page's test hooks,
 
 **Where it runs.** MediaRecorder captures in real time, so the browser has
 to render the level at full frame rate or the Short stutters. That needs a
-GPU, so the job runs on this PC (a systemd user timer), not on the
+GPU, so the job runs on a machine with one (a launchd agent or systemd user
+timer, `deploy/shorts-nightly/`), not on the
 production node: the node has no GPU, software rendering would drop frames,
 and a Chromium holding a level is a gigabyte or two of the memory the node
 is shortest of (CLAUDE.md, "Deployment constraints"). Nothing in the job
-is tied to this PC beyond the GPU, so it can move to any machine with one.
+is tied to one machine beyond the GPU, so it can move to any machine with one.
 
 A failed render (a level that will not load, a recorder that never
 finishes) skips that candidate and logs it; the next run tries it again.

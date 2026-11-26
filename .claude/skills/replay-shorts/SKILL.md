@@ -332,11 +332,10 @@ about.
   `viewer/replay-recap-pick.js`. The nightly films one on the first night of
   each ISO week (`roll-weekly.mjs --recap`, `RECAP_WEEKLY=0` skips it).
 
-## On the Mac (2026-11-07)
+## On macOS
 
-The development machine is now an Apple Silicon Mac: no systemd (the nightly
-timer is the Linux PC's), no Playwright Chromium, no extracted model trees.
-Add `--channel=chrome` (the installed Google Chrome); `--gpu` is Metal there.
+On an Apple Silicon Mac there is no Playwright Chromium and usually no
+extracted model trees. Add `--channel=chrome` (the installed Google Chrome); `--gpu` is Metal there.
 `modelsOf` reads the mod's `models.json` from the live play site when the tree
 is not on disk. A recording loads in about a minute and a Short films in
 11-13 s. `shorts-watch.sh` works there (BSD `stat`).
@@ -353,7 +352,7 @@ is not on disk. A recording loads in about a minute and a Short films in
 
 ## Making Shorts (the whole job, no hand-off)
 
-Run on this PC with the GPU. One headless browser at a time: check
+Run on a machine with a GPU. One headless browser at a time: check
 `pgrep -c headless_shell` first.
 
 ```
@@ -403,21 +402,21 @@ hours. What it took:
   (inside the fireballs), and skandia's AA shot on Makin (the lens in
   foliage, the gun's raw template name).
 
-**Nightly.** `scripts/shorts-nightly.sh` runs at 03:30 from the systemd user
-timer `bfstats-shorts.timer` (units in `deploy/shorts-nightly/`, installed in
-`~/.config/systemd/user/`): the 10 newest recordings, 3 Shorts each at most,
+**Nightly.** `scripts/shorts-nightly.sh` runs at 03:30, from the launchd
+agent `io.bfstats.shorts` on macOS or the systemd user timer
+`bfstats-shorts.timer` on Linux; both are installed by
+`deploy/shorts-nightly/install.sh` (`deploy/shorts-nightly/README.md`). It
+films the 10 newest recordings, 3 Shorts each at most,
 `--gpu --sound --upload`, log `~/.cache/bfstats-shorts/nightly.log`. It waits
 for another headless browser to finish, and skips the night after 30 min.
 Uploads are not reviewed: look at what it put up
 (`curl -s https://bfstats.io/stats/shorts`) and delete a bad one.
-`systemctl --user start bfstats-shorts.service` runs it now.
-On the Mac (since 2026-11-07) it is the launchd agent `io.bfstats.shorts`
-(`deploy/shorts-nightly/io.bfstats.shorts.plist`, installed in
-`~/Library/LaunchAgents/`), same time and log; a Mac asleep at 03:30 runs it
-on waking. `launchctl kickstart gui/$(id -u)/io.bfstats.shorts` runs it now.
-It runs from its own checkout, `~/projects/skandia/bfstats-nightly`, which it
-brings up to `origin/main` first (a working checkout is often on a branch), so
-a change to the runner or the picker reaches the nightly once it is on main.
+`launchctl kickstart gui/$(id -u)/io.bfstats.shorts` (macOS) or
+`systemctl --user start bfstats-shorts.service` (Linux) runs it now.
+It runs from its own checkout, a detached worktree (`bfstats-nightly` beside
+the main checkout by default), which `deploy/shorts-nightly/run.sh` brings up
+to `origin/main` first (a working checkout is often on a branch), so a change
+to the runner or the picker reaches the nightly once it is on main.
 On the first night of each ISO week it also makes the week's ASMR
 (`--asmr-mix=week`, uploaded) and stamps `~/.cache/bfstats-shorts/asmr-<week>.done`;
 its log is `asmr-<week>.log` beside it. Delete the stamp to have it made again.
@@ -438,7 +437,7 @@ to film a 10.5 s Short.
 
 ## Production access: just do it
 
-The cluster is reachable from this PC directly: `kubectl --context hetzner
+The cluster is reachable from the filming machine directly: `kubectl --context hetzner
 -n bf42-stats ...` (this IP is allow-listed; no tunnel, no `KUBECONFIG_B64`,
 that is the cloud-session path in `hetzner-cluster`). The owner has given a
 standing OK for kubectl, so do not stop to ask, and do not hand the owner a
