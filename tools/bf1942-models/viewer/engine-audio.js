@@ -167,6 +167,11 @@ const EPSILON = 1e-4;
 export { INSTANCES_PER_SAMPLE };
 
 /** One `load` from the script: a buffer, a gain, and where it points. */
+/** Where each panner was last put (`#placePanner`). */
+const placed = new WeakMap();
+/** Metres a panner moves before it is written again. */
+const PLACE_EPSILON = 0.01;
+
 class Voice {
   constructor(ctx, layer, buffer, panner) {
     this.layer = layer;
@@ -1191,6 +1196,18 @@ export class EngineAudio {
 
   #placePanner(panner, x, y, z, now, snap = false) {
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    // A panner where it already stands is written nothing. Every pooled
+    // effect patch is placed every frame, sounding or not (effect-audio.js
+    // `update`), and three ramps a panner a frame on a hundred idle patches
+    // were automation events the audio thread sorted forever: on a slow
+    // laptop the sound broke up as a round went on and then stopped (the
+    // owlserver 1v1, 2026-11-26).
+    // Within a centimetre of the place last written is where it stands: a
+    // parked hull's pose wavers in the last float digits every frame.
+    const last = placed.get(panner);
+    if (last && !snap && Math.abs(last[0] - x) < PLACE_EPSILON && Math.abs(last[1] - y) < PLACE_EPSILON
+        && Math.abs(last[2] - z) < PLACE_EPSILON) return;
+    if (last) { last[0] = x; last[1] = y; last[2] = z; } else placed.set(panner, [x, y, z]);
     if (panner.positionX && snap) {
       // A new source, not a moving one: the pooled slot's last shooter was
       // somewhere else, and a one-frame ramp from there would sweep the

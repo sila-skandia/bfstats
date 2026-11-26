@@ -763,7 +763,7 @@ function fireManifest() {
     }
     const fired = rounds * every;
     run(1.0);
-    return { audio, starts, during: starts.filter(s => s <= fired - every + 0.069).length,
+    return { ctx, audio, starts, during: starts.filter(s => s <= fired - every + 0.069).length,
              after: starts.filter(s => s > fired - every + 0.069).length };
   };
 
@@ -788,6 +788,20 @@ function fireManifest() {
   const pooled = await burst(20, 0.05);
   assert.ok(pooled.during >= 3, `a slot a round ticks through the burst: ${pooled.during}`);
   assert.equal(pooled.audio.scripts.get('shells').slots.length, 3);
+  // Idle, the pool gives back all but its first patch (IDLE_RELEASE): a long
+  // round's graph held every patch its busiest moment needed, all placed
+  // every frame, and on a slow laptop the sound broke up and stopped.
+  for (const source of pooled.ctx.started) source.finish();
+  for (let i = 0; i < 120 * 14; i += 1) pooled.audio.update(1 / 120, { x: 0, y: 0, z: 0 });
+  assert.equal(pooled.audio.scripts.get('shells').slots.length, 3, 'kept while under IDLE_RELEASE');
+  for (let i = 0; i < 120 * 2; i += 1) pooled.audio.update(1 / 120, { x: 0, y: 0, z: 0 });
+  assert.equal(pooled.audio.scripts.get('shells').slots.length, 0, 'every idle patch let go');
+  assert.ok(pooled.audio.released >= 3, `released ${pooled.audio.released}`);
+  const startedBefore = pooled.ctx.started.length;
+  pooled.audio.play('e_shell792mm', [0, 0, 2]);
+  for (let i = 0; i < 24; i += 1) pooled.audio.update(1 / 120, { x: 0, y: 0, z: 0 });
+  assert.equal(pooled.ctx.started.length, startedBefore + 1, 'and the next round still ticks');
+  assert.equal(pooled.audio.scripts.get('shells').slots.length, 1, 'out of a patch made in its frame');
 
   // Two guns side by side: a patch and a clock each.
   const guns = [{ name: 'a' }, { name: 'b' }];

@@ -67,6 +67,20 @@ export const SPEED_OF_SOUND = 340;
 export const DEFAULT_VOICE_BUDGET = 26;
 
 /**
+ * Seconds with nothing owed after which a pooled patch is let go
+ * (`update`). A patch is its voices' gains and its panners, all in the graph
+ * and all placed every frame; the pool grew to eight a script and never
+ * shrank, so a long round's graph held every patch its busiest moment had
+ * needed, and every bundle the level primed kept one: 892 live gain nodes at
+ * 52:50 of the owlserver recording (668 of them idle effect patches), 1,091
+ * seven minutes on and still climbing, and on a slow laptop the sound broke
+ * up and then stopped. The samples stay decoded, so a script let go makes a
+ * patch again in the frame it is next asked for one (`#addSlot`), at the
+ * master's level.
+ */
+export const IDLE_RELEASE = 15;
+
+/**
  * How long after a trigger an instance stays reserved for its own patch.
  *
  * Not a taste setting: a `trigger Volume` layer has not started yet at the
@@ -218,6 +232,9 @@ class Slot {
     // The object whose own patch this is, for a play that named one (a gun's
     // casing bundle): its next trigger takes this slot again. See `play`.
     this.owner = null;
+    // Seconds since it last had sound owed or an object to follow
+    // (`EffectAudio.update`, `IDLE_RELEASE`).
+    this.idle = 0;
   }
 
   /** Still owed sound? Either something is running, or a delayed layer is due,
@@ -270,6 +287,8 @@ export class EffectAudio {
     this.inaudible = 0;
     // Plays that triggered their owner's own slot again.
     this.retriggered = 0;
+    // Idle patches let go (`IDLE_RELEASE`).
+    this.released = 0;
     this.pending = new Map();
     // Scripts whose pool is growing for an owner (`#playScript`).
     this.growing = new Set();
@@ -470,6 +489,11 @@ export class EffectAudio {
       { template: script.script, level: 'high' }, layers, buffers,
       this.listener, this.headroom, true, this.rand);
     audio.setMaster(this.master);
+    // At the master's level now, not eased up to it: the bus is silent until
+    // the patch plays, and a patch made for the round that asked for it
+    // (`#claim`, or one let go and made again, `IDLE_RELEASE`) came in under
+    // a 50 ms ramp from nothing.
+    if (Number.isFinite(this.master) && audio.bus?.gain) audio.bus.gain.value = this.master * this.headroom;
     // Deliberately NOT started here. `EngineAudio.start()` holds a one-shot
     // back but plays every *looping* layer immediately, and a handful of
     // these scripts are loops: a wreck's fire (`e_PanzFire`, three `vefr*.wav`
@@ -564,6 +588,9 @@ export class EffectAudio {
       return 0;
     }
 
+    // A script whose idle patches were all let go, its samples still in hand:
+    // a patch now, in this frame.
+    if (!script.slots.length && script.buffers) this.#addSlot(script);
     if (!script.slots.length) {
       // A play stopped while its samples were still decoding must not start
       // afterwards: a rocket fired into the wall at the shooter's feet is
@@ -800,6 +827,9 @@ export class EffectAudio {
       for (const slot of script.slots) {
         const was = slot.since;
         slot.since += step;
+        // Its own clock, from when it was made: a patch the pool grew ahead
+        // of its first play has since Infinity and is not idle yet.
+        slot.idle = slot.busy || slot.follow ? 0 : slot.idle + step;
         // A moving attachment's slot tracks it every frame rather than
         // freezing at the point the play started — bounded by the slot
         // count already being walked here, not by anything proportional to
@@ -827,6 +857,14 @@ export class EffectAudio {
         if (!script.approaches && was < script.hold && slot.since >= script.hold) {
           slot.audio.disarmPending();
         }
+      }
+      // Idle patches are let go (`IDLE_RELEASE`).
+      for (let i = script.slots.length - 1; i >= 0; i--) {
+        const slot = script.slots[i];
+        if (!(slot.idle >= IDLE_RELEASE)) continue;
+        slot.audio.dispose();
+        script.slots.splice(i, 1);
+        this.released += 1;
       }
     }
   }
@@ -902,6 +940,7 @@ export class EffectAudio {
       stolen: this.stolen,
       inaudible: this.inaudible,
       retriggered: this.retriggered,
+      released: this.released,
       suspended: this.suspended,
       scripts,
     };

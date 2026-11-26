@@ -281,3 +281,37 @@ at the centre is 3 dB under a 2D one at pan 0, SND-31).
 - The client's Ghidra copy was open in the GUI again (`annotate.py` could not
   lock the project), so SND-30 and SND-31 are not annotated:
   `./annotate.py ~/ghidra-annotated bf1942-mp-enabler` with the GUI closed.
+
+## The pool let go: sound that breaks up over a long round (2026-11-26)
+
+A player watching owlserver's 1v1 (`q8uwcxrjcg`, Berlin, 26 minutes from
+52:48) heard the sound get "choppier and choppier" as the round went on; the
+owner has seen the same on low-end laptops, in retail too, where it ends with
+the sound dropping out.
+
+**Measured** (the live page headless, the round played straight through at
+2x, Web Audio nodes counted through weak references after a forced GC): 892
+live GainNodes and 110 PannerNodes at 53:50, 1,091 and 123 seven minutes on,
+still climbing, and 4,000-5,500 AudioParam automation calls a second. 668 of
+the gains were idle `effect-audio.js` patches: each bundle the level primed
+kept one, a busy script grew to eight, and none was ever let go. Every one is
+in the graph and every one is placed every frame (`EffectAudio.update`), and
+`#placePanner` wrote three ramps a panner a frame whether it had moved or not.
+A slow CPU's audio thread falls behind such a graph first.
+
+**Built**:
+- `effect-audio.js` `IDLE_RELEASE` (15 s): a patch with nothing owed or
+  followed for that long is disposed. Its samples stay decoded, so the next
+  play makes a patch in its own frame (`#playScript`), and a patch made is at
+  the master's level at once, not eased up from 0 over `GAIN_TAU`
+  (`#addSlot`; this also helps every patch `#claim` grows for a burst).
+- `engine-audio.js` `#placePanner`: a panner within `PLACE_EPSILON` (1 cm) of
+  the place last written is written nothing, unless the play snaps it.
+
+**Checked**: the same run with both modules swapped in: 160-350 live gains
+and 41-69 panners, rising and falling with the fighting, 1,200-3,000
+automation calls a second; 122 patches let go by 57:00.
+`tests/test_effect_audio.mjs`: three pooled shells patches kept for 14 s idle,
+all let go by 16 s, and the next round still ticks out of a patch made in its
+frame. Not checked on a slow laptop: headless, nothing here measures the
+audio thread's own load.
