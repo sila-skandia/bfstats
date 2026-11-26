@@ -75,7 +75,7 @@ const DISCORD_INVITE = 'https://discord.gg/6saqqTTYEM'
 const VC_REDIST = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
 // The newest recorder-v* release. Moved with every tag the recorder workflow
 // publishes (features/server-replay-recorder/README.md, "Releasing").
-const SERVER_VERSION = 'v0.3.0'
+const SERVER_VERSION = 'v0.3.1'
 const SERVER_RELEASE = `https://github.com/sila-skandia/bfstats/releases/tag/recorder-${SERVER_VERSION}`
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
 const SERVER_GUIDE_WINDOWS = `${SERVER_GUIDE}#windows-server`

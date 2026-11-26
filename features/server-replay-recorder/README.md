@@ -19,7 +19,7 @@ dead ends, is under [research/](research/README.md).
 | target | state |
 |---|---|
 | Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`, and the spawn screen's `spawnPick`. |
-| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Experimental, released (2026-11-03). Runs under Wine in the lab: 25 minutes of a 30-bot Wake co-op round, built as CI builds it, wrote 43,236 lines (objects, players, the level, the game's to-all events) with no fault. Since 2026-11-04 (not yet released) it also records shots, the bots' rolled shots, hits, impacts, hit directions and projectiles in flight, checked against the server's own tally in Wine lab rounds on Wake and El Alamein ([How it was checked](#how-it-was-checked)). Not yet run on a real Windows host. Records less than Linux ([Windows target](#windows-target)). |
+| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Experimental, released (2026-11-03). Runs under Wine in the lab: 25 minutes of a 30-bot Wake co-op round, built as CI builds it, wrote 43,236 lines (objects, players, the level, the game's to-all events) with no fault. Since 2026-11-04 (released in v0.3.0) it also records shots, the bots' rolled shots, hits, impacts, hit directions and projectiles in flight, checked against the server's own tally in Wine lab rounds on Wake and El Alamein ([How it was checked](#how-it-was-checked)). Not yet run on a real Windows host. Records less than Linux ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
 server needs its own table.
@@ -927,7 +927,7 @@ in (`recorder.log`), and a round played to its time limit passes
 A human playing too would show `hg` and `i` for a client's rounds, which the
 lab's bots-only rounds have not.
 
-The round split (2026-11-26, [One file a round](#one-file-a-round)) has met
+The round split (2026-11-26, released in v0.3.1, [One file a round](#one-file-a-round)) has met
 only the harness: a lab round on one level that restarts (`sv.startDelay`
 with a player minimum, or a round played to its end on a one-map rotation)
 should leave a file a round, each opening on its PREGAME at t 0.
