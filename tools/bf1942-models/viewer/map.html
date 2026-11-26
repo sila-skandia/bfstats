@@ -661,12 +661,29 @@ if (msaa.reason === 'intel-mesa') {
 // and imported only then, since its modules resolve three/webgpu and
 // three/tsl, which only the remaster import map names.
 const remasterGfx = REMASTER ? await import('./remaster-renderer.js') : null;
-const renderer = remasterGfx
-  ? await remasterGfx.createRemasterRenderer()
-  : new THREE.WebGLRenderer({
-    antialias: msaa.antialias,
-    preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
-  });
+let renderer;
+try {
+  renderer = remasterGfx
+    ? await remasterGfx.createRemasterRenderer()
+    : new THREE.WebGLRenderer({
+      antialias: msaa.antialias,
+      preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
+    });
+} catch (err) {
+  // No 3D at all: neither WebGL nor WebGPU starts. Chrome blocks both for a
+  // site after its GPU process crashes ("3D APIs blocked"), and with hardware
+  // acceleration off it has neither; Safari on some Macs loses every WebGL
+  // context. The page cannot draw, so it says so and goes no further, rather
+  // than a blank page and a throw from three's fallback backend.
+  console.error('[map] no renderer', err);
+  document.getElementById('gl-lost-title').textContent = 'This browser will not draw 3D right now';
+  document.getElementById('gl-lost-body').textContent = remasterGfx && globalThis.bfWebglDead
+    ? 'Neither WebGL nor WebGPU would start. After a graphics crash Chrome blocks 3D for the site until it restarts: quit the browser fully and open the page again. If that does not bring it back, check that hardware acceleration is on (chrome://gpu shows what is blocked).'
+    : 'WebGL would not start. After a graphics crash Chrome blocks 3D for the site until it restarts: quit the browser fully and open the page again. If that does not bring it back, check that hardware acceleration is on.';
+  document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
+  document.getElementById('gl-lost').hidden = false;
+  throw err;
+}
 const dprParam = Number(renderQuery.get('dpr'));
 const dprOverride = dprParam > 0 && dprParam <= 4 ? dprParam : null;
 // What the page draws at until OPTIONS > VIDEO's DISPLAY MODE is read

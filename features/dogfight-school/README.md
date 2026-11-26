@@ -1636,3 +1636,14 @@ above.
 - **The lines fly the school's own airframe,** one built from the battle's
   fighters, with its engines run up to the throttle the pilot was holding,
   not the live hull's engine state.
+
+### When neither will start (2026-11-26)
+
+Chrome blocks WebGL and WebGPU for a site after its GPU process crashes, until
+the browser restarts (also with hardware acceleration off). There the probe
+finds WebGL dead, map.html picks the remaster, WebGPU has no adapter, and three
+falls back to its WebGL backend, which threw `Cannot read properties of null
+(reading 'getSupportedExtensions')` on a blank page: every replay "did not
+load". map.html now catches a renderer that will not start, on either path,
+and shows the graphics card saying so (quit the browser fully, check hardware
+acceleration). Reproduced in Playwright Chromium with `--disable-3d-apis`.
