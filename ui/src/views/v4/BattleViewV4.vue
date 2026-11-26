@@ -73,10 +73,33 @@ const CLIENT_RELEASE = `https://github.com/sila-skandia/bf42plus/releases/tag/${
 const DISCORD_INVITE = 'https://discord.gg/6saqqTTYEM'
 // The DLL needs Microsoft's C++ runtime; the 32-bit one, as the game is 32-bit.
 const VC_REDIST = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
-// The newest recorder-v* release. Moved with every tag the recorder workflow
-// publishes (features/server-replay-recorder/README.md, "Releasing").
-const SERVER_VERSION = 'v0.3.1'
-const SERVER_RELEASE = `https://github.com/sila-skandia/bfstats/releases/tag/recorder-${SERVER_VERSION}`
+// The server recorder: always the newest recorder-v* release, never a tag written
+// here. Every recorder release is published as the repository's Latest
+// (.github/workflows/recorder.yml), so the button opens /releases/latest from the
+// first paint; once the page has asked GitHub, it names the version and opens that
+// release itself (`latestServerRelease`). Unanswered, the plain link stands.
+const SERVER_LATEST = 'https://github.com/sila-skandia/bfstats/releases/latest'
+const SERVER_RELEASES_API = 'https://api.github.com/repos/sila-skandia/bfstats/releases?per_page=20'
+const serverVersion = ref('')
+const serverRelease = ref(SERVER_LATEST)
+async function latestServerRelease() {
+  try {
+    const res = await fetch(SERVER_RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+    if (!res.ok) return
+    const list = await res.json()
+    const newest = Array.isArray(list)
+      ? list.find(r => !r?.draft && !r?.prerelease && /^recorder-v\d/.test(r?.tag_name ?? ''))
+      : null
+    if (!newest) return
+    serverVersion.value = newest.tag_name.replace(/^recorder-/, '')
+    if (typeof newest.html_url === 'string' && newest.html_url.startsWith('https://github.com/')) {
+      serverRelease.value = newest.html_url
+    }
+  } catch {
+    // GitHub unreachable or rate-limited: /releases/latest is still right.
+  }
+}
+onMounted(latestServerRelease)
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
 const SERVER_GUIDE_WINDOWS = `${SERVER_GUIDE}#windows-server`
 
@@ -322,9 +345,9 @@ const snippets = {
               nothing. To record your own games, use <a href="#bv-client" @click.prevent="toClient">BF42++</a>.
             </span>
           </p>
-          <a :href="SERVER_RELEASE" class="mm-download" target="_blank" rel="noopener">
+          <a :href="serverRelease" class="mm-download" target="_blank" rel="noopener" data-testid="battleview-server-download">
             <i class="pi pi-download" aria-hidden="true" />
-            <span>Download the server recorder {{ SERVER_VERSION }}</span>
+            <span>Download the server recorder{{ serverVersion ? ` ${serverVersion}` : '' }}</span>
           </a>
 
           <div class="mm-subtabs bv-os" role="tablist" aria-label="Server platform">

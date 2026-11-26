@@ -5,8 +5,8 @@ name: Server recorder
 # recorder.so for bf1942_lnxded and WINMM.dll for BF1942_w32ded.exe. A push
 # that touches the recorder runs its tests and uploads both builds as
 # workflow artifacts. A tag named recorder-v* also attaches them to a GitHub
-# release; each release also moves SERVER_VERSION in
-# ui/src/views/v4/BattleViewV4.vue and INSTALL.md's download line
+# release, published as the repository's Latest: /battleview's download button
+# and INSTALL.md's download line follow it with no edit
 # (features/server-replay-recorder/README.md, "Releasing").
 
 on:
@@ -140,8 +140,11 @@ jobs:
           **Windows, WINMM.dll** (experimental; mingw-w64, needs only kernel32 and msvcrt).
           For BF1942_w32ded.exe v1.61 (md5 1f75eb8b55ab5bb4d6782dd6f3be2e45). Copy WINMM.dll
           next to BF1942_w32ded.exe and put recorder.con beside it. On any other exe it stays
-          a plain winmm proxy and records nothing. It records objects, players and game events;
-          shots, hits and some vehicle detail are Linux-only for now. Its log is recorder.log.
+          a plain winmm proxy and records nothing. It records objects, players, game events, shots,
+          hits and impacts; some vehicle detail is Linux-only for now. Its log is recorder.log.
           NOTES
+          # --latest: /battleview's download button opens /releases/latest, so
+          # every recorder release takes the marker (publish-e2e-fixture.sh
+          # publishes with --latest=false).
           gh release create "$TAG" recorder.so recorder.so.sha256 WINMM.dll WINMM.dll.sha256 \
-            --title "Server recorder $TAG" --notes-file notes.md
+            --title "Server recorder $TAG" --notes-file notes.md --latest

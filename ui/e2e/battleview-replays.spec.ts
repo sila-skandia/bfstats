@@ -106,6 +106,35 @@ test.describe('BattleView replays', () => {
     await expect(page.getByTestId('battleview-os-windows')).toHaveText('Windows server')
   })
 
+  // The server recorder's button follows the newest recorder-v* release: no version is written
+  // into the page, so a release never leaves it pointing at the one before.
+  test('the server recorder download is the newest recorder release', async ({ page }) => {
+    await stub(page, [], [])
+    await page.route(/api\.github\.com\/repos\/sila-skandia\/bfstats\/releases/, route => route.fulfill({ json: [
+      { tag_name: 'recorder-v0.5.0', prerelease: true, draft: false, html_url: 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.5.0' },
+      { tag_name: 'e2e-fixture', prerelease: false, draft: false, html_url: 'https://github.com/sila-skandia/bfstats/releases/tag/e2e-fixture' },
+      { tag_name: 'recorder-v0.4.0', prerelease: false, draft: false, html_url: 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.4.0' },
+      { tag_name: 'recorder-v0.3.1', prerelease: false, draft: false, html_url: 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.3.1' },
+    ] }))
+
+    await page.goto('/battleview')
+
+    const download = page.getByTestId('battleview-server-download')
+    await expect(download).toHaveText('Download the server recorder v0.4.0')
+    await expect(download).toHaveAttribute('href', 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.4.0')
+  })
+
+  test('with GitHub unreachable the server recorder download is still the latest release', async ({ page }) => {
+    await stub(page, [], [])
+    await page.route(/api\.github\.com\//, route => route.fulfill({ status: 403, json: { message: 'API rate limit exceeded' } }))
+
+    await page.goto('/battleview')
+
+    const download = page.getByTestId('battleview-server-download')
+    await expect(download).toHaveText('Download the server recorder')
+    await expect(download).toHaveAttribute('href', 'https://github.com/sila-skandia/bfstats/releases/latest')
+  })
+
   // The release also carried a loader zip, and players took it: the button is the one file.
   test("the player download is dsound.dll itself, not the release page", async ({ page }) => {
     await stub(page, [], [])

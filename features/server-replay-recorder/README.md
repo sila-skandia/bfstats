@@ -91,12 +91,14 @@ Windows servers take `WINMM.dll` instead; its steps are in the same file
 A `recorder-v*` tag on a commit whose recorder workflow is green publishes
 `recorder.so` and `WINMM.dll` (`.github/workflows/recorder.yml`). A tag's
 release job runs only if both builds pass; a failed tag stays without a
-release, so the next try is a new version. With every release, point these
-at it in the same change:
-
-- `SERVER_VERSION` in `ui/src/views/v4/BattleViewV4.vue` (the /battleview
-  download button);
-- the `gh release download` line in [INSTALL.md](INSTALL.md).
+release, so the next try is a new version. The release is published as the
+repository's Latest (`--latest`), and nothing names a version to move with it
+(2026-11-27): the /battleview button opens `/releases/latest` and, once the
+page has asked GitHub's API, names the newest `recorder-v*` tag and links it
+(`ui/src/views/v4/BattleViewV4.vue` `latestServerRelease`); INSTALL.md's
+`gh release download` names no tag, so it takes the latest. A release of
+another kind in this repo must be published with `--latest=false`
+(`scripts/publish-e2e-fixture.sh` is), or it takes the button.
 
 ## The source
 

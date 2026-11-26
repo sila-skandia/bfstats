@@ -11,8 +11,9 @@ server admins how to install the server recorder, and where the recordings go
   the download button is that release's `dsound.dll` itself, which goes next to
   `BF1942.exe`; `plus.recordReplays 1` in the console turns it on and is saved
   to `bf42++.ini`.
-- Server recorder release `recorder-v0.3.0` (this repo, `SERVER_VERSION`),
-  under a Linux / Windows toggle (2026-11-03). Linux: `recorder.so` loaded with
+- The newest server recorder release (this repo's `recorder-v*`, whichever is
+  Latest; since 2026-11-27 the page names no version of its own), under a
+  Linux / Windows toggle (2026-11-03). Linux: `recorder.so` loaded with
   `LD_PRELOAD`, and `recorder.con` in the server root. Windows (experimental):
   `WINMM.dll` and `recorder.con` next to `BF1942_w32ded.exe`, checked through
   `recorder.log`. The full guide is
@@ -23,8 +24,11 @@ server admins how to install the server recorder, and where the recordings go
   it was the cover of recording `ymdy248edr` (Operation Battleaxe on
   MoonGamers.com), linking to that round.
 
-When a release moves, change the constants at the top of the page; every
-`recorder-v*` release moves `SERVER_VERSION`
+When a BF42++ release moves, change `CLIENT_TAG` at the top of the page. The
+server recorder's button needs no change: it opens `/releases/latest`, and once
+the page has asked GitHub's API (`latestServerRelease`) it names the newest
+`recorder-v*` tag and links that release; unanswered (offline, rate-limited)
+the version is left off and the plain link stands
 ([server-replay-recorder/README.md](../server-replay-recorder/README.md#releasing)).
 
 ## Watch now, latest round and Shorts (2026-11-04)
