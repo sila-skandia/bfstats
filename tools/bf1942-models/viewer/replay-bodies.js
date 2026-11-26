@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   aimAt, bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, lowerHeldByLod, nameAt, primaryWeaponFor, recordedDeath,
-  recordedFlight, rootOf, soldierLivesOf, stateEntries, teamAt,
+  recordedFlight, rootOf, shooterViewLag, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
@@ -387,6 +387,21 @@ export class ReplaySoldiers {
     actor.reloading = false;
   }
 
+  /** Whose client the camera shows the fight as: the followed player, while
+   *  the camera is on him (his eyes, or chasing or orbiting him); none in the
+   *  free camera or on a camera rig. */
+  viewerPid() {
+    const { camera, followPid } = this.player;
+    if (!camera || camera.mode === 'free' || camera.rig) return null;
+    return followPid ?? null;
+  }
+
+  /** Whether `nid` is `pid`'s soldier on foot at `t`, not a seat or a camera. */
+  onFoot(nid, t, pid) {
+    const root = rootOf(this.player.rec, nid, t, pid);
+    return Boolean(root?.life.soldier);
+  }
+
   /** One frame at recording time `t`. Each man is placed on his own: one
    *  whose record throws is left out of this frame (the player's guard warns
    *  once), and everyone after him is still placed and drawn. */
@@ -397,14 +412,30 @@ export class ReplaySoldiers {
     if (loadouts && !this.warming) this.warming = this.warmKits(loadouts);
     const guard = this.player.guard ?? null;
     const focus = this.player.focus;
+    // Through a followed player's eyes, the others on foot as his client drew
+    // them: behind by the rewind the server judged his rounds with
+    // (`shooterViewLag`), so the man under his crosshair is the man his hits
+    // land on. Drawn at the server's time a strafing target ran a stride
+    // ahead of every hit.
+    const viewer = this.viewerPid();
+    const lag = viewer === null ? 0 : shooterViewLag(rec, viewer, t);
     for (const pid of rec.playerNids?.keys() ?? []) {
       // Under a focus (the dogfight school's two pilots), no one else.
       if (focus && !focus.pids.has(pid)) continue;
-      const nid = controlledAt(rec, pid, t);
+      let nid = controlledAt(rec, pid, t);
       if (nid === null) continue;
+      let at = t;
+      if (lag > 0 && pid !== viewer) {
+        const back = t - lag;
+        const was = controlledAt(rec, pid, back);
+        // Only a man on foot both then and now: the rewind is a soldier's
+        // with no parent (a seat's rider is where his hull is), and across a
+        // boarding or a respawn he is drawn at the server's time.
+        if (was === nid && this.onFoot(nid, back, pid) && this.onFoot(nid, t, pid)) at = back;
+      }
       const actor = this.actorFor(pid, t);
       let drawn = false;
-      const place = () => { drawn = this.place(actor, pid, nid, t, hulls, loadouts); };
+      const place = () => { drawn = this.place(actor, pid, nid, at, hulls, loadouts); };
       if (guard) guard.item(`player ${pid}'s soldier`, actor, place);
       else place();
       if (drawn) this.drawn.push(actor);

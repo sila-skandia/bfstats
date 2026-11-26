@@ -392,6 +392,16 @@ confirmed:
   - The 0.1 s matches the client's 100 ms draw delay.
   - One reader. What the capsule test does with the rewound position is
     unread.
+  - **Measured in a live round (2026-11-26).** q8uwcxrjcg (Berlin, two
+    humans at 22 and 34 ms on the board): of 162 recorded `i` impacts on a
+    soldier moving faster than 2.5 m/s, the impact lies on his `s` path a
+    median 150 to 160 ms back, `min(ping, 0.2) + 0.1` and one 30 Hz sample
+    (the pose rows are written after the tick has moved him). The replay now
+    draws the others on foot that far back while the camera is on a player
+    (`replay-recording.js` `shooterViewLag`, `replay-bodies.js` `update`):
+    the median impact went from 0.68 m off the drawn man's axis to 0.12 m,
+    and the owner's report (hits landing beside a man strafing left, 0:54:34
+    and 0:57:42) is closed (`tests/test_replay_view_lag.py`).
 - **What follows (inferred):**
   - BF1942 compensates infantry hits the way Valve's design does
     ([Bernier, 2001](https://developer.valvesoftware.com/wiki/Latency_Compensating_Methods_in_Client/Server_In-game_Protocol_Design_and_Optimization)).

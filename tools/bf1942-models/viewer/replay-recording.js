@@ -2263,6 +2263,43 @@ export function controlledAt(rec, pid, t) {
   return list[lo].nid;
 }
 
+/** `BFSoldierTemplate::latency` (`collisionLatency`, 0.1 s, no vanilla `.con`
+ *  sets it) and the 0.2 s the shooter's ping is capped at, in
+ *  `BFSoldier::getLatencyPosition` (lnxded `0x08271c00`). */
+export const COLLISION_LATENCY = 0.1;
+export const LATENCY_PING_CAP = 0.2;
+
+/**
+ * Seconds behind recording time `t` that `pid`'s client drew a soldier on
+ * foot, which is where the server judged his rounds against one: the server
+ * rewinds the target by `min(ping, 0.2 s) + collisionLatency`
+ * (`getLatencyPosition`, features/battle-schools/infantry.md A6), so an `i`
+ * on a running man lies where the shooter saw him, not where the `s` rows
+ * have him. One sample more: the pose rows are written after the tick has
+ * moved him, the rewind's ring before. Measured on q8uwcxrjcg (Berlin,
+ * 2026-11-25): 162 hits on a moving soldier, impacts on his path 150 to 160
+ * ms back at pings of 22 and 34 ms; the median impact lay 0.68 m off the
+ * man's axis at the server's time and lies 0.12 m off it, inside his body,
+ * at this lag. 0 for a pid with no ping on the board (a bot, which no client
+ * drew for, or an older file).
+ */
+export function shooterViewLag(rec, pid, t) {
+  if (pid === null || pid === undefined) return 0;
+  const list = rec.playerStats?.get(pid);
+  if (!list?.length || t < list[0].t) return 0;
+  let lo = 0;
+  let hi = list.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (list[mid].t <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  const ping = list[lo].ping;
+  if (!(ping > 0)) return 0;
+  const period = rec.sampleHz > 0 ? 1 / rec.sampleHz : SERVER_PERIOD;
+  return Math.min(ping / 1000, LATENCY_PING_CAP) + COLLISION_LATENCY + period;
+}
+
 /**
  * The hull a controlled network id belongs to, as `{ life, seat }`: the life
  * itself with seat 0 when it is a root object, else the root whose id the
