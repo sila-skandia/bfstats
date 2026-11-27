@@ -826,7 +826,7 @@ export function createProvingGroundScreen({
     const s = stage();
     const [x, y, w, h] = BOX;
     const out = { left: r.left + s.ox + x * s.sx, top: r.top + s.oy + y * s.sy, width: w * s.sx, height: h * s.sy };
-    if (r.height - (s.oy + 600 * s.sy) > 1) {
+    if (s.portrait && r.height - (s.oy + 600 * s.sy) > 1) {
       const mute = document.querySelector('.ld-mute-btn')?.getBoundingClientRect();
       if (mute?.height) out.top = Math.max(out.top, mute.bottom + GUTTER);
       out.left = r.left + GUTTER;

@@ -125,18 +125,32 @@ export function condOk(c, vars) {
 
 export const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars));
 
+/** The most CSS pixels one menu unit is drawn at: 1280 across the 800-unit
+ *  stage. Past it the menu stops growing with the window and sits centred
+ *  in black, the way a game run at a fixed resolution sits in a bigger
+ *  screen. Without it a large display (a laptop at "More Space", a 27-inch
+ *  monitor) drew the tab strip at 280 by 70 CSS pixels a plate, three times
+ *  the size of the REPLAY feed's own text under it. */
+export const MAX_STAGE_SCALE = 1.6;
+
 /** Virtual-to-stage mapping. The game stretches 800x600 to the display; at
  *  a narrower aspect than 4:3 a uniform scale is used instead so the panels
  *  do not turn to slivers — the same rule `map.html` follows for the spawn
  *  screen. That stage sits at the top of the screen, not centred: on a phone
- *  held upright a centred menu left a black band above it. */
+ *  held upright a centred menu left a black band above it, and `portrait`
+ *  tells the screens with a feed under the strip to grow it into the space
+ *  below. Either way the scale stops at `MAX_STAGE_SCALE`: a wide stage keeps
+ *  the window's stretch and is centred in it, a narrow one stays at the top. */
 export function stageScale(width, height, virtual = [800, 600]) {
   const [vw, vh] = virtual;
   if (width / height < vw / vh) {
-    const s = Math.min(width / vw, height / vh);
-    return { sx: s, sy: s, ox: (width - vw * s) / 2, oy: 0 };
+    const s = Math.min(width / vw, height / vh, MAX_STAGE_SCALE);
+    return { sx: s, sy: s, ox: (width - vw * s) / 2, oy: 0, portrait: true };
   }
-  return { sx: width / vw, sy: height / vh, ox: 0, oy: 0 };
+  const k = Math.min(1, MAX_STAGE_SCALE / (width / vw));
+  const sx = (width / vw) * k;
+  const sy = (height / vh) * k;
+  return { sx, sy, ox: (width - vw * sx) / 2, oy: (height - vh * sy) / 2, portrait: false };
 }
 
 /** Stage pixels back to virtual units, for hit-testing a pointer. */
@@ -328,6 +342,31 @@ export function paintMenu(ctx, layout, state, env, showBotSettings = SHOW_BOT_SE
   ctx.globalAlpha = 1;
 }
 
+/** The menu's backdrop plate (`menu/Background`'s still, or the movie in
+ *  its place) on a stage that `MAX_STAGE_SCALE` has left narrower than the
+ *  canvas: the band runs out to the canvas's left and right edges, scaled
+ *  up evenly from the stage's own and cropped top and bottom to the plate's
+ *  rows, so a large window shows the menu's art edge to edge rather than a
+ *  centred picture in black. False when there is nothing to widen: the
+ *  caller draws the plate as the file has it. */
+function paintBackdrop(ctx, el, layout, img) {
+  const [x, y, w, h] = el.rect;
+  if (el.texture !== 'background' || x !== 0 || w !== (layout?.virtual?.[0] ?? 800)) return false;
+  const m = ctx.getTransform?.();
+  if (!m || !m.a) return false;
+  const left = -m.e / m.a;
+  const width = ctx.canvas.width / m.a;
+  if (width <= w + 0.5) return false;
+  const f = width / w;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, y, width, h);
+  ctx.clip();
+  ctx.drawImage(img, left, y + h / 2 - (h * f) / 2, width, h * f);
+  ctx.restore();
+  return true;
+}
+
 /** One leaf: fill, picture, button or text. Screen-agnostic - every
  *  `kind` it handles is keyed off the element itself, not which page it
  *  came from - so `mod-picker.js` reuses it for the Custom Game dialog's
@@ -348,7 +387,7 @@ export function paintElement(ctx, el, layout, state, env) {
       const img = name ? env.texture(name) : env.thumbnail(state.level);
       if (!img) break;
       ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
-      ctx.drawImage(img, x, y, w, h);
+      if (!paintBackdrop(ctx, el, layout, img)) ctx.drawImage(img, x, y, w, h);
       break;
     }
     case 'button': {

@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   ALLIED, AXIS, condOk, elementVisible, hitTest, inRect, listBox, livePages,
   measureText, menuVars, pageElements, paintMenu, rowArea, rowAt, scrollTo,
-  stageScale, thumbSpan, toVirtual, trackRect, visibleRows,
+  stageScale, MAX_STAGE_SCALE, thumbSpan, toVirtual, trackRect, visibleRows,
   SHOW_BOT_SETTINGS, SINGLEPLAYER_GAME, botSettingsEdge,
 } from '../viewer/play/menu-screen.js';
 
@@ -246,19 +246,32 @@ assert.ok(box, 'the layout has a list box');
 
 {
   // 4:3 and wider: the game stretches 800x600 to fill.
-  const wide = stageScale(1600, 1200, [800, 600]);
-  assert.deepEqual([wide.sx, wide.sy, wide.ox, wide.oy], [2, 2, 0, 0]);
-  const ultra = stageScale(1600, 900, [800, 600]);
-  assert.equal(ultra.sx, 2);
-  assert.equal(ultra.sy, 1.5);
+  const wide = stageScale(1200, 900, [800, 600]);
+  assert.deepEqual([wide.sx, wide.sy, wide.ox, wide.oy], [1.5, 1.5, 0, 0]);
+  const ultra = stageScale(1200, 450, [800, 600]);
+  assert.equal(ultra.sx, 1.5);
+  assert.equal(ultra.sy, 0.75);
   // Narrower than 4:3: uniform, so nothing turns to a sliver, and drawn from
   // the top so a phone held upright shows no black band above the menu.
   const tall = stageScale(400, 800, [800, 600]);
   assert.equal(tall.sx, tall.sy);
   assert.equal(tall.sx, 0.5);
   assert.equal(tall.oy, 0);
+  assert.ok(tall.portrait && !wide.portrait);
+  // A large window stops growing the menu at MAX_STAGE_SCALE CSS pixels a
+  // unit: the stage keeps the window's stretch and is centred in it.
+  const big = stageScale(3200, 1800, [800, 600]);
+  assert.equal(big.sx, MAX_STAGE_SCALE);
+  assert.equal(big.sy, MAX_STAGE_SCALE * 0.75);
+  assert.equal(big.ox, (3200 - 800 * big.sx) / 2);
+  assert.equal(big.oy, (1800 - 600 * big.sy) / 2);
+  const [cx, cy] = toVirtual(big, 1600, 900);
+  assert.deepEqual([cx, cy].map(Math.round), [400, 300], 'the window centre is the stage centre');
+  const tallBig = stageScale(2400, 4000, [800, 600]);
+  assert.equal(tallBig.sx, MAX_STAGE_SCALE);
+  assert.equal(tallBig.oy, 0);
 
-  const [vx, vy] = toVirtual(wide, 800, 600);
+  const [vx, vy] = toVirtual(wide, 600, 450);
   assert.deepEqual([vx, vy], [400, 300]);
   assert.ok(inRect([10, 10, 20, 20], 15, 15));
   assert.ok(!inRect([10, 10, 20, 20], 30, 15), 'the right edge is exclusive');

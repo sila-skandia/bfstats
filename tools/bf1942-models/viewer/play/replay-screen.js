@@ -71,7 +71,7 @@ export function createReplayScreen({
     const s = stage();
     const [x, y, w, h] = FEED_BOX;
     const box = { left: r.left + s.ox + x * s.sx, top: r.top + s.oy + y * s.sy, width: w * s.sx, height: h * s.sy };
-    if (r.height - (s.oy + 600 * s.sy) > 1) {
+    if (s.portrait && r.height - (s.oy + 600 * s.sy) > 1) {
       // Letterboxed: the rest of the screen, under the strip and the music
       // switch in the corner (loading-audio-ui.js), which sits lower than the
       // strip on a narrow screen.
