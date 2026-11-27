@@ -626,5 +626,26 @@ class ShipFloaterBreakerTests(unittest.TestCase):
         self.assertAlmostEqual(parent["turned"], root["turned"], delta=5)
 
 
+
+class ShipStaticRootTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()
+
+    def test_a_static_root_turns_its_engine_and_never_moves(self) -> None:
+        """PHY-17: a `hasMobilePhysics 0` root (DC's `Nimitz_Static*`) has a
+        `StaticPhysicsNode` that drops every push, while its Engine's
+        PhysicsEngine still runs: full throttle for 10 s turns the gearbox,
+        which the helm's engine sound plays on, and the hull stays put."""
+        r = self.out["staticRoot"]
+        self.assertTrue(r["still"]["staticBody"])
+        self.assertEqual(0, r["still"]["moved"])
+        self.assertEqual(0, r["still"]["turned"])
+        self.assertEqual(0, r["still"]["speed"])
+        # held down by the load of a hull at rest: 0.403 (2026-11-27)
+        self.assertGreater(r["still"]["revs"], 0.2)
+        self.assertFalse(r["mobile"]["staticBody"])
+        self.assertGreater(r["mobile"]["moved"], 5)
+
 if __name__ == "__main__":
     unittest.main()

@@ -684,4 +684,23 @@ function buildBreakerFletcher() {
   };
 }
 
+// --- a root with `hasMobilePhysics 0` runs its engine and never moves -------
+// DC's `Nimitz_Static*` (PHY-17): the static node drops every push, the
+// Engine's own PhysicsEngine still turns the gearbox.
+{
+  const run = mobile => {
+    const { hull, scene } = buildFletcher();
+    if (!mobile) hull.userData.physics.hasMobilePhysics = false;
+    const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+    const p0 = ship.state.position.clone();
+    const q0 = ship.state.orientation.clone();
+    ship.setInput('c_PIThrottle', 1);
+    for (let i = 0; i < 600; i++) ship.integrate(1 / 60);
+    return { staticBody: ship.staticBody, moved: +ship.state.position.distanceTo(p0).toFixed(4),
+             turned: +ship.state.orientation.angleTo(q0).toFixed(6), revs: +Math.abs(ship.revs).toFixed(3),
+             speed: +ship.state.velocity.length().toFixed(4) };
+  };
+  out.staticRoot = { still: run(false), mobile: run(true) };
+}
+
 console.log(JSON.stringify(out));

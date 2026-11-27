@@ -582,6 +582,15 @@ export function createVehicleEntry(page) {
     return out;
   }
 
+  /** What the Use press would do from the seat held now: `{ allowed,
+   *  mirrored }` of the restricted-exit test (SEAT-42), or null on foot. */
+  function exitVerdict() {
+    if (!page.occupancy) return null;
+    const vehicle = !page.mannedActive() && (page.aircraft || page.car);
+    const exit = vehicle ? exitPose(vehicle) : exitPoseManned(page.occupancy);
+    return { allowed: !!exit.allowed, mirrored: !!exit.mirrored };
+  }
+
   Object.assign(vehicleEntry, {
     collectEntryPoints,
     enterVehicle,
@@ -590,6 +599,7 @@ export function createVehicleEntry(page) {
     exitPoseManned,
     exitSeat,
     exitVehicle,
+    exitVerdict,
     heldEntry,
     isWreck,
     nearestEntry,

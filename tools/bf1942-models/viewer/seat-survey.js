@@ -445,7 +445,13 @@ const ENGINE_DRIVE_KIND = {
  * `c_ETShip` and stay where the level put them; the helm is still a seat.
  */
 export function rootDriveKind(seat) {
-  if (seat?.mobilePhysics === false) return null;
+  // A static sea hull with a ship's engine (DC's `Nimitz_Static*`): its helm
+  // runs the engine and the hull never moves (`ship.js` `staticBody`, PHY-17).
+  // Any other static root drives nothing.
+  if (seat?.mobilePhysics === false) {
+    const types = seat.engineTypes?.length ? seat.engineTypes : (seat.engineType ? [seat.engineType] : []);
+    return seat.vehicleCategory === 'VCSea' && types.includes('c_ETShip') ? 'ship' : null;
+  }
   const types = seat?.engineTypes?.length ? seat.engineTypes
     : (seat?.engineType ? [seat.engineType] : []);
   if (!types.length) return null;

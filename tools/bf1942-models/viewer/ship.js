@@ -272,6 +272,9 @@ export class Ship extends Aircraft {
     // Its ramps hold where the key left them (a Daihatsu's, an LCVP's), as a
     // land hull's selectors do (`vehicle-base.js` `holdsAngle`).
     this.holdsKeyAxes = true;
+    /** `hasMobilePhysics 0`: the engine runs, the hull never moves
+     *  (`#staticTick`, PHY-17). */
+    this.staticBody = node?.userData?.physics?.hasMobilePhysics === false;
     /** The flat sea. `PatchTerrain::getWaterLevel(x, z)` `0x083d7a80` discards
      *  both arguments, so one scalar is the whole of it — and it is what makes
      *  the rudder's `medium()` return 10 instead of 1. */
@@ -963,6 +966,7 @@ export class Ship extends Aircraft {
     law.clock = Math.max(0, law.clock - ticks * SHIP_TICK);
     if (ticks > 8) ticks = 8;
     for (let i = 0; i < ticks; i++) {
+      if (this.staticBody) { this.#staticTick(); continue; }
       // A hull going down: the offset first, once a tick (`armSinking`).
       if (this.sinking) {
         for (const float of this.floats) {
@@ -1003,6 +1007,26 @@ export class Ship extends Aircraft {
     s.airspeed = s.velocity.length();
     this.applyTransform();
     this.applyRig();
+  }
+
+  /**
+   * One tick of a root whose template writes `hasMobilePhysics 0` (DC's
+   * `Nimitz_Static*`, PHY-17). Its physics node is a `StaticPhysicsNode`,
+   * whose update and every adder are a bare `ret`, so the hull never moves;
+   * but its Engine's `PhysicsEngine` is registered with the manager on its own
+   * (`EngineTemplate::setPhysicsNodeComponent`) and runs `updatePhysics`
+   * every tick, so the helm's throttle still turns the gearbox, the load
+   * still comes back from a hull at rest, and `NimitzEngine.ssc` plays on
+   * those revs. The tick runs whole and the body is put back where it was.
+   */
+  #staticTick() {
+    const s = this.state, law = this.law;
+    const b = this.#save();
+    shipTick(this, law, this.input('c_PIThrottle'), this.input('c_PIYaw'), this.engineRunning !== false);
+    s.position.copy(b.position); s.orientation.copy(b.orientation);
+    s.velocity.set(0, 0, 0); s.angularVelocity.set(0, 0, 0);
+    law.acc.set(0, 0, 0); law.racc.set(0, 0, 0); law.fr.set(0, 0, 0); law.rfr.set(0, 0, 0);
+    s.grounded = false;
   }
 
   /** One tick of the page's own beaching model (`Aircraft.integrate`'s pedal

@@ -120,9 +120,9 @@ TREES = ["textures", "glbs", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
 # Mods kept in the local tree but removed from the volume (owner's call): their
 # files are never sent, and their rows are stripped from models/mods.json on the
-# way up. dc_final: deleted remotely 2026-10-19, local tree kept for when DC
-# parity resumes.
-UNPUBLISHED_MODS = {"dc_final"}
+# way up. None now: dc_final, deleted remotely 2026-10-19 and kept locally,
+# was re-imported whole and published again on 2026-11-27 (owner's call).
+UNPUBLISHED_MODS: set[str] = set()
 UNIT_BYTES = 48 * 1000 * 1000
 # skins.state.json is extract_viewmodel's machine-local fingerprint cache for
 # `--delta` (mtimes of this PC's archives and trees): meaningless on the

@@ -289,6 +289,8 @@ export function installVehicleHooks(page) {
       z: +s.position.z.toFixed(3),
       keel: +page.localPlayer.aircraft.keel.toFixed(3), underWater: +page.localPlayer.aircraft.underWater().toFixed(3),
       aground: !!page.localPlayer.aircraft.aground,
+      // `hasMobilePhysics 0` (PHY-17): the engine runs, the hull never moves.
+      staticBody: !!page.localPlayer.aircraft.staticBody,
       // The RAW bed under her origin. `Ship.groundHeight` now answers the
       // footprint's floor (a synthetic number the clamp reads), so a trace that
       // wants "what is under her" has to ask `bedHeight`.
@@ -737,6 +739,9 @@ export function installVehicleHooks(page) {
   };
   // E from whatever seat the player holds, through the page's own exit.
   // `press` (default true): through the restricted-exit gate as E is (SEAT-42).
+  // The restricted-exit verdict for the seat held (SEAT-42): whether the Use
+  // press would let the soldier out, and through the mirrored door.
+  window.__exitVerdict = () => page.exitVerdict?.() ?? null;
   window.__exitSeat = ({ press = true } = {}) => {
     if (!page.localPlayer.occupancy) return false;
     page.exitSeat({ press });

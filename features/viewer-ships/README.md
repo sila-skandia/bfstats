@@ -1365,6 +1365,13 @@ in vanilla, the two packs, DC or DC Final sets the word to 1. What 1 would
 do, a gun that fires on its own every time it is ready, is recorded in FA-4
 and is not built.
 
+Follow-up, 2026-11-27: the helm is no longer a bare seat. The static node
+drops every push, but the Engine's `PhysicsEngine` runs on its own, so the
+carrier's helm is a `Ship` with `staticBody` set (`#staticTick`): the gearbox
+turns under the throttle (revs 0.40 at full throttle, held down by a hull at
+rest) and `NimitzEngine.ssc` plays, while the pose and velocity stay the
+level's. `isSeaHull` and the body worlds treat it as before.
+
 ## 26. A hull ashore keeps no spin (2026-10-06)
 
 The DC census ran Midway's OSA-2 into the beach at 35 m/s. She came out of

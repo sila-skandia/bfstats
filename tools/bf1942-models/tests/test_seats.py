@@ -225,17 +225,19 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("air", kinds["tomahawk"])
         self.assertNotEqual("air", kinds["torpedoOnly"])
 
-    def test_a_root_without_mobile_physics_drives_nothing(self) -> None:
+    def test_a_root_without_mobile_physics_runs_its_engine_and_never_moves(self) -> None:
         """PHY-17: `setPhysicsNodeComponent` (`0x081dd490`) gives a template
         whose `+0x70` bit 0 is clear a `StaticPhysicsNode`, whose update and
-        every adder is a bare `ret`; an Engine pushes on the root's node, so
-        DC's `Nimitz_Static*` (`hasMobilePhysics 0`, a `c_ETShip` aboard)
-        never moves. The helm stays a seat, entry points and all, and
-        vanilla's Enterprise (no key stamped) is still a ship."""
+        every adder is a bare `ret`, so DC's `Nimitz_Static*`
+        (`hasMobilePhysics 0`, a `c_ETShip` aboard) never moves; its Engine's
+        own PhysicsEngine still runs, so the helm is a ship's that stands
+        still (`ship.js` `staticBody`, `test_ship.py`). Until 2026-11-27 it
+        was a bare seat and the helm was silent. A static root with no ship's
+        engine drives nothing; vanilla's Enterprise is still a ship."""
         static = self.results["staticRoot"]
-        self.assertEqual("seat", static["nimitzStatic"])
-        self.assertFalse(static["drivable"])
-        self.assertIsNone(static["drive"])
+        self.assertEqual("ship", static["nimitzStatic"])
+        self.assertTrue(static["drivable"])
+        self.assertEqual("seat", static["staticPlane"])
         self.assertEqual(1, static["entries"])
         self.assertEqual("ship", static["enterprise"])
         self.assertEqual("ship", static["stampedMobile"])

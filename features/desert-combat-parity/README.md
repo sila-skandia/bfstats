@@ -278,24 +278,30 @@ All 48 of DC Final's own levels went through `mod_pipeline.py` into
 - Battle of Britain's `Britain_Factory_AI` refusing the use key is retail
   (SEAT-42: restricted exit, `rubble03_m1` 2.5 m off both sides); accepted.
 
-Open, with what was measured:
+Followed up the same day:
 
-- **EE-9 steers the wrong way at speed.** Right (D) yaws it right at 9 m/s
-  (Urban Siege, +94 deg) and left at 18-22 m/s (Twin Rivers -81 to -97 deg,
-  three runs; DustBowl +0.24 rad/s for the first moments, then -73 deg). Its
-  steered front pair is `c_PGFEngineGrip` under `c_PIYaw` bundles at -1.96 m,
-  the middle pair `c_PGFRollGripWhenOccupied`, the rear pair engine grip;
-  `tracked-vehicle.js` drives it. The DPV at 21.6 m/s turns the right way.
-  What retail does at that speed is unread: the next step is the friction
-  sum's per-wheel weighting at speed against `ResponsePhysics::addFriction`
-  `0x0825c1b0`, or a lab capture of the EE-9 at speed.
-- **The static Nimitz's helm is silent.** `Nimitz_Static_Heli` writes
-  `hasMobilePhysics 0`, so the page builds no drive for it and no engine audio
-  (`veh.no-engine-sound`, DC_Sea_Rigs). Retail runs the Engine regardless
-  (PHY-17 makes only the physics node static) and `NimitzEngine.ssc` would
-  play, but what the rev state does on a `StaticPhysicsNode` (whether
-  `updatePhysics` advances it) is unread, so its pitch cannot be drawn
-  honestly yet.
+- **The EE-9 steers right.** On flat ground it turns right at every speed from
+  0 to 26 m/s (`surveys/probe_steer_at_speed.mjs`: +4 to +5 degrees in the
+  first half second, +34 to +58 over two). On Twin Rivers the audit's drive
+  had it reach a wall at 22.4 m/s as D went down: a hull contact of normal y
+  0.004, 14 m/s lost in four frames, five of six wheels off the ground, and
+  the wall slewed it left. The audit now reads a wall in that half second as
+  `veh.steer-hit-wall` (info), not a reversed steer.
+- **The static Nimitz's helm has its engine.** PHY-17's static node drops
+  every push, but the Engine's own `PhysicsEngine` is registered with the
+  manager apart from it and runs `updatePhysics` each tick, so the gearbox
+  turns under the throttle. A `hasMobilePhysics 0` `VCSea` root with a
+  `c_ETShip` is now a ship whose body never moves (`ship.js` `staticBody`):
+  in the page, full throttle for 8 s leaves it 0 m from where the level put
+  it at revs 0.40 (the load of a hull at rest), and `NimitzEngine.ssc` plays
+  (7 layers, 6 audible). Any other static root still drives nothing.
+- **A truck parked between two buildings.** DC_Al_Nas_Day2's `nx_M-923`
+  refused the Use press because the audit's drive left it with
+  `DC_urbanwall_tower1_m1_5` 2.3 m off one door and `DC_mktbldg6_m1` 2.0 m
+  off the other: a restricted exit with both doors blocked does nothing in
+  retail either (SEAT-42). The audit reads the page's own verdict
+  (`__exitVerdict`) and records `veh.exit-blocked-both-sides` (info), then
+  leaves by a forced exit; the Battle of Britain factory is the same case.
 
 ## Open
 

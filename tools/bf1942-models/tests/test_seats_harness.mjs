@@ -394,7 +394,8 @@ function stationaryBrowning() {
 //
 // DC's `Nimitz_Static*` carriers write `hasMobilePhysics 0` on the root and
 // carry a `c_ETShip`; the exporter stamps `physics.hasMobilePhysics = false`
-// on such a root only. The helm stays a seat with its entry points.
+// on such a root only. Its helm is a ship's that never moves (`ship.js`
+// `staticBody`): the engine runs, every push is dropped.
 {
   const carrier = (name, mobile) => {
     const physics = { mass: 25000000, vehicleCategory: 'VCSea', vehicleType: 'VTCarrier' };
@@ -413,7 +414,11 @@ function stationaryBrowning() {
     stampedMobile: classifyRoot(carrier('Mobile', true)),
     entries: listEntryPoints(staticNimitz).length,
     drivable: DRIVE_KINDS.includes(occ.rootKind),
-    drive: occ.ensureDrive(null, {}) ?? null,
+    // A static root with no ship's engine (FHSW's `Me163b`, XPack2's
+    // `Jetpack`) still drives nothing.
+    staticPlane: classifyRoot(node('Me163b', { control: 'Me163b', templateKind: 'PlayerControlObject',
+      physics: { mass: 1000, vehicleCategory: 'VCAir', hasMobilePhysics: false } },
+      node('Me163bEngine', { templateKind: 'Engine', control: 'Me163b', physics: { engineType: 'c_ETPlane' } }))),
   };
 }
 

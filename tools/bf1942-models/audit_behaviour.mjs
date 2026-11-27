@@ -691,7 +691,18 @@ async function testGround(s, tpl, level, rec, cls) {
   // The direction is read after half a second: a truck at 13 m/s that holds D for
   // 2.5 s comes round past 180 degrees, where the nose's projection on the old
   // right vector turns negative for a turn that went the right way.
-  await s.step(30);
+  // A hull that meets a wall in that half second is turned by the wall, not
+  // its wheels: a six-wheeled car that drove into one at 22.4 m/s as D went
+  // down lost 14 m/s in four frames, climbed it on one wheel and slewed left
+  // (2026-11-27), where on flat ground it steers right at every speed
+  // (`surveys/probe_steer_at_speed.mjs`).
+  let wall = null;
+  for (let i = 0; i < 6; i++) {
+    await s.step(5);
+    const c = await s.ev(() => (window.__drive?.()?.state?.()?.hullContacts ?? [])
+      .find(x => Math.abs(+x.normalY) < 0.7) ?? null);
+    if (c && !wall) wall = { normalY: +(+c.normalY).toFixed(2), at: (c.at ?? []).map(v => +(+v).toFixed(1)) };
+  }
   const hA = await s.ev(() => window.__hull());
   const fA = hA.axes;
   const flat = (a, b) => (finite(a.pos) && finite(b.pos) ? Math.hypot(b.pos[0] - a.pos[0], b.pos[2] - a.pos[2]) : 0);
@@ -723,7 +734,11 @@ async function testGround(s, tpl, level, rec, cls) {
   const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp, loadedShare,
     net: mirror * turnedSum, dtNet: 2.5 });
   if (v.lead) rec.steer_lead = v.lead;
-  if (v.verdict === 'reversed') {
+  if (v.verdict === 'reversed' && wall) {
+    rec.steer_wall = wall;
+    add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.steer-hit-wall',
+      evidence: `the hull met a wall (contact normal y ${wall.normalY} at ${wall.at.join('/')}) in the half second D was judged on; the turn is the wall's, not the wheels'` });
+  } else if (v.verdict === 'reversed') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
       evidence: `D (right) turned the nose ${turnA.toFixed(2)} rad in 0.5 s at a prior yaw rate of ${preRate.toFixed(2)} rad/s (D's own share ${v.induced.toFixed(2)})` });
     rec.failed = true;
@@ -1046,6 +1061,17 @@ async function testShip(s, tpl, level, rec) {
   await s.ev(() => window.__keys.delete('KeyW'));
   rec.speed = h1 ? +h1.speed.toFixed(1) : null;
   const moved = Math.hypot(h1.x - h0.x, h1.z - h0.z);
+  // A static root (`hasMobilePhysics 0`, PHY-17) is not sailed: its throttle
+  // turns the gearbox and the hull stays where the level put it.
+  if (h1?.staticBody) {
+    rec.static = { moved: +moved.toFixed(3), revs: h1.revs };
+    if (moved > 0.01 || !(Math.abs(h1.revs) > 0.05)) {
+      add({ check: 'ship.sail', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.static-root-wrong',
+        evidence: `a static root under 8 s of full throttle: moved ${moved.toFixed(3)} m, revs ${h1.revs}` });
+      rec.failed = true;
+    }
+    return;
+  }
   if (!finite([h1.x, h1.y, h1.z])) {
     add({ check: 'ship.sail', level, template_or_kit: tpl, severity: 'blocker', cause_key: 'veh.nan-state',
       evidence: 'non-finite position under throttle' });
@@ -1779,7 +1805,21 @@ async function testVehicle(s, v, tpl, level, team, rec) {
     await s.open();
     await s.spawn(team);
   }
-  const left = consumed || died || await leave(s);
+  let left = consumed || died || await leave(s);
+  // A restricted exit with both doors blocked refuses the Use press in the
+  // engine too (SEAT-42, `isAllowedToExit` 0x08317490): the drive test can
+  // park a hull between two buildings, a level can stand one against a wall.
+  // The seat is left by a forced exit and the row says which it was.
+  if (!left) {
+    const verdict = await s.ev(() => window.__exitVerdict?.() ?? null);
+    if (verdict && verdict.allowed === false) {
+      add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.exit-blocked-both-sides',
+        retail_faithful: true,
+        evidence: 'restricted exit: both doors blocked by objects where the hull stands, so the Use press does nothing (SEAT-42); left by a forced exit' });
+      left = await s.ev(() => window.__exitSeat?.({ press: false }));
+      if (left) await s.step(10);
+    }
+  }
   if (!left) {
     add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.exit-refused',
       evidence: '__exitSeat never returned the soldier to foot' });
