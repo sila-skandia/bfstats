@@ -12,6 +12,10 @@ public class ReplayShort
     public string Slug { get; set; } = "";
     public string RecordingSlug { get; set; } = "";
 
+    /// <summary>Its recording's game (features/bfv-through-bfstats): which site lists it and
+    /// which game's folder its files are in.</summary>
+    public string Game { get; set; } = api.Recordings.RecordingGames.Bf1942;
+
     /// <summary>Seconds into the recording.</summary>
     public double KillTime { get; set; }
 

@@ -68,6 +68,9 @@ public sealed class ShortService(
         return new ShortPlayersDto([.. rows.Select(r => new ShortPlayerDto(r.Name, r.Shorts, r.AsKiller))]);
     }
 
+    public async Task<string?> GameAsync(string slug, CancellationToken ct) =>
+        await db.ReplayShorts.AsNoTracking().Where(s => s.Slug == slug).Select(s => s.Game).FirstOrDefaultAsync(ct);
+
     /// <param name="kind">Comma-separated kinds (<see cref="ShortKinds"/>), the strip's
     /// filters; null or blank is every kind, and one naming no known kind is none.</param>
     /// <param name="player">A player in it (killer, victim or creator). The strip sends the
@@ -75,14 +78,15 @@ public sealed class ShortService(
     /// <param name="server">The server its recording was made on, by the site's or the
     /// recording's form of the name (features/replay-shorts, "On the stats pages").</param>
     public async Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct,
-        string? kind = null, string? player = null, string? server = null)
+        string? kind = null, string? player = null, string? server = null, string game = RecordingGames.Bf1942)
     {
         days = Math.Clamp(days, 1, MaxDays);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
         var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
 
-        var query = db.ReplayShorts.AsNoTracking().Where(s => s.CreatedAtMs >= since && s.PrunedAt == null);
+        // Each site's strip is its own game's (features/bfv-through-bfstats).
+        var query = db.ReplayShorts.AsNoTracking().Where(s => s.Game == game && s.CreatedAtMs >= since && s.PrunedAt == null);
         if (!string.IsNullOrWhiteSpace(kind))
         {
             string[] kinds = [.. kind.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
@@ -163,9 +167,9 @@ public sealed class ShortService(
         await db.SaveChangesAsync(ct);
         try
         {
-            storage.Delete(row.Slug);
+            storage.Of(row.Game).Delete(row.Slug);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or RecordingRejectedException)
         {
             logger.LogWarning(ex, "Short {Slug} was taken down but its files were not removed", row.Slug);
         }
@@ -199,7 +203,7 @@ public sealed class ShortService(
             // so the volume's sum stops counting them.
             try
             {
-                storage.Delete(s.Slug);
+                storage.Of(s.Game).Delete(s.Slug);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -227,13 +231,15 @@ public sealed class ShortService(
     {
         var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
-        string? posterFile = storage.IncomingPath();
+        // Its own game's folder (features/bfv-through-bfstats).
+        var files = storage.Of(row.Game);
+        string? posterFile = files.IncomingPath();
         try
         {
             await ReceiveAsync(body, posterFile, options.Value.MaxPosterBytes, "A Short's poster", ct);
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
             var bytes = new FileInfo(posterFile).Length;
-            storage.ReplacePoster(posterFile, row.Slug);
+            files.ReplacePoster(posterFile, row.Slug);
             posterFile = null;
             row.PosterBytes = bytes;
             await db.SaveChangesAsync(ct);
@@ -253,12 +259,14 @@ public sealed class ShortService(
     {
         var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
+        // Its own game's folder (features/bfv-through-bfstats).
+        var files = storage.Of(row.Game);
         var limits = options.Value;
         var (limit, what, path) = copy switch
         {
-            ShortVideoCopy.Main => (limits.VideoLimit(row.Kind), "A Short's video", storage.VideoPath(row.Slug)),
-            ShortVideoCopy.Hd => (limits.HdVideoLimit(row.Kind), "A Short's HD video", storage.HdVideoPath(row.Slug)),
-            _ => (limits.MaxLinkVideoBytes, "A Short's link video", storage.LinkVideoPath(row.Slug)),
+            ShortVideoCopy.Main => (limits.VideoLimit(row.Kind), "A Short's video", files.VideoPath(row.Slug)),
+            ShortVideoCopy.Hd => (limits.HdVideoLimit(row.Kind), "A Short's HD video", files.HdVideoPath(row.Slug)),
+            _ => (limits.MaxLinkVideoBytes, "A Short's link video", files.LinkVideoPath(row.Slug)),
         };
         var stored = copy switch
         {
@@ -266,7 +274,7 @@ public sealed class ShortService(
             ShortVideoCopy.Hd => row.HdVideoBytes,
             _ => row.LinkVideoBytes,
         };
-        string? videoFile = storage.IncomingPath();
+        string? videoFile = files.IncomingPath();
         try
         {
             if (upload is not null)
@@ -286,11 +294,11 @@ public sealed class ShortService(
             var bytes = new FileInfo(videoFile).Length;
             if (bytes > limit) throw TooBig(limit, what);
             var growth = bytes - stored;
-            if (growth > 0 && storage.RoomFor(await StoredBytesAsync(ct), growth) is { } full)
+            if (growth > 0 && files.RoomFor(await StoredBytesAsync(row.Game, ct), growth) is { } full)
             {
                 throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
             }
-            storage.Replace(videoFile, path);
+            files.Replace(videoFile, path);
             videoFile = null;
             switch (copy)
             {
@@ -313,7 +321,9 @@ public sealed class ShortService(
     {
         var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
-        var path = storage.VideoPath(row.Slug);
+        // Its own game's folder (features/bfv-through-bfstats).
+        var files = storage.Of(row.Game);
+        var path = files.VideoPath(row.Slug);
         if (flattener is not null && File.Exists(path) && await flattener.FlattenAsync(path, ct))
         {
             row.VideoBytes = new FileInfo(path).Length;
@@ -516,23 +526,28 @@ public sealed class ShortService(
             {
                 return (existing, false);
             }
-            if (storage.RoomFor(await StoredBytesAsync(ct), row.VideoBytes + row.HdVideoBytes + row.PosterBytes) is { } full)
+            // Its recording's game, never the uploader's word: a Short of a bfv recording is bfv's,
+            // listed on bfv.bfstats.io and kept on bfv's disk (features/bfv-through-bfstats).
+            row.Game = await db.Recordings.AsNoTracking().Where(r => r.Slug == row.RecordingSlug)
+                .Select(r => r.Game).FirstOrDefaultAsync(ct) ?? RecordingGames.Bf1942;
+            var files = storage.Of(row.Game);
+            if (files.RoomFor(await StoredBytesAsync(row.Game, ct), row.VideoBytes + row.HdVideoBytes + row.PosterBytes) is { } full)
             {
                 throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
             }
             row.Slug = await NewSlugAsync(ct);
-            storage.Promote(videoFile, storage.VideoPath(row.Slug));
+            files.Promote(videoFile, files.VideoPath(row.Slug));
             try
             {
-                if (hdVideoFile is not null) storage.Promote(hdVideoFile, storage.HdVideoPath(row.Slug));
-                storage.Promote(posterFile, storage.PosterPath(row.Slug));
+                if (hdVideoFile is not null) files.Promote(hdVideoFile, files.HdVideoPath(row.Slug));
+                files.Promote(posterFile, files.PosterPath(row.Slug));
                 db.ReplayShorts.Add(row);
                 await db.SaveChangesAsync(ct);
             }
             catch
             {
                 db.ChangeTracker.Clear();
-                storage.Delete(row.Slug);
+                files.Delete(row.Slug);
                 throw;
             }
             return (row, true);
@@ -633,8 +648,11 @@ public sealed class ShortService(
     }
 
     /// <summary>Everything on the volume: the recordings and the Shorts share its quota.</summary>
-    private async Task<long> StoredBytesAsync(CancellationToken ct) =>
-        await VolumeUsage.StoredBytesAsync(db, ct) + storage.PendingPartBytes();
+    private Task<long> StoredBytesAsync(CancellationToken ct) => StoredBytesAsync(RecordingGames.Bf1942, ct);
+
+    /// <summary>What <paramref name="game"/>'s folder holds; the chunked uploads' parts wait on BF1942's.</summary>
+    private async Task<long> StoredBytesAsync(string game, CancellationToken ct) =>
+        await VolumeUsage.StoredBytesAsync(db, game, ct) + (game == RecordingGames.Bf1942 ? storage.PendingPartBytes() : 0);
 
     public async Task<ShortPartDto> ReceivePartAsync(string? upload, int index, Stream body, long? contentLength, CancellationToken ct)
     {
