@@ -133,10 +133,11 @@ public class ShortsController(
     [DisableFormValueModelBinding]
     public async Task<ActionResult<ShortDto>> Upload(CancellationToken ct)
     {
-        if (Refusal() is { } refusal) return refusal;
+        var (refusal, onlyGame) = await WriterAsync(ct);
+        if (refusal is not null) return refusal;
         try
         {
-            var result = await shorts.UploadAsync(Request.ContentType, Request.Body, Request.ContentLength, ct);
+            var result = await shorts.UploadAsync(Request.ContentType, Request.Body, Request.ContentLength, ct, onlyGame);
             return result.Created
                 ? CreatedAtAction(nameof(Get), new { slug = result.Short.Slug }, result.Short)
                 : Ok(result.Short);
@@ -155,7 +156,8 @@ public class ShortsController(
     [DisableFormValueModelBinding]
     public async Task<ActionResult<ShortPartDto>> Part([FromQuery] string? upload, [FromQuery] int? index, CancellationToken ct)
     {
-        if (Refusal() is { } refusal) return refusal;
+        // A part is no game's until an upload joins it, and the upload is held to its game.
+        if ((await WriterAsync(ct)).Refusal is { } refusal) return refusal;
         try
         {
             return Ok(await shorts.ReceivePartAsync(upload, index ?? -1, Request.Body, Request.ContentLength, ct));
@@ -286,8 +288,9 @@ public class ShortsController(
     [HttpPost("prune")]
     public async Task<ActionResult<ShortPruneDto>> Prune([FromQuery] bool dryRun = false, CancellationToken ct = default)
     {
-        if (Refusal() is { } refusal) return refusal;
-        return Ok(await shorts.PruneUnwatchedAsync(dryRun, ct));
+        var (refusal, onlyGame) = await WriterAsync(ct);
+        if (refusal is not null) return refusal;
+        return Ok(await shorts.PruneUnwatchedAsync(dryRun, ct, onlyGame));
     }
 
     /// <summary>Null when the request may change or take down the Short: the key, an admin, or
@@ -295,7 +298,23 @@ public class ShortsController(
     private async Task<ObjectResult?> MayChangeAsync(string slug, CancellationToken ct)
     {
         if (Refusal() is not { } refusal) return null;
-        return UserId() is { } userId && await shorts.SharedByAsync(slug, userId, ct) ? null : refusal;
+        if (UserId() is not { } userId) return refusal;
+        if (await shorts.SharedByAsync(slug, userId, ct)) return null;
+        // A BfvAdmin changes BattleView Vietnam's Shorts, and no others.
+        return await shorts.GameWriterAsync(userId, ct) is { } game && await shorts.GameAsync(slug, ct) == game ? null : refusal;
+    }
+
+    /// <summary>
+    /// Who may upload: the key or an admin, for any game (null game); else an account whose role
+    /// writes one game's Shorts (<see cref="AppRoles.BfvAdmin"/>, features/bfv-through-bfstats),
+    /// held to that game. A bfv-site token is a plain user's, so the role is read from the account.
+    /// </summary>
+    private async Task<(ObjectResult? Refusal, string? OnlyGame)> WriterAsync(CancellationToken ct)
+    {
+        if (Refusal() is not { } refusal) return (null, null);
+        // A wrong key is a 401 whoever is signed in.
+        if (Request.Headers.ContainsKey(KeyHeader)) return (refusal, null);
+        return UserId() is { } userId && await shorts.GameWriterAsync(userId, ct) is { } game ? (null, game) : (refusal, null);
     }
 
     private int? UserId()

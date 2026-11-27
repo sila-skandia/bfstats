@@ -1373,4 +1373,69 @@ public sealed class ShortsControllerTests : IDisposable
 
         Assert.IsType<NotFoundResult>(await Controller().Video("aaaaaaaaaa"));
     }
+
+    private async Task<User> UserWithRoleAsync(string? role, string email)
+    {
+        var user = new User { Email = email, Role = role, CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
+    }
+
+    private static ClaimsPrincipal SignedIn(User user) =>
+        // A bfv-site token: a plain user's role, no email, whatever the account is.
+        new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Role, AppRoles.User)], "Bearer"));
+
+    private async Task SeedRecordingAsync(string game, int uploaderId)
+    {
+        db.Recordings.Add(new Recording
+        {
+            Slug = RecordingSlug, Title = "R", UploaderUserId = uploaderId, Level = "hue", Mod = game == RecordingGames.Bfv ? "bfvietnam" : "bf1942",
+            Game = game, ContentHash = game, CreatedAt = clock.Now, UpdatedAt = clock.Now,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>A BfvAdmin runs BattleView Vietnam's Shorts from its own sign-in
+    /// (features/bfv-through-bfstats): its recordings' Shorts, and no others.</summary>
+    [Fact]
+    public async Task ABfvAdmin_UploadsBfvShortsOnly()
+    {
+        var lucca = await UserWithRoleAsync(AppRoles.BfvAdmin, "lucca@example.com");
+        await SeedRecordingAsync(RecordingGames.Bfv, lucca.Id);
+
+        var controller = Controller(user: SignedIn(lucca));
+        await Body(controller, Meta());
+        var created = Assert.IsType<CreatedAtActionResult>((await controller.Upload(default)).Result);
+        var dto = Assert.IsType<ShortDto>(created.Value);
+        Assert.Equal(RecordingGames.Bfv, (await db.ReplayShorts.AsNoTracking().SingleAsync()).Game);
+
+        // It takes down its own game's Short, and prunes only its game's.
+        Assert.IsType<NoContentResult>(await Controller(user: SignedIn(lucca)).Delete(dto.Slug, default));
+    }
+
+    [Fact]
+    public async Task ABfvAdmin_IsRefusedABf1942RecordingsShort()
+    {
+        var lucca = await UserWithRoleAsync(AppRoles.BfvAdmin, "lucca@example.com");
+        await SeedRecordingAsync(RecordingGames.Bf1942, lucca.Id);
+
+        var controller = Controller(user: SignedIn(lucca));
+        await Body(controller, Meta());
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Empty(db.ReplayShorts);
+    }
+
+    [Fact]
+    public async Task APlainAccount_UploadsNoShorts()
+    {
+        var player = await UserWithRoleAsync(null, "player@example.com");
+        await SeedRecordingAsync(RecordingGames.Bfv, player.Id);
+
+        var controller = Controller(user: SignedIn(player));
+        await Body(controller, Meta());
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+    }
 }
