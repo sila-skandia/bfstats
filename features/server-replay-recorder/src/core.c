@@ -168,15 +168,17 @@ static void next_file_name(char *name, size_t cap)
     last_n = n;
 }
 
-/* A file's first record: the format version, the target's "plus" string,
- * the local start time and the sample rate. */
+/* A file's first record: the format version, the game (every target is a
+ * BF1942 dedicated server; bfstats keeps each game's recordings apart,
+ * features/bfv-through-bfstats), the target's "plus" string, the local start
+ * time and the sample rate. */
 static void header_line(char *out, size_t cap)
 {
     char iso[64];
     time_t now = time(0);
     strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%S", localtime(&now));
     snprintf(out, cap,
-             "{\"k\":\"h\",\"v\":%d,\"plus\":\"%s\","
+             "{\"k\":\"h\",\"v\":%d,\"game\":\"bf1942\",\"plus\":\"%s\","
              "\"start\":\"%s\",\"hz\":%d}", T->header_version, T->header_plus,
              iso, g_hz);
 }

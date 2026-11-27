@@ -1,5 +1,6 @@
 using api.Dogfights;
 using api.PlayerTracking;
+using api.Recordings;
 using api.ServerMedia.Models;
 using api.Shorts.Models;
 using api.Utils;
@@ -39,7 +40,8 @@ public sealed class ServerMediaService(
     private async Task<ServerMediaListDto> BuildAsync(int perServer, CancellationToken ct)
     {
         var recordings = await db.Recordings.AsNoTracking()
-            .Where(r => !r.FileMissing && r.ServerName != "")
+            // bfstats.io's servers are BF1942's (features/bfv-through-bfstats).
+            .Where(r => r.Game == RecordingGames.Bf1942 && !r.FileMissing && r.ServerName != "")
             .OrderByDescending(r => r.Id)
             .Take(Window)
             .Select(r => new { r.Id, r.RoundId, r.Slug, r.Title, r.ServerName, r.Mod, r.Level, r.DurationSeconds, r.CreatedAt, r.ThumbnailBytes, r.UpdatedAt })
@@ -68,7 +70,7 @@ public sealed class ServerMediaService(
         if (older.Count > 0)
         {
             var more = await db.Recordings.AsNoTracking()
-                .Where(r => older.Contains(r.Slug) && r.ServerName != "")
+                .Where(r => older.Contains(r.Slug) && r.Game == RecordingGames.Bf1942 && r.ServerName != "")
                 .Select(r => new { r.Slug, r.ServerName })
                 .ToListAsync(ct);
             foreach (var r in more) serverOf[r.Slug] = Site(r.ServerName);

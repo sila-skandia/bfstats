@@ -12,10 +12,17 @@ namespace api.Recordings;
 /// </summary>
 public static class VolumeUsage
 {
-    public static async Task<long> StoredBytesAsync(PlayerTrackerDbContext db, CancellationToken ct)
+    /// <summary>BF1942's: the recordings volume.</summary>
+    public static Task<long> StoredBytesAsync(PlayerTrackerDbContext db, CancellationToken ct) =>
+        StoredBytesAsync(db, RecordingGames.Bf1942, ct);
+
+    /// <summary>What <paramref name="game"/>'s folder holds (features/bfv-through-bfstats): its
+    /// recordings, and for BF1942 the Shorts, which live under its root.</summary>
+    public static async Task<long> StoredBytesAsync(PlayerTrackerDbContext db, string game, CancellationToken ct)
     {
-        var recordings = await db.Recordings.Where(r => !r.FileMissing)
+        var recordings = await db.Recordings.Where(r => r.Game == game && !r.FileMissing)
             .SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        if (game != RecordingGames.Bf1942) return recordings;
         var shorts = await db.ReplayShorts.SumAsync(s => s.VideoBytes + s.HdVideoBytes + s.LinkVideoBytes + s.PosterBytes, ct);
         return recordings + shorts;
     }

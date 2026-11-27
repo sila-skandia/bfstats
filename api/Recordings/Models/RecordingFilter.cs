@@ -3,8 +3,10 @@ namespace api.Recordings.Models;
 /// <summary>What the feed is narrowed to: the recordings made on one server, shared by one
 /// player, with one player in the round (bfstats.io's server and player pages,
 /// features/replay-on-stats-pages), written by one kind of recorder (features/recording-source),
-/// or any of them together. A null value narrows nothing.</summary>
-public record RecordingFilter(string? Server, string? Uploader, string? Player = null, RecordingSource? Source = null)
+/// or any of them together. A null value narrows nothing. <see cref="Game"/> is always one game:
+/// each site's feed is its own game's (features/bfv-through-bfstats), and BF1942 unless asked.</summary>
+public record RecordingFilter(
+    string? Server, string? Uploader, string? Player = null, RecordingSource? Source = null, string Game = RecordingGames.Bf1942)
 {
     public static readonly RecordingFilter None = new(null, null);
 
@@ -12,8 +14,12 @@ public record RecordingFilter(string? Server, string? Uploader, string? Player =
     /// value is none. A player name is kept as given: it is the player's key, spaces and all.
     /// A source is <c>server</c>, or <c>client</c> (<c>player</c> says the same); anything
     /// else narrows nothing.</summary>
-    public static RecordingFilter From(string? server, string? uploader, string? player = null, string? source = null) =>
-        new(Clean(server), Clean(uploader), string.IsNullOrWhiteSpace(player) ? null : player, SourceOf(source));
+    public static RecordingFilter From(
+        string? server, string? uploader, string? player = null, string? source = null, string? game = null) =>
+        new(Clean(server), Clean(uploader), string.IsNullOrWhiteSpace(player) ? null : player, SourceOf(source),
+            RecordingGames.FromQuery(game));
+
+    /// <summary>Nothing narrowed within its game: the game's whole feed, from the cards.</summary>
 
     public bool IsEmpty => Server is null && Uploader is null && Player is null && Source is null;
 

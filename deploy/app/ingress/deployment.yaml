@@ -113,6 +113,14 @@ data:
       server mesh bfstats-mesh-service.bf42-stats:80
 
     backend bfv_site
+      # bfv.bfstats.io is hosted for someone else, its nginx built from their
+      # image (features/bfv-through-bfstats). bfstats.io's refresh cookie is
+      # Domain=bfstats.io, so a browser sends it to bfv too: it never gets
+      # past here. Nor may bfv set a cookie, which a browser would keep for
+      # bfstats.io's own paths. bfv's pages use no cookies; their sign-in is
+      # bfstats' app hand-off, tokens in an Authorization header to bfstats.
+      http-request del-header Cookie
+      http-response del-header Set-Cookie
       server bfv bfv-site.bfv:80
 
     backend netcode

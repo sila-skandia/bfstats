@@ -100,7 +100,7 @@ public sealed class ShortService(
         {
             // Through the recording's server index, then the Shorts' recording index.
             var names = BothForms(server);
-            var recordings = db.Recordings.Where(r => names.Contains(r.ServerName)).Select(r => r.Slug);
+            var recordings = db.Recordings.Where(r => names.Contains(r.ServerName) && r.Game == RecordingGames.Bf1942).Select(r => r.Slug);
             query = query.Where(s => recordings.Contains(s.RecordingSlug));
         }
         var total = await query.CountAsync(ct);
@@ -338,7 +338,9 @@ public sealed class ShortService(
             // Of a shared round, kind and key its own: a creator may share any clip of any round,
             // as many as he likes, each one Short.
             var row = Describe(meta with { Kind = ShortKinds.Creator });
-            if (!await db.Recordings.AsNoTracking().AnyAsync(r => r.Slug == row.RecordingSlug, ct))
+            // BF1942's until Shorts carry a game of their own (features/bfv-through-bfstats): the
+            // strip on replay.bfstats.io shows every Short.
+            if (!await db.Recordings.AsNoTracking().AnyAsync(r => r.Slug == row.RecordingSlug && r.Game == RecordingGames.Bf1942, ct))
             {
                 throw new RecordingRejectedException("That round is not one of the shared recordings.", StatusCodes.Status404NotFound);
             }

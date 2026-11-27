@@ -46,6 +46,32 @@ export function rememberReturnUrl(url: string | null): void {
   }
 }
 
+/** The address a sign-in in progress will go back to, without using it up. */
+export function peekReturnUrl(): string | null {
+  try {
+    const kept = JSON.parse(localStorage.getItem(RETURN_URL_KEY) ?? 'null') as { url?: string; at?: number } | null
+    if (!kept?.url || !kept.at || Date.now() - kept.at > RETURN_URL_MAX_AGE_MS) return null
+    return safeReturnUrl(kept.url)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The site a sign-up on its way to `returnUrl` came from (features/bfv-through-bfstats):
+ * `bfv` when it is bfv.bfstats.io's Allow page (`/auth/app?client=bfv-site`), else none,
+ * which the API records as bfstats.io. A note on the new account, never a permission.
+ */
+export function signUpViaFor(returnUrl: string | null | undefined): 'bfv' | undefined {
+  if (!returnUrl) return undefined
+  try {
+    const url = new URL(returnUrl, window.location.origin)
+    return url.pathname === '/auth/app' && url.searchParams.get('client') === 'bfv-site' ? 'bfv' : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** The address a sign-in that just finished goes back to, once. */
 export function takeReturnUrl(): string | null {
   try {

@@ -19,8 +19,12 @@ namespace api.Recordings;
 public sealed class RecordingFileReconciler(
     IServiceScopeFactory scopes,
     IRecordingStorage storage,
-    ILogger<RecordingFileReconciler> logger) : BackgroundService
+    ILogger<RecordingFileReconciler> logger,
+    IRecordingStores? stores = null) : BackgroundService
 {
+    /// <summary>Each game's folder; BF1942's alone where none are given (the tests).</summary>
+    private readonly IRecordingStores games = stores ?? new RecordingStores(storage, bfv: null);
+
     private static readonly TimeSpan Every = TimeSpan.FromHours(6);
     private static readonly TimeSpan StaleUpload = TimeSpan.FromHours(2);
 
@@ -49,21 +53,31 @@ public sealed class RecordingFileReconciler(
         }
     }
 
+    /// <summary>Each game's recordings against its own folder (features/bfv-through-bfstats). A
+    /// game with no folder set, or whose folder is not there, keeps its rows as they are.</summary>
     internal async Task ReconcileAsync(CancellationToken ct)
+    {
+        foreach (var (game, folder) in games.All)
+        {
+            await ReconcileAsync(game, folder, ct);
+        }
+    }
+
+    private async Task ReconcileAsync(string game, IRecordingStorage folder, CancellationToken ct)
     {
         // No directory at all is a volume not mounted, not every file gone: the
         // recordings stay as they are until it is back.
-        if (!storage.Available)
+        if (!folder.Available)
         {
-            logger.LogWarning("The recordings directory {Root} is not there; the file check waits for it", storage.Root);
+            logger.LogWarning("The {Game} recordings directory {Root} is not there; the file check waits for it", game, folder.Root);
             return;
         }
-        var swept = storage.SweepIncoming(StaleUpload);
+        var swept = folder.SweepIncoming(StaleUpload);
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
-        var rows = await db.Recordings.Select(r => new { r.Id, r.Slug, r.FileMissing }).ToListAsync(ct);
-        var gone = rows.Where(r => !r.FileMissing && !storage.Exists(r.Slug)).Select(r => r.Id).ToList();
-        var back = rows.Where(r => r.FileMissing && storage.Exists(r.Slug)).Select(r => r.Id).ToList();
+        var rows = await db.Recordings.Where(r => r.Game == game).Select(r => new { r.Id, r.Slug, r.FileMissing }).ToListAsync(ct);
+        var gone = rows.Where(r => !r.FileMissing && !folder.Exists(r.Slug)).Select(r => r.Id).ToList();
+        var back = rows.Where(r => r.FileMissing && folder.Exists(r.Slug)).Select(r => r.Id).ToList();
         if (gone.Count > 0)
         {
             await db.Recordings.Where(r => gone.Contains(r.Id))
@@ -77,8 +91,8 @@ public sealed class RecordingFileReconciler(
         if (gone.Count + back.Count + swept > 0)
         {
             logger.LogWarning(
-                "Recordings: {Gone} files missing, {Back} back, {Swept} unfinished uploads removed",
-                gone.Count, back.Count, swept);
+                "Recordings ({Game}): {Gone} files missing, {Back} back, {Swept} unfinished uploads removed",
+                game, gone.Count, back.Count, swept);
         }
     }
 
@@ -93,7 +107,8 @@ public sealed class RecordingFileReconciler(
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
         var unread = await db.Recordings.AsNoTracking()
-            .Where(r => r.Source == RecordingSource.Unknown && !r.FileMissing)
+            // BF1942's: every other game's source is read at upload, which came later.
+            .Where(r => r.Game == RecordingGames.Bf1942 && r.Source == RecordingSource.Unknown && !r.FileMissing)
             .Select(r => new { r.Id, r.Slug })
             .ToListAsync(ct);
         if (unread.Count == 0) return 0;

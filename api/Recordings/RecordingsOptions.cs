@@ -40,6 +40,23 @@ public record RecordingsOptions
 
     public double MinFreeFraction { get; init; } = 0.15;
 
+    /// <summary>
+    /// Where Battlefield Vietnam recordings go (features/bfv-through-bfstats): a folder on bfv's
+    /// own disk, so its usage is bfv's, beside the folder its site serves and out of reach of
+    /// every bfv pod. Empty means bfstats takes no BFV recordings: an upload of one is refused
+    /// and nothing else changes. Bound as <c>Recordings__BfvPath</c>.
+    /// </summary>
+    public string BfvPath { get; init; } = "";
+
+    /// <summary>Every BFV recording together may take no more than this of bfv's disk.</summary>
+    public long BfvQuotaBytes { get; init; } = 10 * GiB;
+
+    /// <summary>bfv's disk keeps at least this much free, and at least
+    /// <see cref="BfvMinFreeFraction"/> of itself, for the site's own files.</summary>
+    public long BfvMinFreeBytes { get; init; } = 2 * GiB;
+
+    public double BfvMinFreeFraction { get; init; } = 0.10;
+
     /// <summary>The play site, where a recording's replay and cover are: where its short link's
     /// page sends the browser, and the cover its preview tags name.</summary>
     public string PlayOrigin { get; init; } = "https://play.bfstats.io";

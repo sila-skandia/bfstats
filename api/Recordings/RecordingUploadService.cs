@@ -38,8 +38,12 @@ public sealed class RecordingUploadService(
     ILogger<RecordingUploadService> logger,
     IRecordingRoundService? rounds = null,
     IMemoryCache? cache = null,
-    IRecordingStatsRoundService? statsRounds = null) : IRecordingUploadService
+    IRecordingStatsRoundService? statsRounds = null,
+    IRecordingStores? stores = null) : IRecordingUploadService
 {
+    /// <summary>Each game's folder; BF1942's alone where none are given (the tests).</summary>
+    private readonly IRecordingStores games = stores ?? new RecordingStores(storage, bfv: null);
+
     private const int MaxMetaBytes = 64 * 1024;
     private const int CopyBytes = 80 * 1024;
     private const long MultipartOverhead = 1024 * 1024;
@@ -102,13 +106,23 @@ public sealed class RecordingUploadService(
             }
             if (recordingFile is null) throw new RecordingRejectedException("Choose a recording to share.");
 
+            // Its game, from its own header, picks the folder it is kept in and the checks it is
+            // held to (features/bfv-through-bfstats). Nothing the uploader sends says which.
+            var game = await RecordingInspector.ReadGameAsync(recordingFile, ct);
+            var target = games.Require(game);
+            if (game != RecordingGames.Bf1942 && logFile is not null)
+            {
+                throw new RecordingRejectedException("A Battlefield Vietnam recording is shared without a server log.");
+            }
+
             RecordingInspection inspection;
-            keptRecording = storage.IncomingPath();
+            keptRecording = target.IncomingPath();
             await using (var sent = File.OpenRead(recordingFile))
             await using (var kept = NewFile(keptRecording))
             {
                 inspection = await RecordingInspector.InspectAsync(sent, kept, limits.MaxRecordingRawBytes, ct);
             }
+            if (inspection.Game != game) throw new RecordingRejectedException("The recording's header could not be read the same way twice.");
             if (logFile is not null)
             {
                 keptLog = storage.IncomingPath();
@@ -125,14 +139,15 @@ public sealed class RecordingUploadService(
             recording.ServerLogBytes = keptLog is null ? 0 : new FileInfo(keptLog).Length;
             recording.ThumbnailBytes = thumbnail?.Length ?? 0;
 
-            var shared = await CommitAsync(recording, inspection.Fingerprint, keptRecording, keptLog, thumbnail);
+            var shared = await CommitAsync(recording, target, inspection.Fingerprint, keptRecording, keptLog, thumbnail);
             keptRecording = null;
             keptLog = null;
             logger.LogInformation(
                 "Recording {Slug} shared by user {UserId}: {Level} ({Mod}), {Duration:0}s, {Bytes} bytes",
                 shared.Slug, actor.UserId, shared.Level, shared.Mod, shared.DurationSeconds, shared.RecordingBytes);
             await FindRoundAsync(shared);
-            await FindStatsRoundAsync(shared);
+            // bfstats.io's rounds are BF1942 servers' rounds.
+            if (shared.Game == RecordingGames.Bf1942) await FindStatsRoundAsync(shared);
             return await recordings.DetailAsync(shared, actor, ct);
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
@@ -165,7 +180,7 @@ public sealed class RecordingUploadService(
     /// views and comments.
     /// </summary>
     private async Task<Recording> CommitAsync(
-        Recording recording, RoundFingerprint fingerprint, string recordingFile, string? logFile, byte[]? thumbnail)
+        Recording recording, IRecordingStorage target, RoundFingerprint fingerprint, string recordingFile, string? logFile, byte[]? thumbnail)
     {
         // Past the upload, a client that goes away does not leave half a recording: what
         // follows runs to the end.
@@ -180,16 +195,16 @@ public sealed class RecordingUploadService(
                     $"This round is already shared, as \"{existing.Title}\".", StatusCodes.Status409Conflict, existing.Slug);
             }
             var incoming = recording.RecordingBytes + recording.ServerLogBytes + recording.ThumbnailBytes;
-            if (storage.RoomFor(await StoredBytesAsync(ct), incoming) is { } full)
+            if (target.RoomFor(await VolumeUsage.StoredBytesAsync(db, recording.Game, ct), incoming) is { } full)
             {
                 throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
             }
 
-            var target = existing ?? recording;
+            var row = existing ?? recording;
             if (existing is null)
             {
-                target.Slug = await NewSlugAsync(ct);
-                db.Recordings.Add(target);
+                row.Slug = await NewSlugAsync(ct);
+                db.Recordings.Add(row);
             }
             else
             {
@@ -200,30 +215,30 @@ public sealed class RecordingUploadService(
                 existing.FileMissing = false;
                 existing.UpdatedAt = recording.UpdatedAt;
                 // What was left behind of it goes; this upload is the whole of it now.
-                storage.Delete(existing.Slug);
+                target.Delete(existing.Slug);
             }
             // Its round fingerprint beside it, from the same reading of the file (features/replay-feed,
             // "Rounds"). A recording put back has the same content, and so the same fingerprint.
             if (existing is null || !await db.RecordingFingerprints.AnyAsync(f => f.RecordingId == existing.Id, ct))
             {
-                var row = RecordingFingerprint.From(fingerprint, recording.CreatedAt);
-                row.Recording = target;
-                db.RecordingFingerprints.Add(row);
+                var print = RecordingFingerprint.From(fingerprint, recording.CreatedAt);
+                print.Recording = row;
+                db.RecordingFingerprints.Add(print);
             }
-            storage.Promote(recordingFile, storage.RecordingPath(target.Slug));
-            if (logFile is not null) storage.Promote(logFile, storage.ServerLogPath(target.Slug));
+            target.Promote(recordingFile, target.RecordingPath(row.Slug));
+            if (logFile is not null) target.Promote(logFile, target.ServerLogPath(row.Slug));
             try
             {
-                if (thumbnail is not null) await storage.WriteThumbnailAsync(target.Slug, thumbnail, ct);
+                if (thumbnail is not null) await target.WriteThumbnailAsync(row.Slug, thumbnail, ct);
                 await db.SaveChangesAsync(ct);
                 cache?.Remove(RecordingService.StorageUsedKey);
             }
             catch
             {
-                storage.Delete(target.Slug);
+                target.Delete(row.Slug);
                 throw;
             }
-            return target;
+            return row;
         }
         finally
         {
@@ -303,7 +318,7 @@ public sealed class RecordingUploadService(
             UploaderUserId = actor.UserId,
             UploaderName = author,
             Level = level,
-            Mod = First(inspection.Mod, RecordingText.Id(meta?.Mod), "bf1942"),
+            Mod = First(inspection.Mod, RecordingText.Id(meta?.Mod), inspection.Game),
             GameMode = First(inspection.GameMode, RecordingText.Id(meta?.GameMode)),
             ServerName = server,
             RecordedBy = recorder,
@@ -314,6 +329,7 @@ public sealed class RecordingUploadService(
             Players = [.. players.Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).Select(name => new RecordingPlayer { PlayerName = name })],
             FormatVersion = inspection.Version,
             Source = inspection.Source,
+            Game = inspection.Game,
             RecordingRawBytes = inspection.RawBytes,
             ContentHash = inspection.ContentHash,
             CreatedAt = now,

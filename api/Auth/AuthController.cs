@@ -83,7 +83,7 @@ public class AuthController(
                 return BadRequest(new { message = "Discord code and redirect URI are required" });
             }
 
-            var user = await CreateOrUpdateUserAsync(email, name);
+            var user = await CreateOrUpdateUserAsync(email, name, request.SignUpVia);
 
             var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
             var (rawRefresh, rtEntity) = await refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString());
@@ -147,6 +147,7 @@ public class AuthController(
                 Username = name,
                 PasswordHash = passwordHashService.Hash(request.Password),
                 AuthProvider = "password",
+                SignedUpVia = SignUpSites.From(request.SignUpVia),
                 CreatedAt = now,
                 LastLoggedIn = now,
                 IsActive = true
@@ -1051,7 +1052,7 @@ public class AuthController(
         }
     }
 
-    private async Task<User> CreateOrUpdateUserAsync(string email, string name)
+    private async Task<User> CreateOrUpdateUserAsync(string email, string name, string? signUpVia)
     {
         _ = name;
         var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
@@ -1062,6 +1063,7 @@ public class AuthController(
             user = new User
             {
                 Email = email,
+                SignedUpVia = SignUpSites.From(signUpVia),
                 CreatedAt = now,
                 LastLoggedIn = now,
                 IsActive = true

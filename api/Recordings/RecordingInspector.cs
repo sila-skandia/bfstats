@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Frozen;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -156,7 +157,8 @@ public static class RecordingInspector
             raw,
             Convert.ToHexStringLower(hash.GetHashAndReset()),
             scan.Fingerprint(),
-            scan.Source);
+            scan.Source,
+            scan.Game);
     }
 
     /// <summary>The header's <c>plus</c> the server-side recorder writes
@@ -170,6 +172,85 @@ public static class RecordingInspector
         plus is not null && plus.Trim().StartsWith(ServerRecorderPrefix, StringComparison.OrdinalIgnoreCase)
             ? RecordingSource.Server
             : RecordingSource.Client;
+
+    /// <summary>The header's <c>plus</c> bfvplus writes: <c>bfvplus/2</c>.</summary>
+    internal const string BfvRecorderPrefix = "bfvplus/";
+
+    /// <summary>The only format bfvplus writes.</summary>
+    internal const int BfvFormat = 5;
+
+    /// <summary>The record kinds bfvplus writes (bfv's own upload checks, 2026-11-25). A
+    /// Battlefield Vietnam recording with any other kind is refused: a strict check, as bfv's
+    /// own uploads always had.</summary>
+    internal static readonly FrozenSet<string> BfvKinds = FrozenSet.ToFrozenSet(
+        "h e o s d p a cp chat f hg i hm lod jn j g st tk anim roster end pn pd perf cam camv in info far pj".Split(' '),
+        StringComparer.Ordinal);
+
+    /// <summary>
+    /// The game a header names (features/bfv-through-bfstats), or the reason it is refused. No
+    /// <c>game</c> is BF1942, as every recorder for it writes; <c>bf1942</c> says the same;
+    /// <c>bfv</c> is Battlefield Vietnam, and only from bfvplus in its format. A header that
+    /// names bfvplus under any other game, or a game the API does not take, is refused: a file
+    /// is one game or the other, never what its uploader would like it to be.
+    /// </summary>
+    internal static (string Game, string? Refusal) GameOf(string? game, string? plus, int version)
+    {
+        var fromBfvPlus = plus is not null && plus.Trim().StartsWith(BfvRecorderPrefix, StringComparison.Ordinal);
+        switch (game)
+        {
+            case null or RecordingGames.Bf1942:
+                return fromBfvPlus
+                    ? (RecordingGames.Bf1942, "The recording was made by bfvplus but does not say it is of Battlefield Vietnam.")
+                    : (RecordingGames.Bf1942, null);
+            case RecordingGames.Bfv:
+                if (!fromBfvPlus) return (RecordingGames.Bfv, "A Battlefield Vietnam recording has to be one bfvplus made.");
+                return version == BfvFormat
+                    ? (RecordingGames.Bfv, null)
+                    : (RecordingGames.Bfv, $"The recording is format {version}; bfvplus writes format {BfvFormat}.");
+            default:
+                return (RecordingGames.Bf1942, "The recording is of a game bfstats does not take.");
+        }
+    }
+
+    /// <summary>
+    /// The game an upload is of, from its first line alone (gzipped or plain), so that it can be
+    /// kept in that game's folder from the first byte written (features/bfv-through-bfstats).
+    /// A file whose first line is not a header is BF1942's here: the full read refuses it.
+    /// Throws for a header <see cref="GameOf"/> refuses.
+    /// </summary>
+    public static async Task<string> ReadGameAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+            await using var content = await ContentAsync(file, ct);
+            var buffer = new byte[MaxHeaderBytes];
+            var filled = 0;
+            while (filled < buffer.Length)
+            {
+                var read = await content.ReadAsync(buffer.AsMemory(filled), ct);
+                if (read == 0) break;
+                filled += read;
+                if (buffer.AsSpan(filled - read, read).Contains((byte)'\n')) break;
+            }
+            var line = buffer.AsSpan(0, filled);
+            if (line.IndexOf((byte)'\n') is var end and >= 0) line = line[..end];
+            using var doc = JsonDocument.Parse(line.TrimEnd((byte)'\r').ToArray());
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return RecordingGames.Bf1942;
+            string? game = root.TryGetProperty("game", out var named)
+                ? named.ValueKind == JsonValueKind.String ? named.GetString() : ""
+                : null;
+            var plus = root.TryGetProperty("plus", out var by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
+            var version = root.TryGetProperty("v", out var v) && v.TryGetInt32(out var number) ? number : 1;
+            var (of, refusal) = GameOf(game, plus, version);
+            return refusal is null ? of : throw new RecordingRejectedException(refusal);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException)
+        {
+            return RecordingGames.Bf1942;
+        }
+    }
 
     /// <summary>The longest header line read when only the header is wanted: a real one is
     /// under a hundred bytes.</summary>
@@ -438,6 +519,7 @@ public static class RecordingInspector
         public int Records { get; private set; }
         public int Version { get; private set; }
         public RecordingSource Source { get; private set; } = RecordingSource.Client;
+        public string Game { get; private set; } = RecordingGames.Bf1942;
         public string Start { get; private set; } = "";
         public string Level { get; private set; } = "";
         public string GameMode { get; private set; } = "";
@@ -495,6 +577,14 @@ public static class RecordingInspector
                 Version = root.TryGetProperty("v", out var v) && v.TryGetInt32(out var version) ? version : 1;
                 Start = RecordingText.Stamp(String(root, "start"));
                 Source = SourceOf(String(root, "plus"));
+                // A game that is not a string is not a game: refused, as any other game is.
+                string? game = root.TryGetProperty("game", out var named)
+                    ? named.ValueKind == JsonValueKind.String ? named.GetString() : ""
+                    : null;
+                var plus = root.TryGetProperty("plus", out var by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
+                var (of, refusal) = GameOf(game, plus, Version);
+                if (refusal is not null) throw new RecordingRejectedException(refusal);
+                Game = of;
                 SawHeader = true;
             }
             catch (Exception ex) when (ex is JsonException or InvalidOperationException)
@@ -502,6 +592,10 @@ public static class RecordingInspector
                 throw new RecordingRejectedException(NotARecording().Message, ex);
             }
         }
+
+        /// <summary>A record of a kind bfvplus does not write, in a Battlefield Vietnam recording.</summary>
+        private RecordingRejectedException UnknownKind(string kind) =>
+            new($"The recording is damaged: line {lineNumber} has a kind bfvplus does not write ({RecordingText.Line(kind, 20)}).");
 
         /// <summary>One record, read whole: a JSON object and nothing after it, its kind in
         /// <c>k</c>. Its time, and the few records that say who and where, are taken as it
@@ -551,6 +645,7 @@ public static class RecordingInspector
                 return false;
             }
             if (kind is null) return false;
+            if (Game == RecordingGames.Bfv && !BfvKinds.Contains(kind)) throw UnknownKind(kind);
 
             try
             {

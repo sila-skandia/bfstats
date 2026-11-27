@@ -5,7 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
-import { rememberReturnUrl, safeReturnUrl, takeReturnUrl } from '@/services/authReturn'
+import { rememberReturnUrl, safeReturnUrl, signUpViaFor, takeReturnUrl } from '@/services/authReturn'
 import '@/styles/modern-minimal.css'
 
 const router = useRouter()
@@ -151,6 +151,7 @@ const submit = async () => {
         password: password.value,
         email: email.value.trim() || null,
         playerName: playerName.value.trim() || null,
+        signUpVia: signUpViaFor(returnUrl.value),
       })
     } else {
       await authService.loginWithPassword(username.value.trim(), password.value)

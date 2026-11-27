@@ -298,6 +298,13 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        // bfv's accounts, for the day they are managed (features/bfv-through-bfstats).
+        modelBuilder.Entity<User>()
+            .Property(u => u.SignedUpVia)
+            .HasMaxLength(api.Auth.SignUpSites.MaxLength);
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.SignedUpVia);
+
         // Password accounts log in by name; Discord accounts leave it null and
         // SQLite's unique index skips nulls, so the backfill needed nothing.
         modelBuilder.Entity<User>()
@@ -1470,6 +1477,9 @@ public class PlayerTrackerDbContext : DbContext
             // The feed narrowed to server or client recordings, and the rows the file check
             // has yet to read a source from (features/recording-source).
             recording.HasIndex(r => new { r.Source, r.FileMissing, r.RoundId });
+            // Each game's own (features/bfv-through-bfstats): its feed, its rounds and its storage.
+            recording.Property(r => r.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength).HasDefaultValue(api.Recordings.RecordingGames.Bf1942);
+            recording.HasIndex(r => new { r.Game, r.FileMissing, r.Id });
             // A round's recordings in the feed, from the index alone: what the card triggers
             // (RecordingCards) read for each card they work out again.
             recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });
@@ -1582,8 +1592,10 @@ public class PlayerTrackerDbContext : DbContext
         {
             card.HasKey(c => c.CardKey);
             card.Property(c => c.CardKey).ValueGeneratedNever();
-            card.HasIndex(c => c.NewestId);
-            card.HasIndex(c => new { c.Views, c.NewestId });
+            // Each game's feed pages by its own index.
+            card.Property(c => c.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
+            card.HasIndex(c => new { c.Game, c.NewestId });
+            card.HasIndex(c => new { c.Game, c.Views, c.NewestId });
             card.ToTable(table =>
             {
                 foreach (var trigger in api.Recordings.RecordingCards.CardTriggers) table.HasTrigger(trigger);
@@ -1593,6 +1605,7 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<RecordingCardName>(name =>
         {
             name.HasKey(n => new { n.CardKey, n.Kind, n.Name });
+            name.Property(n => n.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
             name.ToTable(table =>
             {
                 foreach (var trigger in api.Recordings.RecordingCards.NameTriggers) table.HasTrigger(trigger);
@@ -1601,9 +1614,10 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<RecordingTally>(tally =>
         {
-            tally.HasKey(t => new { t.Kind, t.Name });
-            // The busiest names first, then by name, without a sort.
-            tally.HasIndex(t => new { t.Kind, t.Count, t.Name }).IsDescending(false, true, false);
+            tally.HasKey(t => new { t.Game, t.Kind, t.Name });
+            tally.Property(t => t.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
+            // A game's busiest names first, then by name, without a sort.
+            tally.HasIndex(t => new { t.Game, t.Kind, t.Count, t.Name }).IsDescending(false, false, true, false);
         });
 
         modelBuilder.Entity<RecordingRoundLink>(link =>
@@ -1888,6 +1902,9 @@ public class User
     public string AuthProvider { get; set; } = "discord";
     /// <summary>Assigned role: User (default), EarlyAdopter or Support. Admin is determined by email only, not stored here.</summary>
     public string? Role { get; set; }
+    /// <summary>The site the account was made on, <see cref="api.Auth.SignUpSites"/>: <c>bfstats</c> or
+    /// <c>bfv</c>. Null for accounts made before it was kept (bfstats.io's).</summary>
+    public string? SignedUpVia { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastLoggedIn { get; set; }
     public bool IsActive { get; set; } = true;

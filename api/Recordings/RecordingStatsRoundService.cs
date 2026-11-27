@@ -48,7 +48,8 @@ public sealed class RecordingStatsRoundService(
     public async Task<string?> MatchAsync(int recordingId, CancellationToken ct)
     {
         var recording = await db.Recordings.FirstOrDefaultAsync(r => r.Id == recordingId, ct);
-        if (recording is null) return null;
+        // bfstats.io's rounds are BF1942 servers' (features/bfv-through-bfstats).
+        if (recording is null || recording.Game != RecordingGames.Bf1942) return null;
         var pick = await PickAsync(recording, ct);
         recording.StatsRoundId = pick?.RoundId;
         recording.StatsRoundZoneMinutes = pick?.ZoneMinutes;
@@ -71,7 +72,8 @@ public sealed class RecordingStatsRoundService(
         // CreatedAt and the check time are ExtendedIso strings, which do not compare as times in
         // SQL; the unmatched are few, so they are sorted out here.
         var due = (await db.Recordings.AsNoTracking()
-                .Where(r => !r.FileMissing && (r.StatsRoundCheckVersion < StatsRoundMatcher.Version || r.StatsRoundId == null))
+                .Where(r => r.Game == RecordingGames.Bf1942 && !r.FileMissing
+                    && (r.StatsRoundCheckVersion < StatsRoundMatcher.Version || r.StatsRoundId == null))
                 .Select(r => new { r.Id, r.StatsRoundCheckVersion, r.CreatedAt, r.StatsRoundCheckedAt })
                 .ToListAsync(ct))
             .Where(r => r.StatsRoundCheckVersion < StatsRoundMatcher.Version

@@ -1,0 +1,53 @@
+# Battlefield Vietnam's recordings (features/bfv-through-bfstats): the API's
+# folder on bfv's own disk.
+#
+# bfv's disk is its own volume, mounted on the node at /mnt/bfv-data. The bfv
+# namespace mounts only /mnt/bfv-data/site (deploy/app/bfv/10-storage.yaml);
+# this is its sibling, /mnt/bfv-data/bfstats, which no bfv pod mounts. So BFV
+# recordings count against bfv's disk (`du -sh /mnt/bfv-data/*` on the node)
+# while nothing bfv runs can read, change or link into them. Never point this
+# at, or under, /mnt/bfv-data/site.
+#
+# 10Gi is the API's own quota for it (RecordingsOptions.BfvQuotaBytes); a
+# hostPath volume has no size. The API also keeps max(2 GiB, 10%) of bfv's
+# disk free for the site's own files.
+#
+# Static binding, as recordings-storage.yaml: `storageClassName: ""` keeps
+# local-path from provisioning one. Apply by hand before the API deployment
+# that mounts it; Jenkins' role covers neither PVs nor PVCs. Retain: deleting
+# the claim leaves the files.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bfstats-bfv-recordings
+  labels:
+    app: bf42-stats
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: bf42-stats
+    name: bfstats-bfv-recordings
+  hostPath:
+    # Made by the kubelet as root:root 0755 on first mount; the API
+    # deployment's init container hands it to uid 1000, mode 0750.
+    path: /mnt/bfv-data/bfstats
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bfstats-bfv-recordings
+  namespace: bf42-stats
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: bfstats-bfv-recordings
+  resources:
+    requests:
+      storage: 10Gi

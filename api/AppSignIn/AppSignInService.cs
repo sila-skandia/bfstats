@@ -30,8 +30,8 @@ public class AppSignInService(
     {
         if (!AppSignInRules.IsKnownClient(request.Client))
             return Refuse<AuthorizeAppResponse>("Unknown client");
-        if (!AppSignInRules.IsValidRedirectUri(request.RedirectUri))
-            return Refuse<AuthorizeAppResponse>("redirectUri must be http://127.0.0.1:<port>/callback or http://localhost:<port>/callback");
+        if (!AppSignInRules.IsValidRedirectUri(request.Client, request.RedirectUri))
+            return Refuse<AuthorizeAppResponse>(AppSignInRules.RedirectRule(request.Client));
         if (!AppSignInRules.IsValidState(request.State))
             return Refuse<AuthorizeAppResponse>("state is missing or not URL-safe");
         if (!string.Equals(request.CodeChallengeMethod, AppSignInRules.ChallengeMethod, StringComparison.Ordinal))
@@ -182,7 +182,10 @@ public class AppSignInService(
 
     private AppTokenResponse Answer(User user, string rawRefresh, RefreshToken entity)
     {
-        var (accessToken, expiresAt) = tokens.CreateAccessToken(user);
+        // The app's own kind of access token: bfv-site's are short-lived and a plain user's.
+        var (accessToken, expiresAt) = entity.Client is { } client
+            ? tokens.CreateAppAccessToken(user, client)
+            : tokens.CreateAccessToken(user);
         return new AppTokenResponse(accessToken, ToInstant(expiresAt), rawRefresh, ToInstant(entity.ExpiresAt), new AppTokenUser(user.Id, DisplayName(user)));
     }
 

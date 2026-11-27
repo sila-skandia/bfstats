@@ -153,8 +153,10 @@ public sealed partial class RecordingRoundService(
     {
         var settings = options.Value;
         var mods = RecordingMods.SameGame(recording.Mod);
+        // Only its own game's (features/bfv-through-bfstats): a round, and so its card, is one game's.
         var query = db.Recordings.AsNoTracking().Where(r =>
-            r.Level == recording.Level && mods.Contains(r.Mod) && r.GameMode == recording.GameMode && r.Id != recording.Id);
+            r.Level == recording.Level && mods.Contains(r.Mod) && r.GameMode == recording.GameMode && r.Id != recording.Id
+            && r.Game == recording.Game);
         if (recording.ServerName.Length > 0)
         {
             query = query.Where(r => r.ServerName == recording.ServerName || r.ServerName == "");
@@ -194,13 +196,15 @@ public sealed partial class RecordingRoundService(
             "Name the recording to put it with: its link, or the ten letters of its id.");
         var rows = await db.Recordings.AsNoTracking()
             .Where(r => r.Slug == mine || r.Slug == theirs)
-            .Select(r => new { r.Id, r.Slug, r.Level, r.Mod, r.GameMode })
+            .Select(r => new { r.Id, r.Slug, r.Level, r.Mod, r.GameMode, r.Game })
             .ToListAsync(ct);
         var one = rows.FirstOrDefault(r => r.Slug == mine);
         if (one is null) return false;
         var two = rows.FirstOrDefault(r => r.Slug == theirs)
             ?? throw new RecordingRejectedException($"There is no recording {theirs}.", StatusCodes.Status404NotFound);
         if (one.Id == two.Id) throw new RecordingRejectedException("That is this recording.");
+        // A round is one game's (features/bfv-through-bfstats): its card is on that game's site only.
+        if (one.Game != two.Game) throw new RecordingRejectedException("Those two recordings are of different games.");
         var sameLevel = one.Level == two.Level && RecordingMods.AreSameGame(one.Mod, two.Mod) && one.GameMode == two.GameMode;
 
         RecordingRoundEvidenceDto evidence;
@@ -396,7 +400,8 @@ public sealed partial class RecordingRoundService(
         var read = 0;
         var failed = 0;
         var unread = await db.Recordings.AsNoTracking()
-            .Where(r => !r.FileMissing && !db.RecordingFingerprints.Any(f =>
+            // BF1942's: every other game's fingerprint is kept at upload, which came after this backfill.
+            .Where(r => r.Game == RecordingGames.Bf1942 && !r.FileMissing && !db.RecordingFingerprints.Any(f =>
                 f.RecordingId == r.Id && f.Version == RecordingFingerprint.CurrentVersion))
             .OrderBy(r => r.Id)
             .Select(r => new { r.Id, r.Slug })
