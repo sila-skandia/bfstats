@@ -50,12 +50,12 @@ public sealed class ShortService(
     private static readonly JsonSerializerOptions MetaJson = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>The players in the last <paramref name="days"/>' Shorts, most featured first.</summary>
-    public async Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct)
+    public async Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct, string game = RecordingGames.Bf1942)
     {
         days = Math.Clamp(days, 1, MaxDays);
         var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
         var rows = await db.ReplayShortPlayers.AsNoTracking()
-            .Where(p => p.Short.CreatedAtMs >= since && p.Short.PrunedAt == null)
+            .Where(p => p.Short.Game == game && p.Short.CreatedAtMs >= since && p.Short.PrunedAt == null)
             .GroupBy(p => p.Name)
             .Select(g => new
             {

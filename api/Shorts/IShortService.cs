@@ -13,7 +13,7 @@ public interface IShortService
 
     /// <summary>The game a Short is of, whose folder its files are in; null for no such Short.</summary>
     Task<string?> GameAsync(string slug, CancellationToken ct);
-    Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct);
+    Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct, string game = api.Recordings.RecordingGames.Bf1942);
 
     Task<ShortDto?> GetAsync(string slug, CancellationToken ct);
 

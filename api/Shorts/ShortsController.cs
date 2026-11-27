@@ -67,8 +67,8 @@ public class ShortsController(
     [HttpGet("players")]
     [EnableCors(RecordingsController.PublicReadCors)]
     public async Task<ActionResult<ShortPlayersDto>> Players([FromQuery] int days = ShortService.DefaultDays,
-        CancellationToken ct = default) =>
-        Ok(await shorts.PlayersAsync(days, ct));
+        [FromQuery] string? game = null, CancellationToken ct = default) =>
+        Ok(await shorts.PlayersAsync(days, ct, RecordingGames.FromQuery(game)));
 
     [HttpGet("keys")]
     [EnableCors(RecordingsController.PublicReadCors)]
@@ -327,6 +327,9 @@ public class ShortsController(
     /// <summary>The player says so when a Short starts. Counted a few seconds later, in a
     /// batch, once per viewer per window; the answer is the count so far.</summary>
     [HttpPost("{slug:length(10)}/views")]
+    // bfv.bfstats.io's strip counts its plays too (features/bfv-through-bfstats): views keep a
+    // Short from the nightly prune. Never credentialed (api/Auth/SiteCors.cs).
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [EnableRateLimiting(RecordingsController.ViewLimit)]
     public async Task<ActionResult<ShortViewsDto>> View(string slug, CancellationToken ct)
     {
