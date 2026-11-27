@@ -17,6 +17,12 @@ public class Recording
 
     public string Title { get; set; } = "";
 
+    /// <summary>What the uploader says of it, newlines kept; '' for nothing said.</summary>
+    public string Description { get; set; } = "";
+
+    /// <summary>Listed for everyone, or found only by its link (<see cref="RecordingVisibility"/>).</summary>
+    public RecordingVisibility Visibility { get; set; }
+
     public int UploaderUserId { get; set; }
 
     /// <summary>The linked player name the uploader shared it as.</summary>
@@ -55,6 +61,11 @@ public class Recording
     /// <summary>Which recorder wrote it, from the header's <c>plus</c>: the server's, which
     /// covers the whole battlefield, or a player's client (features/recording-source).</summary>
     public RecordingSource Source { get; set; }
+
+    /// <summary>The game it is of, from the header (<see cref="api.Recordings.RecordingGames"/>):
+    /// what keeps a Battlefield Vietnam recording on bfv.bfstats.io and a BF1942 one on
+    /// replay.bfstats.io, and which folder its files are in.</summary>
+    public string Game { get; set; } = api.Recordings.RecordingGames.Bf1942;
 
     /// <summary>Bytes on disk: the gzipped recording.</summary>
     public long RecordingBytes { get; set; }

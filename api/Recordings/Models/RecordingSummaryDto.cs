@@ -36,4 +36,7 @@ public record RecordingSummaryDto(
     RecordingRoundCardDto? RoundCard = null,
     bool CanManage = false,
     string? StatsRoundId = null,
-    string? Source = null);
+    string? Source = null,
+    string Description = "",
+    string Visibility = "public",
+    string Game = RecordingGames.Bf1942);

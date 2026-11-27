@@ -24,7 +24,8 @@ public class AccountService(
     PlayerTrackerDbContext context,
     ILogger<AccountService> logger,
     IRecordingStorage? recordingStorage = null,
-    IRecordingRoundService? recordingRounds = null) : IAccountService
+    IRecordingRoundService? recordingRounds = null,
+    IRecordingStores? recordingStores = null) : IAccountService
 {
     /// <summary>
     /// RFC 2606 reserves <c>.invalid</c>, so a tombstone address can never be
@@ -297,7 +298,10 @@ public class AccountService(
         {
             try
             {
-                recordingStorage?.Delete(recording.Slug);
+                // From its own game's folder (features/bfv-through-bfstats).
+                var folder = recordingStores?.Find(recording.Game)
+                    ?? (recording.Game == RecordingGames.Bf1942 ? recordingStorage : null);
+                folder?.Delete(recording.Slug);
             }
             catch (IOException ex)
             {

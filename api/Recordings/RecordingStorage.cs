@@ -42,6 +42,11 @@ public interface IRecordingStorage
 
     bool Exists(string slug);
 
+    /// <summary>The path is a regular file of its own: there, not a folder, and not a link to
+    /// anywhere else. Every file read or served from a folder another party can reach is checked
+    /// with this first.</summary>
+    bool IsPlainFile(string path);
+
     /// <summary>Removes a recording's files. Missing ones are not an error.</summary>
     void Delete(string slug);
 
@@ -55,32 +60,81 @@ public sealed class RecordingStorage : IRecordingStorage
     private const string SlugAlphabet = "abcdefghjkmnpqrstuvwxyz23456789";
     public const int SlugLength = 10;
 
-    private readonly RecordingsOptions options;
+    private readonly long quotaBytes;
+    private readonly long minFreeBytes;
+    private readonly double minFreeFraction;
     private readonly ILogger<RecordingStorage> logger;
     private readonly string incoming;
 
+    /// <summary>
+    /// True for a folder on a disk another party also writes to (bfv's,
+    /// features/bfv-through-bfstats): its root and <c>.incoming/</c> must be real folders, not
+    /// links, and a file is read or served only when it is a regular file of its own. The
+    /// folder is meant to be out of every bfv pod's reach; this holds should that ever change.
+    /// </summary>
+    public bool Guarded { get; }
+
+    /// <summary>BF1942's recordings: the recordings volume.</summary>
     public RecordingStorage(IOptions<RecordingsOptions> options, ILogger<RecordingStorage>? logger = null)
+        : this(
+            string.IsNullOrWhiteSpace(options.Value.Path) ? Path.Combine(Path.GetTempPath(), "bfstats-recordings") : options.Value.Path,
+            options.Value.QuotaBytes, options.Value.MinFreeBytes, options.Value.MinFreeFraction, guarded: false, logger)
     {
-        this.options = options.Value;
+    }
+
+    public RecordingStorage(
+        string root, long quotaBytes, long minFreeBytes, double minFreeFraction, bool guarded, ILogger<RecordingStorage>? logger = null)
+    {
+        this.quotaBytes = quotaBytes;
+        this.minFreeBytes = minFreeBytes;
+        this.minFreeFraction = minFreeFraction;
+        Guarded = guarded;
         this.logger = logger ?? NullLogger<RecordingStorage>.Instance;
-        Root = string.IsNullOrWhiteSpace(this.options.Path)
-            ? Path.Combine(Path.GetTempPath(), "bfstats-recordings")
-            : this.options.Path;
+        Root = Path.GetFullPath(root);
         incoming = Path.Combine(Root, ".incoming");
         // Never fatal: the API serves everything else without its recordings.
         EnsureIncoming();
     }
 
+    /// <summary>Battlefield Vietnam's recordings, on bfv's disk; null while no folder is set.</summary>
+    public static RecordingStorage? ForBfv(RecordingsOptions options, ILogger<RecordingStorage>? logger = null) =>
+        string.IsNullOrWhiteSpace(options.BfvPath)
+            ? null
+            : new RecordingStorage(options.BfvPath, options.BfvQuotaBytes, options.BfvMinFreeBytes, options.BfvMinFreeFraction, guarded: true, logger);
+
     public string Root { get; }
 
-    public bool Available => Directory.Exists(Root);
+    public bool Available => Guarded ? IsPlainFolder(Root) : Directory.Exists(Root);
+
+    /// <summary>A folder that is there and is not a link.</summary>
+    private static bool IsPlainFolder(string path)
+    {
+        var info = new DirectoryInfo(path);
+        return info.Exists && info.LinkTarget is null;
+    }
+
+    public bool IsPlainFile(string path)
+    {
+        var info = new FileInfo(path);
+        return info.Exists && info.LinkTarget is null && (info.Attributes & (FileAttributes.Directory | FileAttributes.Device)) == 0;
+    }
 
     /// <summary>The uploads' directory, made if it is not there; false when it cannot be.</summary>
     private bool EnsureIncoming()
     {
         try
         {
+            if (Guarded && !IsPlainFolder(Root))
+            {
+                logger.LogError("The recordings directory {Root} is missing or a link; sharing to it is off", Root);
+                return false;
+            }
             Directory.CreateDirectory(incoming);
+            if (Guarded && !IsPlainFolder(incoming))
+            {
+                logger.LogError("{Incoming} is a link, not a folder; sharing to {Root} is off", incoming, Root);
+                return false;
+            }
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -131,9 +185,9 @@ public sealed class RecordingStorage : IRecordingStorage
 
     public string? RoomFor(long storedBytes, long incomingBytes)
     {
-        if (storedBytes + incomingBytes > options.QuotaBytes)
+        if (storedBytes + incomingBytes > quotaBytes)
         {
-            return $"Shared recordings have filled their {Size(options.QuotaBytes)}. "
+            return $"Shared recordings have filled their {Size(quotaBytes)}. "
                 + "An older one has to go before this one fits.";
         }
         long total;
@@ -150,7 +204,7 @@ public sealed class RecordingStorage : IRecordingStorage
         {
             return "The server could not see how much room its disk has, so it is not taking recordings just now.";
         }
-        var keep = Math.Max(options.MinFreeBytes, (long)(total * options.MinFreeFraction));
+        var keep = Math.Max(minFreeBytes, (long)(total * minFreeFraction));
         return free - incomingBytes < keep
             ? "The server's disk is too full to take this recording just now."
             : null;
@@ -159,7 +213,7 @@ public sealed class RecordingStorage : IRecordingStorage
     public void Promote(string incomingPath, string finalPath) =>
         File.Move(incomingPath, finalPath, overwrite: false);
 
-    public bool Exists(string slug) => File.Exists(RecordingPath(slug));
+    public bool Exists(string slug) => Guarded ? IsPlainFile(RecordingPath(slug)) : File.Exists(RecordingPath(slug));
 
     public void Delete(string slug)
     {

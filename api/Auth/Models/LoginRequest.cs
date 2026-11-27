@@ -9,4 +9,6 @@ public class LoginRequest
     /// <summary>Username for password sign-in. Present together with Password selects that branch.</summary>
     public string? Username { get; set; }
     public string? Password { get; set; }
+    /// <summary>The site a Discord sign-in that makes a new account came from (<see cref="SignUpSites"/>).</summary>
+    public string? SignUpVia { get; set; }
 }

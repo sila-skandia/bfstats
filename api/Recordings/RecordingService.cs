@@ -35,9 +35,16 @@ public interface IRecordingService
     /// <summary>The recording's id for counting a view, or null when there is none to watch.</summary>
     Task<int?> WatchableIdAsync(string slug, CancellationToken ct);
 
+    /// <summary>The game a recording is of, whose folder its files are in; null for no such recording.</summary>
+    Task<string?> GameAsync(string slug, CancellationToken ct);
+
     Task<RecordingViewerDto> ViewerAsync(RecordingActor actor, CancellationToken ct);
 
     Task<RecordingDetailDto?> RenameAsync(string slug, RecordingActor actor, string title, CancellationToken ct);
+
+    /// <summary>The uploader (or an admin) changes the title, the description or who finds it;
+    /// each given, the rest as they were. Null when there is no such recording.</summary>
+    Task<RecordingDetailDto?> UpdateAsync(string slug, RecordingActor actor, UpdateRecordingRequest request, CancellationToken ct);
 
     Task<bool> DeleteAsync(string slug, RecordingActor actor, CancellationToken ct);
 
@@ -82,8 +89,12 @@ public sealed class RecordingService(
     IOptions<RecordingsOptions> options,
     ILogger<RecordingService> logger,
     IRecordingRoundService? rounds = null,
-    IMemoryCache? cache = null) : IRecordingService
+    IMemoryCache? cache = null,
+    IRecordingStores? stores = null) : IRecordingService
 {
+    /// <summary>Each game's folder; BF1942's alone where none are given (the tests).</summary>
+    private readonly IRecordingStores games = stores ?? new RecordingStores(storage, bfv: null);
+
     public const int DefaultPageSize = 24;
     public const int MaxPageSize = 48;
     public const int MaxCommentPageSize = 200;
@@ -107,9 +118,11 @@ public sealed class RecordingService(
     {
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
-        var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
+        // Listed ones only (RecordingVisibility): an unlisted recording is found by its link alone.
+        var shared = db.Recordings.AsNoTracking()
+            .Where(r => r.Game == filter.Game && r.Visibility == RecordingVisibility.Public && !r.FileMissing);
         var (keys, total, recordings) = filter.IsEmpty
-            ? await WholeFeedPageAsync(sort, page, pageSize, ct)
+            ? await WholeFeedPageAsync(filter.Game, sort, page, pageSize, ct)
             : await NarrowedPageAsync(OnCards(shared, filter), sort, page, pageSize, ct);
         // The page's cards by their keys: the id and the round id are each indexed, their COALESCE is not.
         var rows = keys.Count == 0 ? [] : await shared
@@ -117,7 +130,7 @@ public sealed class RecordingService(
             .ToListAsync(ct);
         var byCard = rows.GroupBy(r => r.RoundId ?? r.Id).ToDictionary(g => g.Key, g => g.ToList());
         var leads = keys.Where(byCard.ContainsKey).Select(k => Lead(byCard[k])).ToList();
-        var used = await StorageUsedAsync(ct);
+        var used = await StorageUsedAsync(filter.Game, ct);
         var players = await PlayersAsync(leads.Select(r => r.UploaderName), ct);
         var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], actor, ct);
         return new PagedRecordingsDto(
@@ -131,7 +144,7 @@ public sealed class RecordingService(
             page,
             pageSize,
             Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
-            new RecordingStorageDto(used, options.Value.QuotaBytes),
+            new RecordingStorageDto(used, filter.Game == RecordingGames.Bf1942 ? options.Value.QuotaBytes : options.Value.BfvQuotaBytes),
             recordings);
     }
 
@@ -140,15 +153,15 @@ public sealed class RecordingService(
     /// the cost follows the page, not how many recordings have been shared. Newest by id:
     /// CreatedAt is an ExtendedIso string, whose varying fraction digits do not sort.</summary>
     private async Task<(List<int> Keys, int Cards, int Recordings)> WholeFeedPageAsync(
-        string? sort, int page, int pageSize, CancellationToken ct)
+        string game, string? sort, int page, int pageSize, CancellationToken ct)
     {
-        var cards = db.RecordingCards.AsNoTracking();
+        var cards = db.RecordingCards.AsNoTracking().Where(c => c.Game == game);
         var ordered = sort == "views"
             ? cards.OrderByDescending(c => c.Views).ThenByDescending(c => c.NewestId)
             : cards.OrderByDescending(c => c.NewestId);
         var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.CardKey).ToListAsync(ct);
         var totals = await db.RecordingTallies.AsNoTracking()
-            .Where(t => t.Name == "" && (t.Kind == RecordingTallyKind.Cards || t.Kind == RecordingTallyKind.Recordings))
+            .Where(t => t.Game == game && t.Name == "" && (t.Kind == RecordingTallyKind.Cards || t.Kind == RecordingTallyKind.Recordings))
             .ToDictionaryAsync(t => t.Kind, t => t.Count, ct);
         return (keys, totals.GetValueOrDefault(RecordingTallyKind.Cards), totals.GetValueOrDefault(RecordingTallyKind.Recordings));
     }
@@ -175,11 +188,12 @@ public sealed class RecordingService(
     /// <summary>The space the volume holds (<see cref="VolumeUsage"/>): everyone's recordings and
     /// the Shorts, whatever the feed is narrowed to. Kept a minute rather than read for every page
     /// of every server's and player's list; the upload's own quota check reads it fresh.</summary>
-    private async Task<long> StorageUsedAsync(CancellationToken ct)
+    private async Task<long> StorageUsedAsync(string game, CancellationToken ct)
     {
-        if (cache?.TryGetValue(StorageUsedKey, out long cached) == true) return cached;
-        var used = await VolumeUsage.StoredBytesAsync(db, ct);
-        cache?.Set(StorageUsedKey, used, TimeSpan.FromMinutes(1));
+        var key = game == RecordingGames.Bf1942 ? StorageUsedKey : $"{StorageUsedKey}:{game}";
+        if (cache?.TryGetValue(key, out long cached) == true) return cached;
+        var used = await VolumeUsage.StoredBytesAsync(db, game, ct);
+        cache?.Set(key, used, TimeSpan.FromMinutes(1));
         return used;
     }
 
@@ -210,24 +224,25 @@ public sealed class RecordingService(
     /// </summary>
     public async Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct)
     {
-        var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
+        var shared = db.Recordings.AsNoTracking()
+            .Where(r => r.Game == filter.Game && r.Visibility == RecordingVisibility.Public && !r.FileMissing);
         var servers = filter with { Server = null };
         var uploaders = filter with { Uploader = null };
         return new RecordingFiltersDto(
             servers.IsEmpty
-                ? await WholeFeedChoicesAsync(RecordingTallyKind.Server, ct)
+                ? await WholeFeedChoicesAsync(filter.Game, RecordingTallyKind.Server, ct)
                 : await ChoicesAsync(Narrowed(shared, servers), r => r.ServerName, ct),
             uploaders.IsEmpty
-                ? await WholeFeedChoicesAsync(RecordingTallyKind.Uploader, ct)
+                ? await WholeFeedChoicesAsync(filter.Game, RecordingTallyKind.Uploader, ct)
                 : await ChoicesAsync(Narrowed(shared, uploaders), r => r.UploaderName, ct));
     }
 
     /// <summary>The choices over the whole feed, from the counts the triggers keep
     /// (<see cref="RecordingCards"/>): the first <see cref="MaxFilterChoices"/> of an index.</summary>
-    private async Task<List<RecordingFilterChoiceDto>> WholeFeedChoicesAsync(RecordingTallyKind kind, CancellationToken ct)
+    private async Task<List<RecordingFilterChoiceDto>> WholeFeedChoicesAsync(string game, RecordingTallyKind kind, CancellationToken ct)
     {
         var busiest = await db.RecordingTallies.AsNoTracking()
-            .Where(t => t.Kind == kind && t.Count > 0)
+            .Where(t => t.Game == game && t.Kind == kind && t.Count > 0)
             .OrderByDescending(t => t.Count).ThenBy(t => t.Name)
             .Take(MaxFilterChoices)
             .Select(t => new RecordingFilterChoiceDto(t.Name, t.Count))
@@ -318,6 +333,9 @@ public sealed class RecordingService(
         return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName), round?.Members, round?.Weak ?? false);
     }
 
+    public async Task<string?> GameAsync(string slug, CancellationToken ct) =>
+        await Find(slug).Select(r => r.Game).FirstOrDefaultAsync(ct);
+
     public async Task<int?> WatchableIdAsync(string slug, CancellationToken ct) =>
         await Find(slug).Where(r => !r.FileMissing).Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
 
@@ -337,6 +355,37 @@ public sealed class RecordingService(
         return await DetailAsync(recording, actor, ct);
     }
 
+    public async Task<RecordingDetailDto?> UpdateAsync(string slug, RecordingActor actor, UpdateRecordingRequest request, CancellationToken ct)
+    {
+        var recording = await Find(slug).FirstOrDefaultAsync(ct);
+        if (recording is null) return null;
+        Manage(recording, actor);
+        if (request.Title is not null)
+        {
+            var title = RecordingText.Line(request.Title, RecordingText.MaxTitle);
+            if (title.Length == 0) throw new RecordingRejectedException("A recording needs a title.");
+            recording.Title = title;
+        }
+        if (request.Description is not null) recording.Description = Description(request.Description);
+        if (request.Visibility is not null)
+        {
+            recording.Visibility = RecordingVisibilities.Parse(request.Visibility)
+                ?? throw new RecordingRejectedException("A recording is public or unlisted.");
+        }
+        recording.UpdatedAt = clock.GetCurrentInstant();
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(recording, actor, ct);
+    }
+
+    /// <summary>A description as kept: a comment's cleaning, refused past its length.</summary>
+    internal static string Description(string? text)
+    {
+        var clean = RecordingText.Comment(text);
+        return clean.Length > RecordingText.MaxDescription
+            ? throw new RecordingRejectedException($"A description runs to {RecordingText.MaxDescription} characters at most.")
+            : clean;
+    }
+
     public async Task<bool> DeleteAsync(string slug, RecordingActor actor, CancellationToken ct)
     {
         var recording = await Find(slug).FirstOrDefaultAsync(ct);
@@ -352,7 +401,7 @@ public sealed class RecordingService(
         // be a dead link in the feed.
         try
         {
-            storage.Delete(recording.Slug);
+            games.Find(recording.Game)?.Delete(recording.Slug);
         }
         catch (IOException ex)
         {
@@ -384,12 +433,13 @@ public sealed class RecordingService(
     private async Task<RecordingDetailDto> WriteThumbnailAsync(Recording recording, RecordingActor? actor, Stream body, CancellationToken ct)
     {
         var jpeg = await RecordingThumbnails.NormalizeAsync(body, ct);
-        var stored = await VolumeUsage.StoredBytesAsync(db, ct);
-        if (storage.RoomFor(stored - recording.ThumbnailBytes, jpeg.Length) is { } full)
+        var folder = games.Require(recording.Game);
+        var stored = await VolumeUsage.StoredBytesAsync(db, recording.Game, ct);
+        if (folder.RoomFor(stored - recording.ThumbnailBytes, jpeg.Length) is { } full)
         {
             throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
         }
-        await storage.WriteThumbnailAsync(recording.Slug, jpeg, ct);
+        await folder.WriteThumbnailAsync(recording.Slug, jpeg, ct);
         recording.ThumbnailBytes = jpeg.Length;
         recording.UpdatedAt = clock.GetCurrentInstant();
         await db.SaveChangesAsync(ct);
@@ -602,8 +652,11 @@ public sealed class RecordingService(
             .ToListAsync(ct);
         if (asked.Count == 0) return [];
         var roundIds = asked.Select(a => a.Round).Distinct().ToList();
+        // A round's unlisted recordings are not named on its others' pages: each is found by its
+        // own link, which shows it whole.
         var members = await db.Recordings.AsNoTracking()
-            .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value))
+            .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value)
+                && (r.Visibility == RecordingVisibility.Public || ids.Contains(r.Id)))
             .Select(r => new RoundRow(
                 r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderUserId, r.UploaderName, r.RecordedBy, r.DurationSeconds,
                 r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing, r.Source))
@@ -820,7 +873,10 @@ public sealed class RecordingService(
         card,
         canManage,
         r.StatsRoundId,
-        SourceName(r.Source));
+        SourceName(r.Source),
+        r.Description,
+        RecordingVisibilities.Name(r.Visibility),
+        r.Game);
 
     internal static RecordingDetailDto Detail(
         Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
@@ -850,7 +906,10 @@ public sealed class RecordingService(
         actor?.IsAdmin == true,
         round is not null && roundWeak,
         r.StatsRoundId,
-        SourceName(r.Source));
+        SourceName(r.Source),
+        r.Description,
+        RecordingVisibilities.Name(r.Visibility),
+        r.Game);
 
     private static RecordingCommentDto CommentDto(
         RecordingComment c, bool canDelete, IReadOnlyList<RecordingCommentReactionDto> reactions) =>

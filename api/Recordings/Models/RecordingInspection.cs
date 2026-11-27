@@ -7,7 +7,8 @@ namespace api.Recordings.Models;
 /// uploader's browser, which reads the whole file, fills those in. <see cref="Fingerprint"/>
 /// is what finds the other recordings of its round (features/replay-feed, "Rounds").
 /// <see cref="Source"/> is which recorder wrote it, from the header's <c>plus</c>
-/// (features/recording-source).
+/// (features/recording-source). <see cref="Game"/> is the game it is of, from the header's
+/// <c>game</c> (features/bfv-through-bfstats).
 /// </summary>
 public sealed record RecordingInspection(
     int Version,
@@ -22,4 +23,5 @@ public sealed record RecordingInspection(
     long RawBytes,
     string ContentHash,
     RoundFingerprint Fingerprint,
-    RecordingSource Source = RecordingSource.Client);
+    RecordingSource Source = RecordingSource.Client,
+    string Game = RecordingGames.Bf1942);

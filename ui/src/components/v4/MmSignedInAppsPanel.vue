@@ -41,7 +41,7 @@ async function signOut(app: SignedInApp) {
   }
 }
 
-const clientName = (client: string) => APP_CLIENTS[client] ?? client
+const clientName = (client: string) => APP_CLIENTS[client]?.name ?? client
 
 const formatRelative = (iso: string): string => {
   const d = parseUtc(iso)

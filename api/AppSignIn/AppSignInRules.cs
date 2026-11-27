@@ -11,10 +11,22 @@ namespace api.AppSignIn;
 /// </summary>
 public static partial class AppSignInRules
 {
-    /// <summary>The one known client: the relay app.</summary>
+    /// <summary>The relay app, on the player's own computer.</summary>
     public const string RelayClient = "bfstats-relay";
 
-    public static readonly IReadOnlySet<string> KnownClients = new HashSet<string>(StringComparer.Ordinal) { RelayClient };
+    /// <summary>
+    /// bfv.bfstats.io's pages (features/bfv-through-bfstats): a site hosted for someone else,
+    /// which signs its visitors in with bfstats.io's accounts. Its tokens are short-lived and
+    /// only ever a plain user's (<see cref="api.Auth.TokenService.CreateAppAccessToken"/>).
+    /// </summary>
+    public const string BfvSiteClient = "bfv-site";
+
+    /// <summary>bfv-site's one address on the web: the only one it is sent back to, but for
+    /// a bfv page served from the visitor's own computer while it is being worked on.</summary>
+    public const string BfvSiteRedirectUri = "https://bfv.bfstats.io/auth/callback";
+
+    public static readonly IReadOnlySet<string> KnownClients =
+        new HashSet<string>(StringComparer.Ordinal) { RelayClient, BfvSiteClient };
 
     public const int MaxDeviceLength = 64;
     public const string UnnamedDevice = "Unnamed device";
@@ -28,6 +40,10 @@ public static partial class AppSignInRules
     /// </summary>
     [GeneratedRegex(@"\Ahttp://(?:127\.0\.0\.1|localhost):(?<port>[1-9][0-9]{3,4})/callback\z", RegexOptions.CultureInvariant)]
     private static partial Regex RedirectUriPattern();
+
+    /// <summary>A bfv page on the visitor's own computer: <c>http://localhost:&lt;port&gt;/auth/callback</c>.</summary>
+    [GeneratedRegex(@"\Ahttp://(?:127\.0\.0\.1|localhost):(?<port>[1-9][0-9]{3,4})/auth/callback\z", RegexOptions.CultureInvariant)]
+    private static partial Regex LocalSiteRedirectUriPattern();
 
     /// <summary>base64url(SHA-256(...)) without padding is always 43 characters.</summary>
     [GeneratedRegex(@"\A[A-Za-z0-9_-]{43}\z", RegexOptions.CultureInvariant)]
@@ -43,10 +59,28 @@ public static partial class AppSignInRules
 
     public static bool IsKnownClient(string? client) => client is not null && KnownClients.Contains(client);
 
-    public static bool IsValidRedirectUri(string? redirectUri)
+    /// <summary>The relay's rule: its loopback listener.</summary>
+    public static bool IsValidRedirectUri(string? redirectUri) => Loopback(RedirectUriPattern(), redirectUri);
+
+    /// <summary>Where <paramref name="client"/> may be sent back to: the relay's loopback
+    /// listener, or bfv.bfstats.io's callback (or a local bfv page's), exactly.</summary>
+    public static bool IsValidRedirectUri(string? client, string? redirectUri) => client switch
+    {
+        RelayClient => IsValidRedirectUri(redirectUri),
+        BfvSiteClient => string.Equals(redirectUri, BfvSiteRedirectUri, StringComparison.Ordinal)
+            || Loopback(LocalSiteRedirectUriPattern(), redirectUri),
+        _ => false,
+    };
+
+    /// <summary>What a refused redirect URI is told, for <paramref name="client"/>.</summary>
+    public static string RedirectRule(string? client) => client == BfvSiteClient
+        ? $"redirectUri must be {BfvSiteRedirectUri} or http://localhost:<port>/auth/callback"
+        : "redirectUri must be http://127.0.0.1:<port>/callback or http://localhost:<port>/callback";
+
+    private static bool Loopback(Regex pattern, string? redirectUri)
     {
         if (redirectUri is null) return false;
-        var match = RedirectUriPattern().Match(redirectUri);
+        var match = pattern.Match(redirectUri);
         if (!match.Success) return false;
         var port = int.Parse(match.Groups["port"].Value, CultureInfo.InvariantCulture);
         return port is >= 1024 and <= 65535;

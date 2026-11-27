@@ -2109,6 +2109,10 @@ namespace api.Migrations
                     b.Property<string>("Role")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SignedUpVia")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Username")
                         .HasColumnType("TEXT");
 
@@ -2118,6 +2122,8 @@ namespace api.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("SignedUpVia");
 
                     b.HasIndex("Username")
                         .IsUnique();
@@ -2253,6 +2259,10 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("DurationSeconds")
                         .HasColumnType("REAL");
 
@@ -2261,6 +2271,13 @@ namespace api.Migrations
 
                     b.Property<int>("FormatVersion")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Game")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("bf1942");
 
                     b.Property<string>("GameMode")
                         .IsRequired()
@@ -2348,6 +2365,9 @@ namespace api.Migrations
                     b.Property<int>("ViewCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Visibility")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ContentHash")
@@ -2367,6 +2387,8 @@ namespace api.Migrations
                     b.HasIndex("FileMissing", "RoundId", "ViewCount");
 
                     b.HasIndex("FileMissing", "ViewCount", "Id");
+
+                    b.HasIndex("Game", "FileMissing", "Id");
 
                     b.HasIndex("ServerName", "FileMissing", "RoundId");
 
@@ -2393,6 +2415,11 @@ namespace api.Migrations
                     b.Property<int>("CardKey")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Game")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("NewestId")
                         .HasColumnType("INTEGER");
 
@@ -2404,9 +2431,9 @@ namespace api.Migrations
 
                     b.HasKey("CardKey");
 
-                    b.HasIndex("NewestId");
+                    b.HasIndex("Game", "NewestId");
 
-                    b.HasIndex("Views", "NewestId");
+                    b.HasIndex("Game", "Views", "NewestId");
 
                     b.ToTable("RecordingCards", t =>
                         {
@@ -2427,6 +2454,11 @@ namespace api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Game")
+                        .IsRequired()
+                        .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
                     b.HasKey("CardKey", "Kind", "Name");
@@ -2651,6 +2683,10 @@ namespace api.Migrations
 
             modelBuilder.Entity("api.Recordings.Models.RecordingTally", b =>
                 {
+                    b.Property<string>("Game")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
@@ -2660,10 +2696,10 @@ namespace api.Migrations
                     b.Property<int>("Count")
                         .HasColumnType("INTEGER");
 
-                    b.HasKey("Kind", "Name");
+                    b.HasKey("Game", "Kind", "Name");
 
-                    b.HasIndex("Kind", "Count", "Name")
-                        .IsDescending(false, true, false);
+                    b.HasIndex("Game", "Kind", "Count", "Name")
+                        .IsDescending(false, false, true, false);
 
                     b.ToTable("RecordingTallies");
                 });

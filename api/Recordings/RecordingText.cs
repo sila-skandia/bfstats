@@ -15,6 +15,7 @@ public static partial class RecordingText
 {
     public const int MaxTitle = 100;
     public const int MaxComment = 1000;
+    public const int MaxDescription = 500;
 
     /// <summary><c>h:mm:ss</c>, or <c>m:ss</c> with up to three digits of minutes, standing
     /// alone: not part of a longer run of digits and colons.</summary>

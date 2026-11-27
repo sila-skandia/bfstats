@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createHash, randomBytes } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { loginAsAdmin } from './helpers/auth';
@@ -196,5 +197,54 @@ test.describe('App sign-in through the browser', () => {
       },
     });
     expect(response.status()).toBe(400);
+  });
+
+  // bfv.bfstats.io, a site hosted for someone else (features/bfv-through-bfstats): the same
+  // hand-off, back to its own callback only, and a token that is short-lived, a plain user's
+  // and carries no email, even when the admin is the one who signs in.
+  test('bfv.bfstats.io signs in to its own callback and gets a plain, short-lived token', async ({ page }) => {
+    await loginAsAdmin(page);
+    const { challenge, verifier } = pkce();
+    const state = randomBytes(16).toString('base64url');
+    const local = `http://localhost:${PORT}/auth/callback`;
+    const bfv = { client: 'bfv-site', redirect_uri: local, device: '' };
+
+    for (const redirect_uri of [REDIRECT, 'https://evil.example/auth/callback', 'http://bfv.bfstats.io/auth/callback']) {
+      await page.goto(allowPageUrl(requestParams('', challenge, state, { ...bfv, redirect_uri })));
+      await expect(page.getByTestId('app-sign-in-error'), redirect_uri).toBeVisible();
+      await expect(page.getByTestId('app-sign-in-allow')).toHaveCount(0);
+    }
+
+    await page.goto(allowPageUrl(requestParams('', challenge, state, bfv)));
+    await expect(page.getByRole('heading', { name: 'Allow bfv.bfstats.io to use your account?' })).toBeVisible();
+    await expect(page.getByTestId('app-sign-in-device')).toHaveCount(0);
+    await expect(page.getByText('Share Battlefield Vietnam recordings and Shorts as you')).toBeVisible();
+    // The admin's own sign-in, read while the page is still bfstats.io's.
+    const siteHeaders = await authHeaders(page);
+
+    const back = new Promise<URL>(resolve => {
+      void page.route(`http://localhost:${PORT}/**`, async route => {
+        resolve(new URL(route.request().url()));
+        await route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>bfv</title>' });
+      });
+    });
+    await page.getByTestId('app-sign-in-allow').click();
+    const code = (await back).searchParams.get('code')!;
+
+    const exchanged = await page.request.post(`${API}/token`, { data: { code, codeVerifier: verifier, redirectUri: local } });
+    expect(exchanged.status()).toBe(200);
+    const tokens = await exchanged.json();
+    const claims = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1], 'base64url').toString());
+    expect(claims.client).toBe('bfv-site');
+    expect(claims.role).toBe('User');
+    expect(JSON.stringify(claims)).not.toContain('@');
+    expect(claims.exp - claims.iat).toBeLessThanOrEqual(16 * 60);
+
+    // The admin's own sign-in is an admin; the same account through bfv is not.
+    const asSite = await page.request.get('/stats/recordings/me', { headers: siteHeaders });
+    expect((await asSite.json()).isAdmin).toBe(true);
+    const asBfv = await page.request.get('/stats/recordings/me', { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+    expect(asBfv.status()).toBe(200);
+    expect((await asBfv.json()).isAdmin).toBe(false);
   });
 });
