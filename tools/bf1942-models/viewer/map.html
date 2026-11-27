@@ -3394,6 +3394,13 @@ const ticketFeed = createTicketFeed(bag(
     // The live counts, once the round has one (`round-state.js`): the level's
     // own numbers until then.
     get round() { return round; },
+    // The ticket bar's time left: a replay's own (its server's time limit
+    // against its clock, `setRoundTime`), else this round's `gameTime`
+    // against its clock; null where neither has a limit.
+    get roundTimeLeft() {
+      if (replayUrl) return replayRoundTimeLeft;
+      return round?.gameTime > 0 ? round.gameTime - round.clock : null;
+    },
   },
 ));
 /** The level is up and, on a server, so is the server's world: nobody deploys
@@ -3477,6 +3484,8 @@ const spawning = createSpawning(bag(
 // of one round plays them merged, the first leading (features/replay-feed,
 // "Rounds"); the first names the level.
 const replayUrl = params.get('replay');
+// A replay's time left in its round (`setRoundTime`), for the ticket bar.
+let replayRoundTimeLeft = null;
 /** Set when the recording's level is not in the viewer (`unplayableReason`). */
 let replayRefused = false;
 let replayController = null;
@@ -4390,6 +4399,8 @@ replayController = createReplayController({
   setTickets: (team1, team2) => {
     if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
   },
+  // The recording's time left, for the ticket bar's middle cell (null: none).
+  setRoundTime: left => { replayRoundTimeLeft = Number.isFinite(left) ? left : null; },
   // The board's score (replay-chapters.js `scoresAt`): the pack's points for
   // the level's mode, where the recording has none of the server's.
   scoreSettings: () => hudFeed.hudPack.scoreSettings,

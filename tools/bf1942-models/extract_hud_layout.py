@@ -852,6 +852,14 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     # draw it in-game with no code of its own, the way every other group in
     # this file works.
     "tickets":          ([("is", "ShowTicket")], (620.0, 4.0, 256.0, 32.0)),
+    # The round's time left, in the middle cell of the ticket bar (top 28,
+    # the entry after the tickets). The client fills it every frame
+    # (BF1942.exe 0x006aec81): `GameClient` vslot 0x118, the GameRules time
+    # limit `setTimeLimit` (vslot 0x114, 0x004952da) stored, an end on the
+    # game clock; above 0 `Time/ShowTime` is set and `Time/Time` is
+    # `limit - g_clientGameTime` (0x009a2160) as "%.2d:%.2d" (0x0091de40),
+    # else `Time/ShowTime` is cleared and the cell is empty (ledger HUD-31).
+    "time":             ([("is", "Time/ShowTime")], (690.0, 12.0, 37.0, 20.0)),
     # The combat-area warning. Its leading cull is a comparison rather than a
     # bool -- `0 < Outside/OutsideTime`, a LessData with no symbol of its own,
     # which `leading_culls` reports as the anonymous ("?", "") -- so the rect
@@ -1021,6 +1029,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "weaponBar": raw["weaponBar"],
         "crosshair": raw["crosshair"],
         "tickets": raw["tickets"],
+        "time": raw["time"],
         "outside": raw["outside"],
         **{key: raw[key] for key in RESPAWN_GROUPS},
     }

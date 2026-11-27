@@ -920,7 +920,7 @@ export function parseRecording(text) {
         // TimerSyncEvent, every 10 s: u32 time limit (0 none), u32 world time
         // rounded to the second.
         if (b.length >= 8) {
-          rec.clocks.push({ t, seconds: view.getUint32(4, true), exact: false });
+          rec.clocks.push({ t, seconds: view.getUint32(4, true), exact: false, limit: view.getUint32(0, true) });
           rec.timeLimit = view.getUint32(0, true);
         }
         return;
@@ -1083,6 +1083,9 @@ export function parseRecording(text) {
         if (r.crosshair !== undefined) rec.crosshairCentrePoint = Boolean(r.crosshair);
         if (r.noseCam !== undefined) rec.noseCam = Boolean(r.noseCam);
         if (r.extViews !== undefined) rec.extViews = Boolean(r.extViews);
+        // Its time limit too, the round's end on the game clock (0 none):
+        // a change takes the ticket bar's clock from here (`timeLimitAt`).
+        if (Number.isFinite(r.timeLimit)) (rec.limits ??= []).push({ t, limit: r.timeLimit });
         return;
       case 'scoreTable': {
         // The server's ScoreManager points (core.c `sample_points`), under
@@ -1189,7 +1192,10 @@ export function parseRecording(text) {
         if (Number.isFinite(r.worldTime)) rec.clocks.push({ t, seconds: r.worldTime, exact: true });
         return;
       case 'clock':
-        if (Number.isFinite(r.worldTime)) rec.clocks.push({ t, seconds: r.worldTime, exact: false });
+        if (Number.isFinite(r.worldTime)) {
+          rec.clocks.push({ t, seconds: r.worldTime, exact: false,
+            ...(Number.isFinite(r.timeLimit) ? { limit: r.timeLimit } : {}) });
+        }
         rec.timeLimit = r.timeLimit ?? rec.timeLimit;
         return;
       case 'serverName':
@@ -1961,6 +1967,7 @@ export function parseRecording(text) {
   }
   rec.events.sort((a, b) => a.t - b.t);
   rec.clocks.sort((a, b) => a.t - b.t);
+  rec.limits?.sort((a, b) => a.t - b.t);
   // Players were still being put to their soldiers while the lives were
   // looked up above: whoever asks next indexes them as they now stand.
   lifeIndexes.delete(rec.lives);
@@ -2480,6 +2487,36 @@ export function roundClock(rec, t) {
     if (!ref.exact || Math.abs(c.seconds - predicted) > 10.5) ref = c;
   }
   return ref ? ref.seconds + (t - ref.t) : null;
+}
+
+/**
+ * The round's time limit at `t`: the end of the round on the server's game
+ * clock, seconds (`TimerSyncEvent` 0x29 and the server recorder's `clock`
+ * rows carry it every 10 s, `gameRules` on each change; 0 is none). The
+ * client draws `limit - game time` in the ticket bar's middle cell while it
+ * is above 0 (BF1942.exe 0x006aec81, ledger HUD-31). A file can hold rounds
+ * with different limits (wxprh7ze6n: 1800, then 2700).
+ */
+export function timeLimitAt(rec, t) {
+  let limit = null;
+  let at = -Infinity;
+  for (const c of rec.clocks) {
+    if (c.t > t) break;
+    if (c.limit !== undefined) { limit = c.limit; at = c.t; }
+  }
+  for (const l of rec.limits ?? []) {
+    if (l.t > t) break;
+    if (l.t >= at) { limit = l.limit; at = l.t; }
+  }
+  return limit ?? rec.timeLimit ?? 0;
+}
+
+/** The round's seconds left at `t` (`timeLimitAt` against `roundClock`), or
+ *  null where the round has no limit or no clock. */
+export function roundTimeLeft(rec, t) {
+  const limit = timeLimitAt(rec, t);
+  const clock = roundClock(rec, t);
+  return limit > 0 && clock !== null ? limit - clock : null;
 }
 
 // --- sampling a life at a time --------------------------------------------------

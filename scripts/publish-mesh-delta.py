@@ -298,7 +298,11 @@ class Volume:
             return False
         # Names go as positional arguments, never into the remote quoting: EoD
         # has levels called `charlie_don't_surf` and `who'll_stop_the_rain`.
-        script = ('cd "$1" && shift && for f in "$@"; do '
+        # tar keeps the local mode, and a file the local tree holds 0600 (the
+        # remote-fetch cache's copies, which the vanilla HUD layouts are links
+        # to) landed unreadable and nginx answered 403 until it was opened up
+        # (2026-11-27), so each landed file is made world-readable here.
+        script = ('cd "$1" && shift && for f in "$@"; do chmod a+r "$f" 2>/dev/null; '
                   'stat -c "%s %n" "$f" 2>/dev/null || echo "-1 $f"; done')
         landed: dict[str, int] = {}
         for i in range(0, len(rels), 200):
