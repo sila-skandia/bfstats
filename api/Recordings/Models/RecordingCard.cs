@@ -11,6 +11,9 @@ public class RecordingCard
     /// <summary>The card's key: its round's id, or the recording's own while it is in none.</summary>
     public int CardKey { get; set; }
 
+    /// <summary>The game of the recordings on it: a round is of one game, so a card is.</summary>
+    public string Game { get; set; } = api.Recordings.RecordingGames.Bf1942;
+
     /// <summary>The highest recording id on the card: its place among the newest.</summary>
     public int NewestId { get; set; }
 

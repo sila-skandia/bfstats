@@ -50,19 +50,30 @@ public sealed class RecordingsControllerTests : IDisposable
         }
     }
 
+    /// <summary>A file is served only for a recording there is a row of, from its own game's
+    /// folder (features/bfv-through-bfstats): one left behind by a removed row is not.</summary>
+    [Fact]
+    public async Task SharedFiles_WithNoRecording_AreNotServed()
+    {
+        recordings.GameAsync(Slug, Arg.Any<CancellationToken>()).Returns((string?)null);
+
+        Assert.IsType<NotFoundResult>(await controller.RecordingFile(Slug));
+    }
+
     /// <summary>A shared file is someone's upload served from bfstats.io: a browser sent
     /// straight to one must neither guess it is a page nor, as an XML page, run what is in it.</summary>
     [Theory]
     [InlineData("ndjson", "application/x-ndjson")]
     [InlineData("xml", "text/xml")]
     [InlineData("jpg", "image/jpeg")]
-    public void SharedFiles_AreServedInert(string kind, string contentType)
+    public async Task SharedFiles_AreServedInert(string kind, string contentType)
     {
+        recordings.GameAsync(Slug, Arg.Any<CancellationToken>()).Returns(RecordingGames.Bf1942);
         var result = kind switch
         {
-            "ndjson" => controller.RecordingFile(Slug),
-            "xml" => controller.ServerLogFile(Slug),
-            _ => controller.Thumbnail(Slug),
+            "ndjson" => await controller.RecordingFile(Slug),
+            "xml" => await controller.ServerLogFile(Slug),
+            _ => await controller.Thumbnail(Slug),
         };
 
         var file = Assert.IsType<PhysicalFileResult>(result);

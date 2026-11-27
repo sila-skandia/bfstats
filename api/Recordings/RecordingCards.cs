@@ -37,37 +37,39 @@ public static class RecordingCards
     /// round it is, and the one it is the id of while that one is in no round. Two index lookups;
     /// <c>COALESCE(RoundId, Id) = key</c> would read every row.</summary>
     private static string Members(string key) => $"""
-        (SELECT Id, ViewCount, ServerName, UploaderName FROM Recordings WHERE FileMissing = 0 AND RoundId = {key}
+        (SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE FileMissing = 0 AND RoundId = {key}
          UNION ALL
-         SELECT Id, ViewCount, ServerName, UploaderName FROM Recordings WHERE Id = {key} AND RoundId IS NULL AND FileMissing = 0)
+         SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE Id = {key} AND RoundId IS NULL AND FileMissing = 0)
         """;
 
-    /// <summary>The card <paramref name="key"/> worked out again: gone when nothing is on it.</summary>
+    /// <summary>The card <paramref name="key"/> worked out again: gone when nothing is on it. Its
+    /// game is its recordings': a round is only ever found among one game's
+    /// (features/bfv-through-bfstats).</summary>
     private static string Card(string key) => $"""
             DELETE FROM RecordingCards WHERE CardKey = {key} AND NOT EXISTS (SELECT 1 FROM {Members(key)});
-            INSERT INTO RecordingCards (CardKey, NewestId, Views, Recordings)
-            SELECT * FROM (SELECT {key} AS CardKey, MAX(Id) AS NewestId, MAX(ViewCount) AS Views, COUNT(*) AS Recordings FROM {Members(key)})
+            INSERT INTO RecordingCards (CardKey, Game, NewestId, Views, Recordings)
+            SELECT * FROM (SELECT {key} AS CardKey, MAX(Game) AS Game, MAX(Id) AS NewestId, MAX(ViewCount) AS Views, COUNT(*) AS Recordings FROM {Members(key)})
             WHERE NewestId IS NOT NULL
-            ON CONFLICT (CardKey) DO UPDATE SET NewestId = excluded.NewestId, Views = excluded.Views, Recordings = excluded.Recordings
-            WHERE NewestId <> excluded.NewestId OR Views <> excluded.Views OR Recordings <> excluded.Recordings;
+            ON CONFLICT (CardKey) DO UPDATE SET Game = excluded.Game, NewestId = excluded.NewestId, Views = excluded.Views, Recordings = excluded.Recordings
+            WHERE Game <> excluded.Game OR NewestId <> excluded.NewestId OR Views <> excluded.Views OR Recordings <> excluded.Recordings;
         """;
 
     /// <summary>The servers and uploaders on the card <paramref name="key"/> worked out again.</summary>
     private static string Names(string key) => $"""
             DELETE FROM RecordingCardNames WHERE CardKey = {key};
-            INSERT INTO RecordingCardNames (CardKey, Kind, Name)
-            SELECT {key}, {Server}, ServerName FROM {Members(key)} WHERE ServerName <> ''
+            INSERT INTO RecordingCardNames (CardKey, Game, Kind, Name)
+            SELECT {key}, Game, {Server}, ServerName FROM {Members(key)} WHERE ServerName <> ''
             UNION
-            SELECT {key}, {Uploader}, UploaderName FROM {Members(key)} WHERE UploaderName <> '';
+            SELECT {key}, Game, {Uploader}, UploaderName FROM {Members(key)} WHERE UploaderName <> '';
         """;
 
     /// <summary>Each statement a trigger runs for the card <paramref name="key"/>, for planning.</summary>
     internal static IEnumerable<string> StatementsFor(string key) =>
         (Card(key) + Names(key)).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string Add(string kind, string name, string by) => $"""
-            INSERT INTO RecordingTallies (Kind, Name, Count) VALUES ({kind}, {name}, {by})
-            ON CONFLICT (Kind, Name) DO UPDATE SET Count = Count + excluded.Count;
+    private static string Add(string game, string kind, string name, string by) => $"""
+            INSERT INTO RecordingTallies (Game, Kind, Name, Count) VALUES ({game}, {kind}, {name}, {by})
+            ON CONFLICT (Game, Kind, Name) DO UPDATE SET Count = Count + excluded.Count;
         """;
 
     private const string OldKey = "COALESCE(OLD.RoundId, OLD.Id)";
@@ -87,7 +89,7 @@ public static class RecordingCards
         {Names(OldKey)}
         END;
 
-        CREATE TRIGGER IF NOT EXISTS {RecordingTriggers[2]} AFTER UPDATE OF RoundId, FileMissing, ServerName, UploaderName ON Recordings
+        CREATE TRIGGER IF NOT EXISTS {RecordingTriggers[2]} AFTER UPDATE OF RoundId, FileMissing, ServerName, UploaderName, Game ON Recordings
         BEGIN
         {Card(OldKey)}
         {Names(OldKey)}
@@ -103,31 +105,34 @@ public static class RecordingCards
 
         CREATE TRIGGER IF NOT EXISTS {CardTriggers[0]} AFTER INSERT ON RecordingCards
         BEGIN
-        {Add($"{Cards}", "''", "1")}
-        {Add($"{Recordings}", "''", "NEW.Recordings")}
+        {Add("NEW.Game", $"{Cards}", "''", "1")}
+        {Add("NEW.Game", $"{Recordings}", "''", "NEW.Recordings")}
         END;
 
-        CREATE TRIGGER IF NOT EXISTS {CardTriggers[1]} AFTER UPDATE OF Recordings ON RecordingCards
-        WHEN NEW.Recordings <> OLD.Recordings
+        CREATE TRIGGER IF NOT EXISTS {CardTriggers[1]} AFTER UPDATE OF Recordings, Game ON RecordingCards
+        WHEN NEW.Recordings <> OLD.Recordings OR NEW.Game <> OLD.Game
         BEGIN
-        {Add($"{Recordings}", "''", "NEW.Recordings - OLD.Recordings")}
+        {Add("OLD.Game", $"{Cards}", "''", "-1")}
+        {Add("OLD.Game", $"{Recordings}", "''", "-OLD.Recordings")}
+        {Add("NEW.Game", $"{Cards}", "''", "1")}
+        {Add("NEW.Game", $"{Recordings}", "''", "NEW.Recordings")}
         END;
 
         CREATE TRIGGER IF NOT EXISTS {CardTriggers[2]} AFTER DELETE ON RecordingCards
         BEGIN
-        {Add($"{Cards}", "''", "-1")}
-        {Add($"{Recordings}", "''", "-OLD.Recordings")}
+        {Add("OLD.Game", $"{Cards}", "''", "-1")}
+        {Add("OLD.Game", $"{Recordings}", "''", "-OLD.Recordings")}
         END;
 
         CREATE TRIGGER IF NOT EXISTS {NameTriggers[0]} AFTER INSERT ON RecordingCardNames
         BEGIN
-        {Add("NEW.Kind", "NEW.Name", "1")}
+        {Add("NEW.Game", "NEW.Kind", "NEW.Name", "1")}
         END;
 
         CREATE TRIGGER IF NOT EXISTS {NameTriggers[1]} AFTER DELETE ON RecordingCardNames
         BEGIN
-        {Add("OLD.Kind", "OLD.Name", "-1")}
-            DELETE FROM RecordingTallies WHERE Kind = OLD.Kind AND Name = OLD.Name AND Count <= 0;
+        {Add("OLD.Game", "OLD.Kind", "OLD.Name", "-1")}
+            DELETE FROM RecordingTallies WHERE Game = OLD.Game AND Kind = OLD.Kind AND Name = OLD.Name AND Count <= 0;
         END;
         """;
 
@@ -137,13 +142,13 @@ public static class RecordingCards
         DELETE FROM RecordingCardNames;
         DELETE FROM RecordingCards;
         DELETE FROM RecordingTallies;
-        INSERT INTO RecordingCards (CardKey, NewestId, Views, Recordings)
-        SELECT COALESCE(RoundId, Id), MAX(Id), MAX(ViewCount), COUNT(*)
+        INSERT INTO RecordingCards (CardKey, Game, NewestId, Views, Recordings)
+        SELECT COALESCE(RoundId, Id), MAX(Game), MAX(Id), MAX(ViewCount), COUNT(*)
         FROM Recordings WHERE FileMissing = 0
         GROUP BY COALESCE(RoundId, Id);
-        INSERT INTO RecordingCardNames (CardKey, Kind, Name)
-        SELECT COALESCE(RoundId, Id), {Server}, ServerName FROM Recordings WHERE FileMissing = 0 AND ServerName <> ''
+        INSERT INTO RecordingCardNames (CardKey, Game, Kind, Name)
+        SELECT COALESCE(RoundId, Id), Game, {Server}, ServerName FROM Recordings WHERE FileMissing = 0 AND ServerName <> ''
         UNION
-        SELECT COALESCE(RoundId, Id), {Uploader}, UploaderName FROM Recordings WHERE FileMissing = 0 AND UploaderName <> '';
+        SELECT COALESCE(RoundId, Id), Game, {Uploader}, UploaderName FROM Recordings WHERE FileMissing = 0 AND UploaderName <> '';
         """;
 }

@@ -447,7 +447,15 @@ try
     // DISABLE_BACKGROUND_PROCESSING says.
     builder.Services.Configure<api.Recordings.RecordingsOptions>(
         builder.Configuration.GetSection(api.Recordings.RecordingsOptions.Section));
-    builder.Services.AddSingleton<api.Recordings.IRecordingStorage, api.Recordings.RecordingStorage>();
+    builder.Services.AddSingleton<api.Recordings.IRecordingStorage>(sp => new api.Recordings.RecordingStorage(
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<api.Recordings.RecordingsOptions>>(),
+        sp.GetService<ILogger<api.Recordings.RecordingStorage>>()));
+    // Each game's folder; Battlefield Vietnam's only when Recordings__BfvPath is set (features/bfv-through-bfstats).
+    // Built by hand: the two-folder constructor would otherwise be handed BF1942's folder twice.
+    builder.Services.AddSingleton<api.Recordings.IRecordingStores>(sp => new api.Recordings.RecordingStores(
+        sp.GetRequiredService<api.Recordings.IRecordingStorage>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<api.Recordings.RecordingsOptions>>(),
+        sp.GetService<ILogger<api.Recordings.RecordingStorage>>()));
     // A link preview waits a few seconds at most: a level picture that slow is left out.
     builder.Services.AddHttpClient(api.Recordings.RecordingLevelArt.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(4));
     builder.Services.AddSingleton<api.Recordings.IRecordingLevelArt, api.Recordings.RecordingLevelArt>();

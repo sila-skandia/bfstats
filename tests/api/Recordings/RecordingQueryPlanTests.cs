@@ -182,8 +182,8 @@ public sealed class RecordingQueryPlanTests : IDisposable
     /// the cards by a covering index is allowed only for that walk, with LIMIT.
     /// </summary>
     [Theory]
-    [InlineData(null, "IX_RecordingCards_NewestId")]
-    [InlineData("views", "IX_RecordingCards_Views_NewestId")]
+    [InlineData(null, "IX_RecordingCards_Game_NewestId")]
+    [InlineData("views", "IX_RecordingCards_Game_Views_NewestId")]
     public async Task The_whole_feed_reads_no_whole_table(string? sort, string index)
     {
         await SeedAsync();
@@ -193,8 +193,9 @@ public sealed class RecordingQueryPlanTests : IDisposable
         var walk = statements.Where(s => s.Sql.Contains("FROM \"RecordingCards\"", StringComparison.Ordinal)).ToList();
         var (walkSql, walkPlan) = Assert.Single(walk);
         Assert.Contains("LIMIT", walkSql, StringComparison.Ordinal);
-        // No sort of the cards: the index gives their order, so the walk stops at the page.
-        Assert.Matches($"^SCAN \\w+ USING COVERING INDEX {index}$", Assert.Single(walkPlan));
+        // No sort of the cards: the index, from the game's first entry, gives their order, so the
+        // walk stops at the page (features/bfv-through-bfstats).
+        Assert.Matches($"^SEARCH \\w+ USING COVERING INDEX {index} \\(Game=\\?\\)$", Assert.Single(walkPlan));
         AssertNoTableScan([.. statements.Except(walk)]);
     }
 

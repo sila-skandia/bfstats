@@ -7,6 +7,9 @@ namespace api.Recordings.Models;
 /// </summary>
 public class RecordingTally
 {
+    /// <summary>The game whose feed it counts: each site's choices and totals are its own.</summary>
+    public string Game { get; set; } = api.Recordings.RecordingGames.Bf1942;
+
     public RecordingTallyKind Kind { get; set; }
 
     public string Name { get; set; } = "";

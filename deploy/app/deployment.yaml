@@ -39,16 +39,19 @@ spec:
         # (recordings-storage.yaml): the kubelet makes it root-owned and
         # fsGroup does not reach a hostPath, so it is handed to the API's uid
         # here. Runs before the containers, so it adds nothing to the pod's
-        # memory budget.
+        # memory budget. Battlefield Vietnam's folder on bfv's disk
+        # (bfv-recordings-storage.yaml) likewise.
         - name: recordings-owner
           image: busybox:1.36
-          command: ["sh", "-c", "chown 1000:1000 /mnt/recordings && chmod 0750 /mnt/recordings"]
+          command: ["sh", "-c", "chown 1000:1000 /mnt/recordings /mnt/bfv-recordings && chmod 0750 /mnt/recordings /mnt/bfv-recordings"]
           securityContext:
             runAsUser: 0
             runAsGroup: 0
           volumeMounts:
             - name: recordings
               mountPath: /mnt/recordings
+            - name: bfv-recordings
+              mountPath: /mnt/bfv-recordings
           resources:
             requests:
               memory: "8Mi"
@@ -72,6 +75,10 @@ spec:
             # and never below max(8 GiB, 15%) free on the node's root disk.
             - name: Recordings__Path
               value: "/mnt/recordings"
+            # Battlefield Vietnam's recordings, on bfv's disk where no bfv pod
+            # reaches (features/bfv-through-bfstats). Unset, BFV uploads are refused.
+            - name: Recordings__BfvPath
+              value: "/mnt/bfv-recordings"
             # bfstats Sidecar's installers for Early Adopters (features/early-access-sidecar).
             - name: SidecarDownloads__Path
               value: "/mnt/data/sidecar"
@@ -215,6 +222,8 @@ spec:
               mountPath: /mnt/data
             - name: recordings
               mountPath: /mnt/recordings
+            - name: bfv-recordings
+              mountPath: /mnt/bfv-recordings
           # Bounded so a runaway process is OOM-killed and restarted rather than
           # taking the node into memory-pressure thrash with it. .NET reads the
           # cgroup limit and sizes its GC heap from it (~75% by default), so this
@@ -260,6 +269,9 @@ spec:
         - name: recordings
           persistentVolumeClaim:
             claimName: bfstats-recordings
+        - name: bfv-recordings
+          persistentVolumeClaim:
+            claimName: bfstats-bfv-recordings
 
 ---
 apiVersion: v1

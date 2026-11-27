@@ -1470,6 +1470,9 @@ public class PlayerTrackerDbContext : DbContext
             // The feed narrowed to server or client recordings, and the rows the file check
             // has yet to read a source from (features/recording-source).
             recording.HasIndex(r => new { r.Source, r.FileMissing, r.RoundId });
+            // Each game's own (features/bfv-through-bfstats): its feed, its rounds and its storage.
+            recording.Property(r => r.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength).HasDefaultValue(api.Recordings.RecordingGames.Bf1942);
+            recording.HasIndex(r => new { r.Game, r.FileMissing, r.Id });
             // A round's recordings in the feed, from the index alone: what the card triggers
             // (RecordingCards) read for each card they work out again.
             recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });
@@ -1582,8 +1585,10 @@ public class PlayerTrackerDbContext : DbContext
         {
             card.HasKey(c => c.CardKey);
             card.Property(c => c.CardKey).ValueGeneratedNever();
-            card.HasIndex(c => c.NewestId);
-            card.HasIndex(c => new { c.Views, c.NewestId });
+            // Each game's feed pages by its own index.
+            card.Property(c => c.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
+            card.HasIndex(c => new { c.Game, c.NewestId });
+            card.HasIndex(c => new { c.Game, c.Views, c.NewestId });
             card.ToTable(table =>
             {
                 foreach (var trigger in api.Recordings.RecordingCards.CardTriggers) table.HasTrigger(trigger);
@@ -1593,6 +1598,7 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<RecordingCardName>(name =>
         {
             name.HasKey(n => new { n.CardKey, n.Kind, n.Name });
+            name.Property(n => n.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
             name.ToTable(table =>
             {
                 foreach (var trigger in api.Recordings.RecordingCards.NameTriggers) table.HasTrigger(trigger);
@@ -1601,9 +1607,10 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<RecordingTally>(tally =>
         {
-            tally.HasKey(t => new { t.Kind, t.Name });
-            // The busiest names first, then by name, without a sort.
-            tally.HasIndex(t => new { t.Kind, t.Count, t.Name }).IsDescending(false, true, false);
+            tally.HasKey(t => new { t.Game, t.Kind, t.Name });
+            tally.Property(t => t.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength);
+            // A game's busiest names first, then by name, without a sort.
+            tally.HasIndex(t => new { t.Game, t.Kind, t.Count, t.Name }).IsDescending(false, false, true, false);
         });
 
         modelBuilder.Entity<RecordingRoundLink>(link =>

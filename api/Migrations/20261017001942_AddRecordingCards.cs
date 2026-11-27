@@ -68,14 +68,14 @@ namespace api.Migrations
                 columns: new[] { "Kind", "Count", "Name" },
                 descending: new[] { false, true, false });
 
-            migrationBuilder.Sql(api.Recordings.RecordingCards.TriggersSql);
-            migrationBuilder.Sql(api.Recordings.RecordingCards.BackfillSql);
+            migrationBuilder.Sql(RecordingCardsV1.TriggersSql);
+            migrationBuilder.Sql(RecordingCardsV1.BackfillSql);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            foreach (var trigger in api.Recordings.RecordingCards.RecordingTriggers)
+            foreach (var trigger in RecordingCardsV1.RecordingTriggers)
             {
                 migrationBuilder.Sql($"DROP TRIGGER IF EXISTS {trigger};");
             }

@@ -28,8 +28,12 @@ public class RecordingsController(
     IRecordingViewCounter views,
     IConfiguration configuration,
     IRecordingRoundService rounds,
-    IOptions<RecordingsOptions> options) : ControllerBase
+    IOptions<RecordingsOptions> options,
+    IRecordingStores? stores = null) : ControllerBase
 {
+    /// <summary>Each game's folder; BF1942's alone where none are given (the tests).</summary>
+    private readonly IRecordingStores games = stores ?? new RecordingStores(storage, bfv: null);
+
     /// <summary>The whole upload body: the largest recording and server log the options
     /// allow, and the multipart framing round them.</summary>
     private const long UploadLimitBytes = 120L * 1024 * 1024;
@@ -45,16 +49,18 @@ public class RecordingsController(
     /// of them together. A name may be given as bfstats.io has it or as a recording wrote it.
     /// <paramref name="source"/> (<c>server</c> or <c>client</c>) keeps the cards with a
     /// recording by that kind of recorder (features/recording-source).
-    /// Each card says whether the signed-in viewer may rename or delete it.</summary>
+    /// Each card says whether the signed-in viewer may rename or delete it. <paramref name="game"/>
+    /// is the site's game (<c>bf1942</c>, the default, or <c>bfv</c>): no feed mixes the two
+    /// (features/bfv-through-bfstats).</summary>
     [HttpGet]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<PagedRecordingsDto>> List(
         [FromQuery] string? sort, [FromQuery] string? server, [FromQuery] string? uploader,
         [FromQuery] string? player, [FromQuery] string? source,
         [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
-        CancellationToken ct = default)
+        [FromQuery] string? game = null, CancellationToken ct = default)
     {
-        var filter = RecordingFilter.From(server, uploader, player, source);
+        var filter = RecordingFilter.From(server, uploader, player, source, game);
         var feed = await recordings.ListAsync(sort, page, pageSize, filter, Actor(), ct);
         // Someone opening or re-sorting the feed, not every page of it they scroll.
         if (page <= 1) ReplayUsage.Record(HttpContext, ReplayUsage.Feed, detail: FeedDetail(sort, server, uploader, player, source));
@@ -79,8 +85,9 @@ public class RecordingsController(
     [HttpGet("filters")]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<RecordingFiltersDto>> Filters(
-        [FromQuery] string? server, [FromQuery] string? uploader, [FromQuery] string? source, CancellationToken ct = default) =>
-        Ok(await recordings.FiltersAsync(RecordingFilter.From(server, uploader, source: source), ct));
+        [FromQuery] string? server, [FromQuery] string? uploader, [FromQuery] string? source, [FromQuery] string? game = null,
+        CancellationToken ct = default) =>
+        Ok(await recordings.FiltersAsync(RecordingFilter.From(server, uploader, source: source, game: game), ct));
 
     /// <summary>The signed-in viewer: the player names they can post as.</summary>
     [HttpGet("me")]
@@ -142,20 +149,23 @@ public class RecordingsController(
     /// gzip</c>): the browser unpacks it, and nothing here spends CPU compressing.</summary>
     [HttpGet("{slug:length(10)}.ndjson")]
     [EnableCors(PublicReadCors)]
-    public IActionResult RecordingFile(string slug) => Gzipped(slug, storage.RecordingPath, "application/x-ndjson");
+    public Task<IActionResult> RecordingFile(string slug, CancellationToken ct = default) =>
+        GzippedAsync(slug, folder => folder.RecordingPath, "application/x-ndjson", ct);
 
     [HttpGet("{slug:length(10)}.xml")]
     [EnableCors(PublicReadCors)]
-    public IActionResult ServerLogFile(string slug) => Gzipped(slug, storage.ServerLogPath, "text/xml");
+    public Task<IActionResult> ServerLogFile(string slug, CancellationToken ct = default) =>
+        GzippedAsync(slug, folder => folder.ServerLogPath, "text/xml", ct);
 
     /// <summary>The cover. Its link carries a version (<c>?v=</c>), so it keeps a year.</summary>
     [HttpGet("{slug:length(10)}.jpg")]
     [EnableCors(PublicReadCors)]
-    public IActionResult Thumbnail(string slug)
+    public async Task<IActionResult> Thumbnail(string slug, CancellationToken ct = default)
     {
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
-        var path = storage.ThumbnailPath(clean);
-        if (!System.IO.File.Exists(path)) return NotFound();
+        if (await FolderOfAsync(clean, ct) is not { } folder) return NotFound();
+        var path = folder.ThumbnailPath(clean);
+        if (!folder.IsPlainFile(path)) return NotFound();
         Inert();
         Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         return PhysicalFile(path, "image/jpeg");
@@ -383,11 +393,19 @@ public class RecordingsController(
         }
     }
 
-    private IActionResult Gzipped(string slug, Func<string, string> pathOf, string contentType)
+    /// <summary>The folder a recording's files are in: its own game's, from its row, so a file
+    /// is never looked for anywhere else (features/bfv-through-bfstats). A slug with no row has
+    /// no files to serve.</summary>
+    private async Task<IRecordingStorage?> FolderOfAsync(string slug, CancellationToken ct) =>
+        await recordings.GameAsync(slug, ct) is { } game ? games.Find(game) : null;
+
+    private async Task<IActionResult> GzippedAsync(
+        string slug, Func<IRecordingStorage, Func<string, string>> pathOf, string contentType, CancellationToken ct)
     {
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
-        var path = pathOf(clean);
-        if (!System.IO.File.Exists(path)) return NotFound();
+        if (await FolderOfAsync(clean, ct) is not { } folder) return NotFound();
+        var path = pathOf(folder)(clean);
+        if (!folder.IsPlainFile(path)) return NotFound();
         Inert();
         Response.Headers.ContentEncoding = "gzip";
         // A slug is never reused, so a file never changes under its name.

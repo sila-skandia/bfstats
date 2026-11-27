@@ -6,6 +6,9 @@ public class RecordingCardName
 {
     public int CardKey { get; set; }
 
+    /// <summary>Its card's game, so the counts it feeds are each game's own.</summary>
+    public string Game { get; set; } = api.Recordings.RecordingGames.Bf1942;
+
     /// <summary><see cref="RecordingTallyKind.Server"/> or <see cref="RecordingTallyKind.Uploader"/>.</summary>
     public RecordingTallyKind Kind { get; set; }
 

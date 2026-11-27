@@ -44,6 +44,11 @@ internal sealed class RecordingFixture : IDisposable
         var options = new RecordingsOptions { Path = Directory, MinFreeBytes = 0, MinFreeFraction = 0 };
         Options = Microsoft.Extensions.Options.Options.Create(configure?.Invoke(options) ?? options);
         Storage = new RecordingStorage(Options);
+        // Battlefield Vietnam's folder, as bfv's disk has it (features/bfv-through-bfstats).
+        BfvDirectory = Path.Combine(Path.GetTempPath(), $"bfstats-bfv-recordings-test-{Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(BfvDirectory);
+        BfvStorage = new RecordingStorage(BfvDirectory, long.MaxValue, 0, 0, guarded: true);
+        Stores = new RecordingStores(Storage, BfvStorage);
         Clock = new TestClock(Start);
 
         Uploader = AddUser("uploader@example.com", "skandia");
@@ -53,10 +58,10 @@ internal sealed class RecordingFixture : IDisposable
         Db.SaveChanges();
 
         Rounds = new RecordingRoundService(Db, Storage, Clock, Options, NullLogger<RecordingRoundService>.Instance);
-        Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance, Rounds);
+        Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance, Rounds, stores: Stores);
         StatsRounds = new RecordingStatsRoundService(Db, Clock, NullLogger<RecordingStatsRoundService>.Instance);
         Uploads = new RecordingUploadService(
-            Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance, Rounds, statsRounds: StatsRounds);
+            Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance, Rounds, statsRounds: StatsRounds, stores: Stores);
     }
 
     public PlayerTrackerDbContext Db { get; }
@@ -66,6 +71,9 @@ internal sealed class RecordingFixture : IDisposable
     public string Directory { get; }
     public IOptions<RecordingsOptions> Options { get; }
     public RecordingStorage Storage { get; }
+    public string BfvDirectory { get; }
+    public RecordingStorage BfvStorage { get; }
+    public RecordingStores Stores { get; }
     public TestClock Clock { get; }
     public RecordingService Service { get; }
     public RecordingUploadService Uploads { get; }
@@ -186,6 +194,17 @@ internal sealed class RecordingFixture : IDisposable
         """{"k":"chat","t":200.5,"pid":9,"text":"gg""" + salt + "\"}",
         """{"k":"end","t":883.029}""") + "\n";
 
+    /// <summary>A Battlefield Vietnam round as bfvplus writes it: format 5, <c>game</c> bfv.</summary>
+    public static string HueCity(string salt = "", string header = """{"k":"h","v":5,"game":"bfv","plus":"bfvplus/2","start":"2026-11-24T21:10:02","hz":10}""") =>
+        string.Join('\n',
+            header,
+            """{"k":"e","t":0.000,"e":"serverInfo","mod":"bfvietnam"}""",
+            """{"k":"e","t":0.000,"e":"serverName","name":"Vietnam Lab"}""",
+            """{"k":"e","t":0.000,"e":"setLevel","level":"bfvietnam/levels/hue/","mode":"conquest.con"}""",
+            """{"k":"roster","t":0.000,"p":[[0,1,0,"skandia",1],[1,2,0,"Rut",0]]}""",
+            """{"k":"chat","t":12.5,"pid":1,"text":"Rut: gl""" + salt + "\"}",
+            """{"k":"end","t":600.5}""") + "\n";
+
     public void Dispose()
     {
         Db.Dispose();
@@ -193,6 +212,7 @@ internal sealed class RecordingFixture : IDisposable
         try
         {
             System.IO.Directory.Delete(Directory, recursive: true);
+            System.IO.Directory.Delete(BfvDirectory, recursive: true);
         }
         catch (IOException)
         {
