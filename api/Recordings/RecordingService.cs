@@ -42,6 +42,10 @@ public interface IRecordingService
 
     Task<RecordingDetailDto?> RenameAsync(string slug, RecordingActor actor, string title, CancellationToken ct);
 
+    /// <summary>The uploader (or an admin) changes the title, the description or who finds it;
+    /// each given, the rest as they were. Null when there is no such recording.</summary>
+    Task<RecordingDetailDto?> UpdateAsync(string slug, RecordingActor actor, UpdateRecordingRequest request, CancellationToken ct);
+
     Task<bool> DeleteAsync(string slug, RecordingActor actor, CancellationToken ct);
 
     /// <summary>Sets a recording's cover from an image in <paramref name="body"/>.</summary>
@@ -114,7 +118,9 @@ public sealed class RecordingService(
     {
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
-        var shared = db.Recordings.AsNoTracking().Where(r => r.Game == filter.Game && !r.FileMissing);
+        // Listed ones only (RecordingVisibility): an unlisted recording is found by its link alone.
+        var shared = db.Recordings.AsNoTracking()
+            .Where(r => r.Game == filter.Game && r.Visibility == RecordingVisibility.Public && !r.FileMissing);
         var (keys, total, recordings) = filter.IsEmpty
             ? await WholeFeedPageAsync(filter.Game, sort, page, pageSize, ct)
             : await NarrowedPageAsync(OnCards(shared, filter), sort, page, pageSize, ct);
@@ -218,7 +224,8 @@ public sealed class RecordingService(
     /// </summary>
     public async Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct)
     {
-        var shared = db.Recordings.AsNoTracking().Where(r => r.Game == filter.Game && !r.FileMissing);
+        var shared = db.Recordings.AsNoTracking()
+            .Where(r => r.Game == filter.Game && r.Visibility == RecordingVisibility.Public && !r.FileMissing);
         var servers = filter with { Server = null };
         var uploaders = filter with { Uploader = null };
         return new RecordingFiltersDto(
@@ -346,6 +353,37 @@ public sealed class RecordingService(
         recording.UpdatedAt = clock.GetCurrentInstant();
         await db.SaveChangesAsync(ct);
         return await DetailAsync(recording, actor, ct);
+    }
+
+    public async Task<RecordingDetailDto?> UpdateAsync(string slug, RecordingActor actor, UpdateRecordingRequest request, CancellationToken ct)
+    {
+        var recording = await Find(slug).FirstOrDefaultAsync(ct);
+        if (recording is null) return null;
+        Manage(recording, actor);
+        if (request.Title is not null)
+        {
+            var title = RecordingText.Line(request.Title, RecordingText.MaxTitle);
+            if (title.Length == 0) throw new RecordingRejectedException("A recording needs a title.");
+            recording.Title = title;
+        }
+        if (request.Description is not null) recording.Description = Description(request.Description);
+        if (request.Visibility is not null)
+        {
+            recording.Visibility = RecordingVisibilities.Parse(request.Visibility)
+                ?? throw new RecordingRejectedException("A recording is public or unlisted.");
+        }
+        recording.UpdatedAt = clock.GetCurrentInstant();
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(recording, actor, ct);
+    }
+
+    /// <summary>A description as kept: a comment's cleaning, refused past its length.</summary>
+    internal static string Description(string? text)
+    {
+        var clean = RecordingText.Comment(text);
+        return clean.Length > RecordingText.MaxDescription
+            ? throw new RecordingRejectedException($"A description runs to {RecordingText.MaxDescription} characters at most.")
+            : clean;
     }
 
     public async Task<bool> DeleteAsync(string slug, RecordingActor actor, CancellationToken ct)
@@ -614,8 +652,11 @@ public sealed class RecordingService(
             .ToListAsync(ct);
         if (asked.Count == 0) return [];
         var roundIds = asked.Select(a => a.Round).Distinct().ToList();
+        // A round's unlisted recordings are not named on its others' pages: each is found by its
+        // own link, which shows it whole.
         var members = await db.Recordings.AsNoTracking()
-            .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value))
+            .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value)
+                && (r.Visibility == RecordingVisibility.Public || ids.Contains(r.Id)))
             .Select(r => new RoundRow(
                 r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderUserId, r.UploaderName, r.RecordedBy, r.DurationSeconds,
                 r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing, r.Source))
@@ -832,7 +873,10 @@ public sealed class RecordingService(
         card,
         canManage,
         r.StatsRoundId,
-        SourceName(r.Source));
+        SourceName(r.Source),
+        r.Description,
+        RecordingVisibilities.Name(r.Visibility),
+        r.Game);
 
     internal static RecordingDetailDto Detail(
         Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
@@ -862,7 +906,10 @@ public sealed class RecordingService(
         actor?.IsAdmin == true,
         round is not null && roundWeak,
         r.StatsRoundId,
-        SourceName(r.Source));
+        SourceName(r.Source),
+        r.Description,
+        RecordingVisibilities.Name(r.Visibility),
+        r.Game);
 
     private static RecordingCommentDto CommentDto(
         RecordingComment c, bool canDelete, IReadOnlyList<RecordingCommentReactionDto> reactions) =>

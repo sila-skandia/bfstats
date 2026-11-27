@@ -33,13 +33,14 @@ public static class RecordingCards
 
     public static readonly string[] NameTriggers = ["TR_RecordingCardNames_Tally_Insert", "TR_RecordingCardNames_Tally_Delete"];
 
-    /// <summary>The recordings on the card <paramref name="key"/> whose file is there: those whose
+    /// <summary>The listed recordings on the card <paramref name="key"/> whose file is there (an
+    /// unlisted one is on no card, features/bfv-through-bfstats, "Access"): those whose
     /// round it is, and the one it is the id of while that one is in no round. Two index lookups;
     /// <c>COALESCE(RoundId, Id) = key</c> would read every row.</summary>
     private static string Members(string key) => $"""
-        (SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE FileMissing = 0 AND RoundId = {key}
+        (SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE FileMissing = 0 AND Visibility = 0 AND RoundId = {key}
          UNION ALL
-         SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE Id = {key} AND RoundId IS NULL AND FileMissing = 0)
+         SELECT Id, ViewCount, ServerName, UploaderName, Game FROM Recordings WHERE Id = {key} AND RoundId IS NULL AND FileMissing = 0 AND Visibility = 0)
         """;
 
     /// <summary>The card <paramref name="key"/> worked out again: gone when nothing is on it. Its
@@ -89,7 +90,7 @@ public static class RecordingCards
         {Names(OldKey)}
         END;
 
-        CREATE TRIGGER IF NOT EXISTS {RecordingTriggers[2]} AFTER UPDATE OF RoundId, FileMissing, ServerName, UploaderName, Game ON Recordings
+        CREATE TRIGGER IF NOT EXISTS {RecordingTriggers[2]} AFTER UPDATE OF RoundId, FileMissing, ServerName, UploaderName, Game, Visibility ON Recordings
         BEGIN
         {Card(OldKey)}
         {Names(OldKey)}
@@ -98,7 +99,7 @@ public static class RecordingCards
         END;
 
         CREATE TRIGGER IF NOT EXISTS {RecordingTriggers[3]} AFTER UPDATE OF ViewCount ON Recordings
-        WHEN NEW.ViewCount <> OLD.ViewCount AND NEW.FileMissing = 0
+        WHEN NEW.ViewCount <> OLD.ViewCount AND NEW.FileMissing = 0 AND NEW.Visibility = 0
         BEGIN
         {Card(NewKey)}
         END;
@@ -144,11 +145,11 @@ public static class RecordingCards
         DELETE FROM RecordingTallies;
         INSERT INTO RecordingCards (CardKey, Game, NewestId, Views, Recordings)
         SELECT COALESCE(RoundId, Id), MAX(Game), MAX(Id), MAX(ViewCount), COUNT(*)
-        FROM Recordings WHERE FileMissing = 0
+        FROM Recordings WHERE FileMissing = 0 AND Visibility = 0
         GROUP BY COALESCE(RoundId, Id);
         INSERT INTO RecordingCardNames (CardKey, Game, Kind, Name)
-        SELECT COALESCE(RoundId, Id), Game, {Server}, ServerName FROM Recordings WHERE FileMissing = 0 AND ServerName <> ''
+        SELECT COALESCE(RoundId, Id), Game, {Server}, ServerName FROM Recordings WHERE FileMissing = 0 AND Visibility = 0 AND ServerName <> ''
         UNION
-        SELECT COALESCE(RoundId, Id), Game, {Uploader}, UploaderName FROM Recordings WHERE FileMissing = 0 AND UploaderName <> '';
+        SELECT COALESCE(RoundId, Id), Game, {Uploader}, UploaderName FROM Recordings WHERE FileMissing = 0 AND Visibility = 0 AND UploaderName <> '';
         """;
 }

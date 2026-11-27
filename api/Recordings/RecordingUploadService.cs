@@ -330,6 +330,10 @@ public sealed class RecordingUploadService(
             FormatVersion = inspection.Version,
             Source = inspection.Source,
             Game = inspection.Game,
+            Description = RecordingService.Description(meta?.Description),
+            Visibility = meta?.Visibility is { } visibility
+                ? RecordingVisibilities.Parse(visibility) ?? throw new RecordingRejectedException("A recording is public or unlisted.")
+                : RecordingVisibility.Public,
             RecordingRawBytes = inspection.RawBytes,
             ContentHash = inspection.ContentHash,
             CreatedAt = now,

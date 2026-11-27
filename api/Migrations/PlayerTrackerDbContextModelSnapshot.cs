@@ -2259,6 +2259,10 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("DurationSeconds")
                         .HasColumnType("REAL");
 
@@ -2359,6 +2363,9 @@ namespace api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ViewCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Visibility")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

@@ -17,6 +17,12 @@ public class Recording
 
     public string Title { get; set; } = "";
 
+    /// <summary>What the uploader says of it, newlines kept; '' for nothing said.</summary>
+    public string Description { get; set; } = "";
+
+    /// <summary>Listed for everyone, or found only by its link (<see cref="RecordingVisibility"/>).</summary>
+    public RecordingVisibility Visibility { get; set; }
+
     public int UploaderUserId { get; set; }
 
     /// <summary>The linked player name the uploader shared it as.</summary>
