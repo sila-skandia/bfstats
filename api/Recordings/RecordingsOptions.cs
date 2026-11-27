@@ -61,6 +61,10 @@ public record RecordingsOptions
     /// page sends the browser, and the cover its preview tags name.</summary>
     public string PlayOrigin { get; init; } = "https://play.bfstats.io";
 
+    /// <summary>bfv.bfstats.io, where a Battlefield Vietnam Short's share link opens its player
+    /// (features/bfv-through-bfstats).</summary>
+    public string BfvOrigin { get; init; } = "https://bfv.bfstats.io";
+
     /// <summary>The short links' own host: a recording's is <c>&lt;this&gt;/&lt;slug&gt;</c>.</summary>
     public string ShortLinkOrigin { get; init; } = "https://replay.bfstats.io";
 

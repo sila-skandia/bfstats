@@ -102,7 +102,9 @@ public class ShortsController(
         Response.Headers.CacheControl = "public, max-age=300";
         ReplayUsage.Record(HttpContext, ReplayUsage.ShortLink, found.Slug);
         return Content(
-            ShortLink.Page(found, play, recordingOptions.Value.ShortLinkOrigin.TrimEnd('/')),
+            ShortLink.Page(found, play, recordingOptions.Value.ShortLinkOrigin.TrimEnd('/'),
+                // A Battlefield Vietnam Short plays in bfv.bfstats.io's player, where it is listed.
+                found.Game == RecordingGames.Bfv ? recordingOptions.Value.BfvOrigin.TrimEnd('/') : null),
             "text/html; charset=utf-8");
     }
 
