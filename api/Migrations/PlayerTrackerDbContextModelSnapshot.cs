@@ -2751,6 +2751,13 @@ namespace api.Migrations
                     b.Property<double>("Distance")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("Game")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("bf1942");
+
                     b.Property<long>("HdVideoBytes")
                         .HasColumnType("INTEGER");
 
@@ -2837,6 +2844,8 @@ namespace api.Migrations
 
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("Game", "CreatedAtMs");
 
                     b.HasIndex("Views", "CreatedAtMs");
 

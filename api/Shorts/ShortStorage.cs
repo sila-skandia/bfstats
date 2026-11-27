@@ -9,8 +9,19 @@ namespace api.Shorts;
 /// recordings directory, so they share its volume, its <c>.incoming/</c> (a rename puts one in
 /// place) and its room checks.
 /// </summary>
-public sealed partial class ShortStorage(IRecordingStorage recordings)
+public sealed partial class ShortStorage(IRecordingStorage recordings, IRecordingStores? stores = null)
 {
+    /// <summary>The Shorts of <paramref name="game"/>'s recordings, in that game's folder
+    /// (features/bfv-through-bfstats): this one for BF1942, bfv's disk for Battlefield Vietnam.
+    /// A 503 for a game with no folder set.</summary>
+    public ShortStorage Of(string game) => game == RecordingGames.Bf1942
+        ? this
+        : new ShortStorage((stores ?? throw new RecordingRejectedException(
+            "bfstats is not taking Shorts of that game just now.", Microsoft.AspNetCore.Http.StatusCodes.Status503ServiceUnavailable)).Require(game), stores);
+
+    /// <summary>A file here is a regular file of its own, not a link (a guarded folder's rule).</summary>
+    public bool IsPlainFile(string path) => recordings.IsPlainFile(path);
+
     /// <summary>A chunked upload's parts (<c>POST /stats/shorts/parts</c>), <c>&lt;id&gt;.&lt;n&gt;.part</c>.
     /// A folder of their own under <c>.incoming/</c>: the recordings' sweep takes a loose
     /// <c>.part</c> there after two hours, and a roll's parts are given a day.</summary>
@@ -89,7 +100,9 @@ public sealed partial class ShortStorage(IRecordingStorage recordings)
 
     public string? RoomFor(long storedBytes, long incomingBytes) => recordings.RoomFor(storedBytes, incomingBytes);
 
-    /// <summary>Moves an upload into place, over nothing: a slug is never reused.</summary>
+    /// <summary>Moves an upload into place, over nothing: a slug is never reused. Across
+    /// volumes (an upload received on the recordings volume, kept on bfv's disk) a copy and a
+    /// delete, which File.Move does by itself.</summary>
     public void Promote(string incomingPath, string finalPath)
     {
         System.IO.Directory.CreateDirectory(Directory);

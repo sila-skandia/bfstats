@@ -9,7 +9,10 @@ public interface IShortService
     /// <summary>Shorts made in the last <paramref name="days"/> days (1 to 3650), newest first,
     /// or most viewed first for <paramref name="sort"/> <c>views</c>.</summary>
     Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct, string? kind = null,
-        string? player = null, string? server = null);
+        string? player = null, string? server = null, string game = api.Recordings.RecordingGames.Bf1942);
+
+    /// <summary>The game a Short is of, whose folder its files are in; null for no such Short.</summary>
+    Task<string?> GameAsync(string slug, CancellationToken ct);
     Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct);
 
     Task<ShortDto?> GetAsync(string slug, CancellationToken ct);
@@ -24,7 +27,13 @@ public interface IShortService
     /// and nothing is written. Throws <see cref="api.Recordings.RecordingRejectedException"/>
     /// with the reason for anything it will not keep.
     /// </summary>
-    Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct);
+    /// <remarks><paramref name="onlyGame"/>, when given, refuses a Short of any other game's recording
+    /// (a <see cref="api.Authorization.AppRoles.BfvAdmin"/>'s upload).</remarks>
+    Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct, string? onlyGame = null);
+
+    /// <summary>The game whose Shorts <paramref name="userId"/>'s account may write by its role:
+    /// <c>bfv</c> for a <see cref="api.Authorization.AppRoles.BfvAdmin"/> or the admin account, else null.</summary>
+    Task<string?> GameWriterAsync(int userId, CancellationToken ct);
 
     /// <summary>One part of a chunked upload, the raw bytes in <paramref name="body"/>, kept as
     /// <c>&lt;upload&gt;.&lt;index&gt;.part</c> until an upload's <c>videoUpload</c> or
@@ -66,7 +75,7 @@ public interface IShortService
     /// whose key <see cref="KeysAsync"/> still names. Then sweeps the chunked uploads left
     /// unjoined for <see cref="ShortsOptions.PartsMaxAgeHours"/>. On a dry run it only lists what
     /// it would take, and sweeps nothing. Never runs by itself: the nightly Shorts job calls it.</summary>
-    Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct);
+    Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct, string? game = null);
 
     /// <summary>A Short's id and its views as counted so far, or null when there is none.</summary>
     Task<(int Id, int Views)?> WatchableAsync(string slug, CancellationToken ct);

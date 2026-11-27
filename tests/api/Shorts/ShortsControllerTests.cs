@@ -38,6 +38,8 @@ public sealed class ShortsControllerTests : IDisposable
     private readonly SqliteConnection connection;
     private readonly PlayerTrackerDbContext db;
     private readonly string directory = Path.Combine(Path.GetTempPath(), $"bfstats-shorts-test-{Guid.NewGuid():N}");
+    /// <summary>Battlefield Vietnam's folder, as bfv's disk has it (features/bfv-through-bfstats).</summary>
+    private readonly string bfvDirectory = Path.Combine(Path.GetTempPath(), $"bfstats-shorts-bfv-test-{Guid.NewGuid():N}");
     private readonly ShortStorage storage;
     private readonly TestClock clock = new(Instant.FromUtc(2026, 11, 3, 10, 0));
     private readonly ShortService service;
@@ -50,7 +52,10 @@ public sealed class ShortsControllerTests : IDisposable
         db = new PlayerTrackerDbContext(new DbContextOptionsBuilder<PlayerTrackerDbContext>().UseSqlite(connection).Options);
         db.Database.EnsureCreated();
         var recordingOptions = MsOptions.Create(new RecordingsOptions { Path = directory, MinFreeBytes = 0, MinFreeFraction = 0 });
-        storage = new ShortStorage(new RecordingStorage(recordingOptions));
+        var recordings = new RecordingStorage(recordingOptions);
+        Directory.CreateDirectory(bfvDirectory);
+        storage = new ShortStorage(recordings,
+            new RecordingStores(recordings, new RecordingStorage(bfvDirectory, long.MaxValue, 0, 0, guarded: true)));
         service = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
             NullLogger<ShortService>.Instance);
         counter = new ShortViewCounter(
@@ -66,6 +71,7 @@ public sealed class ShortsControllerTests : IDisposable
         try
         {
             Directory.Delete(directory, recursive: true);
+            Directory.Delete(bfvDirectory, recursive: true);
         }
         catch (IOException)
         {
@@ -479,7 +485,7 @@ public sealed class ShortsControllerTests : IDisposable
         var body = new MemoryStream();
         controller.HttpContext.Response.Body = body;
 
-        var result = Assert.IsType<PhysicalFileResult>(controller.Video(dto.Slug));
+        var result = Assert.IsType<PhysicalFileResult>(await controller.Video(dto.Slug));
         Assert.True(result.EnableRangeProcessing);
         Assert.Equal("video/mp4", result.ContentType);
         await result.ExecuteResultAsync(controller.ControllerContext);
@@ -488,9 +494,9 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal("ftyp"u8.ToArray(), body.ToArray());
         Assert.Contains("immutable", controller.HttpContext.Response.Headers.CacheControl.ToString());
 
-        var poster = Assert.IsType<PhysicalFileResult>(Controller().Poster(dto.Slug));
+        var poster = Assert.IsType<PhysicalFileResult>(await Controller().Poster(dto.Slug));
         Assert.Equal("image/jpeg", poster.ContentType);
-        Assert.IsType<NotFoundResult>(Controller().Video("zzzzzzzzzz"));
+        Assert.IsType<NotFoundResult>(await Controller().Video("zzzzzzzzzz"));
     }
 
     [Fact]
@@ -952,7 +958,7 @@ public sealed class ShortsControllerTests : IDisposable
         var plain = await UploadAsync();
         Assert.Null(plain.HdVideoUrl);
         Assert.False(plain.Landscape);
-        Assert.IsType<NotFoundResult>(Controller().HdVideo(plain.Slug));
+        Assert.IsType<NotFoundResult>(await Controller().HdVideo(plain.Slug));
 
         var hd = Mp4Of(40);
         var roll = await UploadAsync(Meta(killTime: 61.5, victimPid: 3, kind: ShortKinds.Roll, title: "Bocage, 60 s"), hd);
@@ -970,7 +976,7 @@ public sealed class ShortsControllerTests : IDisposable
         controller.HttpContext.Request.Headers.Range = "bytes=4-7";
         var body = new MemoryStream();
         controller.HttpContext.Response.Body = body;
-        var result = Assert.IsType<PhysicalFileResult>(controller.HdVideo(roll.Slug));
+        var result = Assert.IsType<PhysicalFileResult>(await controller.HdVideo(roll.Slug));
         Assert.True(result.EnableRangeProcessing);
         Assert.Equal("video/mp4", result.ContentType);
         await result.ExecuteResultAsync(controller.ControllerContext);
@@ -1054,7 +1060,7 @@ public sealed class ShortsControllerTests : IDisposable
         var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
         var roll = await UploadAsync(Meta(kind: ShortKinds.Roll, title: "Action roll: Gazala"), Mp4Of(50));
         Assert.Null(roll.LinkVideoUrl);
-        Assert.IsType<NotFoundResult>(Controller().LinkVideo(roll.Slug));
+        Assert.IsType<NotFoundResult>(await Controller().LinkVideo(roll.Slug));
 
         // Nobody signed in: refused. Not an MP4, or over the limit: refused, nothing kept.
         Assert.Equal(StatusCodes.Status401Unauthorized,
@@ -1070,7 +1076,7 @@ public sealed class ShortsControllerTests : IDisposable
         var dto = Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default));
         Assert.Equal($"/stats/shorts/{roll.Slug}.link.mp4?v=40", dto.LinkVideoUrl);
         Assert.Equal(before + 40, await VolumeUsage.StoredBytesAsync(db, default));
-        Assert.IsType<PhysicalFileResult>(Controller().LinkVideo(roll.Slug));
+        Assert.IsType<PhysicalFileResult>(await Controller().LinkVideo(roll.Slug));
         // Sent again, it replaces the last.
         Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default));
         Assert.Equal(30, new FileInfo(storage.LinkVideoPath(roll.Slug)).Length);
@@ -1184,9 +1190,9 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(3, listed.Total);
         Assert.IsType<NotFoundResult>((await Controller().Get(unseen.Slug, default)).Result);
         Assert.IsType<NotFoundResult>((await Controller().View(once.Slug, default)).Result);
-        Assert.IsType<NotFoundResult>(Controller().Video(unseen.Slug));
-        Assert.IsType<NotFoundResult>(Controller().HdVideo(unseen.Slug));
-        Assert.IsType<NotFoundResult>(Controller().Poster(once.Slug));
+        Assert.IsType<NotFoundResult>(await Controller().Video(unseen.Slug));
+        Assert.IsType<NotFoundResult>(await Controller().HdVideo(unseen.Slug));
+        Assert.IsType<NotFoundResult>(await Controller().Poster(once.Slug));
         // Rut is killed in all five; the three live ones count.
         Assert.Equal(3, Value<ShortPlayersDto>(await Controller().Players(30, default)).Items.Single(p => p.Name == "Rut").Shorts);
 
@@ -1261,7 +1267,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(hd, await File.ReadAllBytesAsync(storage.HdVideoPath(dto.Slug)));
         Assert.Equal($"/stats/shorts/{dto.Slug}.mp4?v={whole.Length}", dto.VideoUrl);
         Assert.Equal($"/stats/shorts/{dto.Slug}.hd.mp4?v={hd.Length}", dto.HdVideoUrl);
-        Assert.IsType<PhysicalFileResult>(Controller().Video(dto.Slug));
+        Assert.IsType<PhysicalFileResult>(await Controller().Video(dto.Slug));
         Assert.Empty(storage.Parts(upload));
         Assert.Empty(storage.Parts(hdUpload));
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
@@ -1326,4 +1332,110 @@ public sealed class ShortsControllerTests : IDisposable
 
     private static T Value<T>(ActionResult<T> result) =>
         Assert.IsType<T>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+    /// <summary>A Short of a Battlefield Vietnam recording is bfv's (features/bfv-through-bfstats):
+    /// its files on bfv's disk, its card on bfv's strip only, served and taken down from there.</summary>
+    [Fact]
+    public async Task AShortOfABfvRecording_IsBfvsInItsFolderAndStrip()
+    {
+        var user = new User { Email = "uploader@example.com", CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        db.Recordings.Add(new Recording
+        {
+            Slug = RecordingSlug, Title = "Hue", UploaderUserId = user.Id, Level = "hue", Mod = "bfvietnam", Game = RecordingGames.Bfv,
+            ContentHash = "hue", CreatedAt = clock.Now, UpdatedAt = clock.Now,
+        });
+        await db.SaveChangesAsync();
+
+        var dto = await UploadAsync();
+
+        Assert.Equal(RecordingGames.Bfv, (await db.ReplayShorts.AsNoTracking().SingleAsync()).Game);
+        var bfv = storage.Of(RecordingGames.Bfv);
+        Assert.True(File.Exists(bfv.VideoPath(dto.Slug)));
+        Assert.True(File.Exists(bfv.PosterPath(dto.Slug)));
+        Assert.Empty(ShortFiles());
+        Assert.Empty((await service.ListAsync(7, null, 1, 24, default)).Items);
+        Assert.Equal([dto.Slug], (await service.ListAsync(7, null, 1, 24, default, game: RecordingGames.Bfv)).Items.Select(i => i.Slug));
+
+        var served = Assert.IsType<PhysicalFileResult>(await Controller().Video(dto.Slug));
+        Assert.Equal(bfv.VideoPath(dto.Slug), served.FileName);
+
+        Assert.True(await service.DeleteAsync(dto.Slug, default));
+        Assert.False(File.Exists(bfv.VideoPath(dto.Slug)));
+    }
+
+    [Fact]
+    public async Task AShortsFile_WithNoRow_IsNotServed()
+    {
+        Directory.CreateDirectory(storage.Directory);
+        await File.WriteAllBytesAsync(storage.VideoPath("aaaaaaaaaa"), Mp4);
+
+        Assert.IsType<NotFoundResult>(await Controller().Video("aaaaaaaaaa"));
+    }
+
+    private async Task<User> UserWithRoleAsync(string? role, string email)
+    {
+        var user = new User { Email = email, Role = role, CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
+    }
+
+    private static ClaimsPrincipal SignedIn(User user) =>
+        // A bfv-site token: a plain user's role, no email, whatever the account is.
+        new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Role, AppRoles.User)], "Bearer"));
+
+    private async Task SeedRecordingAsync(string game, int uploaderId)
+    {
+        db.Recordings.Add(new Recording
+        {
+            Slug = RecordingSlug, Title = "R", UploaderUserId = uploaderId, Level = "hue", Mod = game == RecordingGames.Bfv ? "bfvietnam" : "bf1942",
+            Game = game, ContentHash = game, CreatedAt = clock.Now, UpdatedAt = clock.Now,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>A BfvAdmin runs BattleView Vietnam's Shorts from its own sign-in
+    /// (features/bfv-through-bfstats): its recordings' Shorts, and no others.</summary>
+    [Fact]
+    public async Task ABfvAdmin_UploadsBfvShortsOnly()
+    {
+        var lucca = await UserWithRoleAsync(AppRoles.BfvAdmin, "lucca@example.com");
+        await SeedRecordingAsync(RecordingGames.Bfv, lucca.Id);
+
+        var controller = Controller(user: SignedIn(lucca));
+        await Body(controller, Meta());
+        var created = Assert.IsType<CreatedAtActionResult>((await controller.Upload(default)).Result);
+        var dto = Assert.IsType<ShortDto>(created.Value);
+        Assert.Equal(RecordingGames.Bfv, (await db.ReplayShorts.AsNoTracking().SingleAsync()).Game);
+
+        // It takes down its own game's Short, and prunes only its game's.
+        Assert.IsType<NoContentResult>(await Controller(user: SignedIn(lucca)).Delete(dto.Slug, default));
+    }
+
+    [Fact]
+    public async Task ABfvAdmin_IsRefusedABf1942RecordingsShort()
+    {
+        var lucca = await UserWithRoleAsync(AppRoles.BfvAdmin, "lucca@example.com");
+        await SeedRecordingAsync(RecordingGames.Bf1942, lucca.Id);
+
+        var controller = Controller(user: SignedIn(lucca));
+        await Body(controller, Meta());
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Empty(db.ReplayShorts);
+    }
+
+    [Fact]
+    public async Task APlainAccount_UploadsNoShorts()
+    {
+        var player = await UserWithRoleAsync(null, "player@example.com");
+        await SeedRecordingAsync(RecordingGames.Bfv, player.Id);
+
+        var controller = Controller(user: SignedIn(player));
+        await Body(controller, Meta());
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+    }
 }

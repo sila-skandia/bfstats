@@ -71,6 +71,7 @@
                     <option value="User">User</option>
                     <option value="EarlyAdopter">Early Adopter</option>
                     <option value="Support">Support</option>
+                    <option value="BfvAdmin">BattleView Vietnam admin</option>
                     <option value="Admin" disabled>Admin (fixed)</option>
                   </select>
                 </td>

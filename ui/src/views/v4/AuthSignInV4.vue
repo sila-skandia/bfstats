@@ -5,7 +5,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
-import { rememberReturnUrl, safeReturnUrl, signUpViaFor, takeReturnUrl } from '@/services/authReturn'
+import { peekReturnUrl, rememberReturnUrl, safeReturnUrl, signUpViaFor, takeReturnUrl } from '@/services/authReturn'
+import MmBfvBand from '@/components/v4/MmBfvBand.vue'
 import '@/styles/modern-minimal.css'
 
 const router = useRouter()
@@ -24,6 +25,11 @@ onMounted(() => {
 })
 
 const isRegister = computed(() => route.path === '/auth/register')
+
+// On the way to bfv.bfstats.io's Allow page (features/bfv-through-bfstats): its banner and
+// colours, so a BattleView Vietnam player knows where they are. The tabs drop the query,
+// so the remembered return address is read too.
+const fromBfv = computed(() => signUpViaFor(returnUrl.value ?? peekReturnUrl()) === 'bfv')
 
 const username = ref('')
 const password = ref('')
@@ -192,8 +198,9 @@ const signInWithDiscord = () => {
 </script>
 
 <template>
-  <div class="mm mm-signin">
+  <div class="mm mm-signin" :class="{ 'mm-site-bfv': fromBfv }">
     <div class="mm-signin__panel">
+      <MmBfvBand v-if="fromBfv" />
       <div class="mm-eyebrow mm-eyebrow--strong">
         {{ isRegister ? 'Create account' : 'Sign in' }}
       </div>
