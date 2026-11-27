@@ -1,0 +1,43 @@
+# The proxmox cluster's Jenkins agent cloud ("Local k8s", credential k3s-bethany)
+# authenticates as ServiceAccount jenkins-ci/jenkins-agent (deploy/JENKINS.md, 3b).
+# Its own namespace's Role and RoleBinding (jenkins-ci/jenkins-agent) give it pods,
+# pods/exec, pods/log, events and secrets get there.
+#
+# home-server-manager's Jenkinsfile starts its agents in namespace home-server-mgr,
+# so the same account needs pod rights there too. Without them every agent request
+# for that job is a 403, retried about once a second per build, and the cloud's
+# provisioning backs up behind it: bfstats builds then get one agent at a time or
+# hang on "Still waiting to schedule task" (2026-11-27, builds 1859 and 1861).
+#
+# Apply with:
+#   kubectl --context proxmox apply -f deploy/proxmox-jenkins-agent-rbac.yaml
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-agent
+  namespace: home-server-mgr
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-agent
+  namespace: home-server-mgr
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-agent
+    namespace: jenkins-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jenkins-agent

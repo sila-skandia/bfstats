@@ -194,6 +194,36 @@ Jenkins then uses its own pod's ServiceAccount, `jenkins-ci/jenkins-admin`,
 whose token Kubernetes renews automatically. That account has cluster-wide
 access, so the scoped `jenkins-agent` token above is the tighter choice.
 
+### Other jobs' agent namespaces
+
+The scoped token only reaches `jenkins-ci`. A job whose Jenkinsfile starts its
+agents elsewhere needs the same pod rights in that namespace.
+`home-server-manager` starts its agents in `home-server-mgr`, so
+`deploy/proxmox-jenkins-agent-rbac.yaml` gives `jenkins-ci/jenkins-agent` a
+Role there:
+
+```bash
+kubectl --context proxmox apply -f deploy/proxmox-jenkins-agent-rbac.yaml
+```
+
+Without it, nothing says so in that job. Its agent requests are 403s
+(`listSyncAndWatch failed for v1/namespaces/home-server-mgr/pods`, `Failed to
+delete pod for agent home-server-mgr/...` in the controller log), retried about
+once a second per build, and **every other job's agents back up behind them**.
+On 2026-11-27, home-server-manager builds 70 to 78 did that from 12:30. bfstats
+build 1859 hung at Build API with no agent, and 1861 got its parallel branches'
+agents one at a time, each only after the previous pod was deleted. Aborting the
+stuck builds stops the 403s but leaves stale requests in the queue. **Manage
+Jenkins > Restart Safely** (`/safeRestart`) clears them. Do not use `kubectl
+rollout restart` for that: the controller Deployment is RollingUpdate on one
+`jenkins_home` volume, so the new controller would start beside the old one.
+
+To check a namespace before pointing a job at it:
+
+```bash
+kubectl --context proxmox auth can-i create pods -n <namespace> --as=system:serviceaccount:jenkins-ci:jenkins-agent
+```
+
 ---
 
 ## 4. Configure Git HTTPS credentials
