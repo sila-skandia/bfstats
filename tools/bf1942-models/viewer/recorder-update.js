@@ -13,15 +13,20 @@
 // so it is never told to update.
 //
 // When a new BF42++ release is cut, move LATEST here and CLIENT_TAG in
-// ui/src/views/v4/BattleViewV4.vue together.
+// ui/src/views/v4/BattleViewV4.vue together. Since v2.1 the releases are
+// BF42++'s own (Casqade/bf42plusplus), which carries the recorder.
 
 export const LATEST = Object.freeze({
-  tag: 'v2.0-round-replay',
-  name: '2.0-round-replay',
-  // The released dsound.dll's own stamp. A build from that day or later is current.
+  tag: 'v2.1',
+  name: 'BF42++ 2.1',
+  // The oldest build whose recordings are complete: v2.0-round-replay's stamp. A
+  // build from that day or later is current. v2.1 (stamped Nov 23 2026 22:06:28)
+  // only stopped writing the server's chat fragments beside the chat box lines,
+  // which is no reason to tell a v2.0-round-replay player to update. Move this
+  // only when a release records something older builds leave out.
   built: 'Oct 18 2026 13:34:34',
-  release: 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay',
-  dll: 'https://github.com/sila-skandia/bf42plus/releases/download/v2.0-round-replay/dsound.dll',
+  release: 'https://github.com/Casqade/bf42plusplus/releases/tag/v2.1',
+  dll: 'https://github.com/Casqade/bf42plusplus/releases/download/v2.1/dsound.dll',
   fixes: Object.freeze([
     'Crouching, lying down, firing and reloading are recorded on Forgotten Hope and other big mods. Before, soldiers stood upright and slid along the ground.',
     'Recording starts the moment you type plus.recordReplays 1.',

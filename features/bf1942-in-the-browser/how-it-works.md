@@ -131,9 +131,12 @@ simulation at the same 30 ticks a second and sends back two separate streams:
 
 ### What the recorder does
 
-The recorder is our fork of bf42++,
-[sila-skandia/bf42plus](https://github.com/sila-skandia/bf42plus), and the code
-is in [`src/replay.cpp`](https://github.com/sila-skandia/bf42plus/blob/master/src/replay.cpp). The game loads it as `dsound.dll` from its own
+The recorder is part of bf42++ itself: written in our fork
+[sila-skandia/bf42plus](https://github.com/sila-skandia/bf42plus) and merged
+upstream into [Casqade/bf42plusplus](https://github.com/Casqade/bf42plusplus),
+released from v2.1 (2026-11-23). The code is in
+[`src/replay*.cpp`](https://github.com/Casqade/bf42plusplus/blob/master/src/replay.cpp),
+and the format in its `docs/replay-format.md`. The game loads it as `dsound.dll` from its own
 folder, so it runs inside the player's game client, not on the server. It stays
 off until `recordReplays` is set in `bf42++.ini` or `plus.recordReplays 1` is
 typed in the console. It writes `replays/replay_<date>-<time>.ndjson` in the

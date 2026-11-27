@@ -43,8 +43,13 @@ never held the data, so the fix is to tell them.
 
 ## Cutting a new BF42++ release
 
-Move `LATEST` in `recorder-update.js` (tag, the released dll's own `build`
-stamp, the fix list) and `CLIENT_TAG` in `BattleViewV4.vue` together.
+Move `LATEST` in `recorder-update.js` (tag, release links, the fix list) and
+`CLIENT_TAG` in `BattleViewV4.vue` together. Releases are BF42++'s own since
+v2.1 (Casqade/bf42plusplus, 2026-11-23). Move `LATEST.built` to the release's
+`build` stamp only when the release records something older builds leave out:
+v2.1 kept `v2.0-round-replay`'s Oct 18 stamp, since all it changed in a
+recording was dropping the server's duplicate chat fragments, and a working
+2.0 install should not be told to update.
 `test_recorder_update.py` fails when the two tags differ. Read the stamp from
 the release asset: `strings -a dsound.dll | grep -E '^[A-Z][a-z]{2} [ 0-9]{2} 20'`.
 

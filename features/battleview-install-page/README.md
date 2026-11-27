@@ -7,10 +7,16 @@ server admins how to install the server recorder, and where the recordings go
 
 ## What it links to
 
-- BF42++ release `v2.0-round-replay` (sila-skandia/bf42plus, `CLIENT_TAG`):
-  the download button is that release's `dsound.dll` itself, which goes next to
+- BF42++ release `v2.1` (Casqade/bf42plusplus, `CLIENT_TAG`): the download
+  button is that release's `dsound.dll` itself, which goes next to
   `BF1942.exe`; `plus.recordReplays 1` in the console turns it on and is saved
-  to `bf42++.ini`.
+  to `bf42++.ini`. Until 2026-11-28 it was our fork's `v2.0-round-replay`
+  (sila-skandia/bf42plus); the recorder was merged upstream on 2026-11-22 and
+  v2.1 is the first official BF42++ that records, so the update note also
+  tells anyone on an official BF42++ older than 2.1 to update. Upstream's
+  release also carries `bf42++.zip` (the `bf42++.exe` launcher, whose dll is the
+  same file); the page still names only `dsound.dll`, since players took the
+  zip by mistake before.
 - The newest server recorder release (this repo's `recorder-v*`, whichever is
   Latest; since 2026-11-27 the page names no version of its own), under a
   Linux / Windows toggle (2026-11-03). Linux: `recorder.so` loaded with

@@ -158,7 +158,7 @@ test.describe('BattleView replays', () => {
     const update = page.getByTestId('battleview-client-update')
     await expect(update).toContainText('Already have BF42++?')
     await expect(update.getByRole('link', { name: "What's new" }))
-      .toHaveAttribute('href', /github\.com\/sila-skandia\/bf42plus\/releases\/tag\/v[^/]+$/)
+      .toHaveAttribute('href', /github\.com\/Casqade\/bf42plusplus\/releases\/tag\/v[^/]+$/)
     const join = page.getByTestId('battleview-discord-join')
     await expect(join).toHaveText('Join Discord')
     await expect(join).toHaveAttribute('href', /^https:\/\/discord\.gg\//)

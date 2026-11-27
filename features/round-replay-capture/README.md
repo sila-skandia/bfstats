@@ -406,7 +406,7 @@ file exists.
 
 ## 9. Phase 1 as built (bf42plus `recordReplays`)
 
-Implemented in bf42plus as `src/replay.cpp` (sila-skandia/bf42plus, `master`). Enable with `recordReplays=on` in `bf42plus.ini` or
+Implemented in bf42plus as `src/replay.cpp` (sila-skandia/bf42plus, `master`; merged upstream into Casqade/bf42plusplus and released as its v2.1 on 2026-11-23, where `replay.cpp` is split into `src/replay_*.cpp`). Enable with `recordReplays=on` in `bf42plus.ini` or
 `plus.recordReplays 1` in the console. Output is
 `replays/replay_<yyyymmdd-hhmmss>.ndjson` in the game directory, one JSON
 object per line, `t` in seconds since the file was opened. From format v3 a

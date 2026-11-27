@@ -67,9 +67,11 @@ const open = (m: Media) => { lightbox.value = m }
 // Moves with LATEST in tools/bf1942-models/viewer/recorder-update.js, which tells an
 // uploader whose recording came from an older build to update
 // (features/recorder-update-notice; test_recorder_update.py holds them together).
-const CLIENT_TAG = 'v2.0-round-replay'
-const CLIENT_DLL = `https://github.com/sila-skandia/bf42plus/releases/download/${CLIENT_TAG}/dsound.dll`
-const CLIENT_RELEASE = `https://github.com/sila-skandia/bf42plus/releases/tag/${CLIENT_TAG}`
+// The recorder is part of BF42++ itself since v2.1 (Casqade/bf42plusplus, merged
+// from sila-skandia/bf42plus on 2026-11-22), so the download is the official release.
+const CLIENT_TAG = 'v2.1'
+const CLIENT_DLL = `https://github.com/Casqade/bf42plusplus/releases/download/${CLIENT_TAG}/dsound.dll`
+const CLIENT_RELEASE = `https://github.com/Casqade/bf42plusplus/releases/tag/${CLIENT_TAG}`
 const DISCORD_INVITE = 'https://discord.gg/6saqqTTYEM'
 // The DLL needs Microsoft's C++ runtime; the 32-bit one, as the game is 32-bit.
 const VC_REDIST = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
@@ -273,7 +275,7 @@ const snippets = {
               <i class="pi pi-download" aria-hidden="true" />
               <span>Download dsound.dll</span>
             </a>
-            <span class="bv-dl__meta">BF42++ 2.0-round-replay · the only file you need</span>
+            <span class="bv-dl__meta">BF42++ 2.1, the official release · the only file you need</span>
           </div>
           <p class="bv-only bv-update" data-testid="battleview-client-update">
             <i class="pi pi-refresh" aria-hidden="true" />
@@ -281,6 +283,8 @@ const snippets = {
               <strong>Already have BF42++?</strong> If you installed it before 18 October 2026, download it again and
               replace your <code>dsound.dll</code>. Older builds don't record crouching, lying down, firing or reloading on
               Forgotten Hope and other big mods, so soldiers stand upright and slide along the ground in the replay.
+              Recording is part of the official BF42++ from 2.1, so an official BF42++ older than 2.1 doesn't record at
+              all: update that one too.
               <a :href="CLIENT_RELEASE" target="_blank" rel="noopener">What's new</a>.
             </span>
           </p>
