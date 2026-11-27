@@ -30,7 +30,9 @@ public sealed record ShortDto(
     // 16:9 rather than 9:16: an action roll.
     bool Landscape = false,
     // The small copy the share link names, null when there is none (features/action-roll).
-    string? LinkVideoUrl = null)
+    string? LinkVideoUrl = null,
+    // Its recording's game (features/bfv-through-bfstats): which site's player it opens in.
+    string Game = api.Recordings.RecordingGames.Bf1942)
 {
     /// <summary>The video's and the poster's links carry their sizes as a version (<c>?v=</c>):
     /// they are served for a year, and one replaced (a new poster, a video flattened) is a new
@@ -41,5 +43,6 @@ public sealed record ShortDto(
         $"/stats/shorts/{s.Slug}.mp4?v={s.VideoBytes}", $"/stats/shorts/{s.Slug}.jpg?v={s.PosterBytes}", s.CreatorName,
         s.HdVideoBytes > 0 ? $"/stats/shorts/{s.Slug}.hd.mp4?v={s.HdVideoBytes}" : null,
         ShortKinds.IsLandscape(s.Kind),
-        s.LinkVideoBytes > 0 ? $"/stats/shorts/{s.Slug}.link.mp4?v={s.LinkVideoBytes}" : null);
+        s.LinkVideoBytes > 0 ? $"/stats/shorts/{s.Slug}.link.mp4?v={s.LinkVideoBytes}" : null,
+        s.Game);
 }
