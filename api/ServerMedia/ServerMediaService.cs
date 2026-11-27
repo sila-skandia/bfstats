@@ -62,7 +62,7 @@ public sealed class ServerMediaService(
             .ToList();
 
         var shortRows = await db.ReplayShorts.AsNoTracking()
-            .Where(s => s.PrunedAt == null)
+            .Where(s => s.Game == RecordingGames.Bf1942 && s.PrunedAt == null)
             .OrderByDescending(s => s.CreatedAtMs).ThenByDescending(s => s.Id)
             .Take(Window)
             .ToListAsync(ct);

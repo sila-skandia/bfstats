@@ -9,7 +9,10 @@ public interface IShortService
     /// <summary>Shorts made in the last <paramref name="days"/> days (1 to 3650), newest first,
     /// or most viewed first for <paramref name="sort"/> <c>views</c>.</summary>
     Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct, string? kind = null,
-        string? player = null, string? server = null);
+        string? player = null, string? server = null, string game = api.Recordings.RecordingGames.Bf1942);
+
+    /// <summary>The game a Short is of, whose folder its files are in; null for no such Short.</summary>
+    Task<string?> GameAsync(string slug, CancellationToken ct);
     Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct);
 
     Task<ShortDto?> GetAsync(string slug, CancellationToken ct);

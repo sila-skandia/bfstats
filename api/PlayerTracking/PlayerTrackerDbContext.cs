@@ -1649,6 +1649,9 @@ public class PlayerTrackerDbContext : DbContext
             s.HasIndex(x => x.RecordingSlug);
             s.HasIndex(x => x.CreatedAtMs);
             s.HasIndex(x => new { x.Views, x.CreatedAtMs });
+            // Each game's own strip (features/bfv-through-bfstats).
+            s.Property(x => x.Game).HasMaxLength(api.Recordings.RecordingGames.MaxLength).HasDefaultValue(api.Recordings.RecordingGames.Bf1942);
+            s.HasIndex(x => new { x.Game, x.CreatedAtMs });
             s.Property(x => x.Slug).HasMaxLength(10);
             s.Property(x => x.RecordingSlug).HasMaxLength(10);
             s.Property(x => x.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));

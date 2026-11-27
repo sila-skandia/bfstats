@@ -60,8 +60,8 @@ public class ShortsController(
         [FromQuery] int days = ShortService.DefaultDays, [FromQuery] string? sort = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = ShortService.DefaultPageSize,
         [FromQuery] string? kind = null, [FromQuery] string? player = null, [FromQuery] string? server = null,
-        CancellationToken ct = default) =>
-        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct, kind, player, server));
+        [FromQuery] string? game = null, CancellationToken ct = default) =>
+        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct, kind, player, server, RecordingGames.FromQuery(game)));
 
     /// <summary>The players in the week's Shorts, for the strip's player filter.</summary>
     [HttpGet("players")]
@@ -110,22 +110,22 @@ public class ShortsController(
     /// is never reused, so its file never changes.</summary>
     [HttpGet("{slug:length(10)}.mp4")]
     [EnableCors(RecordingsController.PublicReadCors)]
-    public IActionResult Video(string slug) => Serve(slug, storage.VideoPath, "video/mp4");
+    public Task<IActionResult> Video(string slug, CancellationToken ct = default) => ServeAsync(slug, f => f.VideoPath, "video/mp4", ct);
 
     /// <summary>The HD copy, when the Short has one (an action roll's 1080p take), served as the
     /// video is.</summary>
     [HttpGet("{slug:length(10)}.hd.mp4")]
     [EnableCors(RecordingsController.PublicReadCors)]
-    public IActionResult HdVideo(string slug) => Serve(slug, storage.HdVideoPath, "video/mp4");
+    public Task<IActionResult> HdVideo(string slug, CancellationToken ct = default) => ServeAsync(slug, f => f.HdVideoPath, "video/mp4", ct);
 
     /// <summary>The link copy, when the Short has one: the small take its share link names.</summary>
     [HttpGet("{slug:length(10)}.link.mp4")]
     [EnableCors(RecordingsController.PublicReadCors)]
-    public IActionResult LinkVideo(string slug) => Serve(slug, storage.LinkVideoPath, "video/mp4");
+    public Task<IActionResult> LinkVideo(string slug, CancellationToken ct = default) => ServeAsync(slug, f => f.LinkVideoPath, "video/mp4", ct);
 
     [HttpGet("{slug:length(10)}.jpg")]
     [EnableCors(RecordingsController.PublicReadCors)]
-    public IActionResult Poster(string slug) => Serve(slug, storage.PosterPath, "image/jpeg");
+    public Task<IActionResult> Poster(string slug, CancellationToken ct = default) => ServeAsync(slug, f => f.PosterPath, "image/jpeg", ct);
 
     /// <summary>201 with the new Short, or 200 with the one its kill was clipped as already.</summary>
     [HttpPost]
@@ -320,11 +320,23 @@ public class ShortsController(
         return Ok(new ShortViewsDto(found.Views));
     }
 
-    private IActionResult Serve(string slug, Func<string, string> pathOf, string contentType)
+    /// <summary>A Short's file from its own game's folder, found by its row (features/bfv-through-bfstats):
+    /// a file with no row is not served, and one that is not a regular file of its own is not either.</summary>
+    private async Task<IActionResult> ServeAsync(string slug, Func<ShortStorage, Func<string, string>> pathOf, string contentType, CancellationToken ct)
     {
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
-        var path = pathOf(clean);
-        if (!System.IO.File.Exists(path)) return NotFound();
+        if (await shorts.GameAsync(clean, ct) is not { } game) return NotFound();
+        ShortStorage files;
+        try
+        {
+            files = storage.Of(game);
+        }
+        catch (RecordingRejectedException)
+        {
+            return NotFound();
+        }
+        var path = pathOf(files)(clean);
+        if (!files.IsPlainFile(path)) return NotFound();
         Response.Headers.XContentTypeOptions = "nosniff";
         Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         return PhysicalFile(path, contentType, enableRangeProcessing: true);
