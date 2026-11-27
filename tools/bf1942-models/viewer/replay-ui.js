@@ -12,7 +12,7 @@
 // allows it.
 
 import { GameConsole } from './console.js';
-import { fmtHp, kitAt, lodAt, nameAt, roundClock, roundTimeLeft, shownWeapon, teamAt } from './replay-recording.js';
+import { fmtHp, kitAt, lodAt, nameAt, roundClock, roundTimeAt, shownWeapon, teamAt } from './replay-recording.js';
 import { boardAt, chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf } from './replay-chapters.js';
 import { medalKinds } from './scoreboard.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
@@ -2010,9 +2010,9 @@ export class ReplayUi {
     const clock = roundClock(rec, t);
     const round = clock === null ? '' : `ROUND ${fmtClock(clock)}`;
     if (this.roundText.textContent !== round) this.roundText.textContent = round;
-    // The ticket bar's middle cell, as the client fills it (HUD-31): the
-    // round's time left, where the server set a limit.
-    quietly('the round clock', () => player.ctx.setRoundTime?.(roundTimeLeft(rec, t)));
+    // The ticket bar's middle cell (HUD-31): the round's time left where the
+    // server set a limit, else the time played.
+    quietly('the round clock', () => player.ctx.setRoundTime?.(roundTimeAt(rec, t)));
     // Each part of the chrome on its own (`quietly`): the name tags that
     // cannot be placed leave the clock, the card and the board working.
     quietly('the timeline', () => this.timeline.update(t));

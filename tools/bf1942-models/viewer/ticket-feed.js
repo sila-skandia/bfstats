@@ -37,17 +37,23 @@ export function ticketBlinks(gpm, points, tickets = null) {
 }
 
 /**
- * The ticket bar's middle cell, the client's own text (BF1942.exe
- * 0x006aec81, ledger HUD-31): the round's seconds left `ftol`-truncated, as
- * `%.2d:%.2d` minutes and seconds (0x0091de40), so 25 minutes reads "25:00"
- * and two hours "120:00". Null for none: a round with no time limit, or one
- * past it.
+ * The ticket bar's middle cell. `time` is `{ left }`, the round's seconds
+ * left where it has a time limit, or `{ elapsed }`, its seconds played where
+ * it has none; null for no clock.
+ *
+ * With a limit it is the client's own text (BF1942.exe 0x006aec81, ledger
+ * HUD-31): the seconds left `ftol`-truncated as `%.2d:%.2d` minutes and
+ * seconds (0x0091de40), so 25 minutes reads "25:00" and two hours "120:00",
+ * and nothing once it runs out. Without one retail leaves the cell empty;
+ * here it counts up from the round's start, 00:00, in the same format: the
+ * players' request (2026-11-27), "players just want a reference point".
  */
-export function roundTimeText(left) {
-  if (!(left > 0)) return null;
-  const s = Math.trunc(left);
+export function roundTimeText(time) {
   const pad = n => String(n).padStart(2, '0');
-  return `${pad(Math.trunc(s / 60))}:${pad(s % 60)}`;
+  const fmt = v => { const s = Math.trunc(v); return `${pad(Math.trunc(s / 60))}:${pad(s % 60)}`; };
+  if (time && Number.isFinite(time.left)) return time.left > 0 ? fmt(time.left) : null;
+  if (time && Number.isFinite(time.elapsed)) return fmt(Math.max(0, time.elapsed));
+  return null;
 }
 
 /**
@@ -59,7 +65,7 @@ export function roundTimeText(left) {
  * `capturePosition`, `currentDir`, `deployTeamId`, `extras`, `hudPack`,
  * `LOCAL_PLAYER`, `nearestEnemyFlag`, `round`, `soldierDead`,
  * `spawnersRoot`, `teamArt`, `teamNation`, `world`, `loadouts` (a memo
- * key), and `roundTimeLeft`, the round's seconds left or null.
+ * key), and `roundTime`, the round's clock for the middle cell (`roundTimeText`).
  */
 export function createTicketFeed(page) {
   const ticketFeed = {};
@@ -187,8 +193,8 @@ export function createTicketFeed(page) {
    *  group will draw. */
   function feedTicketVars(vars, { paint = false } = {}) {
     // The middle cell: its own top (`Time/ShowTime`), shown while the round
-    // has time left whatever the counts do.
-    const time = roundTimeText(page.roundTimeLeft ?? null);
+    // has a clock whatever the counts do.
+    const time = roundTimeText(page.roundTime ?? null);
     vars['Time/ShowTime'] = time !== null;
     vars['Time/Time'] = time ?? '';
     const memo = ticketMemoFor();

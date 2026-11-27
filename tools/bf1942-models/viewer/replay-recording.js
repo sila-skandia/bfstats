@@ -2519,6 +2519,16 @@ export function roundTimeLeft(rec, t) {
   return limit > 0 && clock !== null ? limit - clock : null;
 }
 
+/** The ticket bar's clock at `t` (ticket-feed.js `roundTimeText`): `{ left }`
+ *  where the round has a time limit, `{ elapsed }`, the server's round clock,
+ *  where it has none, or null with no clock. */
+export function roundTimeAt(rec, t) {
+  const clock = roundClock(rec, t);
+  if (clock === null) return null;
+  const limit = timeLimitAt(rec, t);
+  return limit > 0 ? { left: limit - clock } : { elapsed: clock };
+}
+
 // --- sampling a life at a time --------------------------------------------------
 
 const _span = { i: -1, j: -1, k: 0 };
