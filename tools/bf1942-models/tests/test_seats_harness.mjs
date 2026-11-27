@@ -358,6 +358,11 @@ function stationaryBrowning() {
     lvt4: classifyRoot(hull('LVT4', 'VCLand', ['c_ETTank', 'c_ETShip'], 0)),
     // No category: the old rule, the last Engine.
     uncategorised: classifyRoot(hull('Thing', null, ['c_ETTank', 'c_ETShip'], 4)),
+    // DC's Guided_Tomahawk, the round a Fletcher's gunner rides: VCAir, a
+    // `c_ETRocket` and a `c_ETTorpedo`, no `c_ETPlane`. It was a bare seat.
+    tomahawk: classifyRoot(hull('Guided_Tomahawk', 'VCAir', ['c_ETRocket', 'c_ETTorpedo'])),
+    // A torpedo motor alone does not fly a VCAir root.
+    torpedoOnly: classifyRoot(hull('Thing2', 'VCAir', ['c_ETTorpedo'])),
   };
   // A propeller sled: FH's and FHSW's NKL26 aerosan, `VCLand`, one
   // `c_ETPlane` pusher prop, four `c_PGFRollGrip` ski springs, no `Wing`.
@@ -1364,7 +1369,7 @@ function cadenceRig(stats) {
     planeDrift: round(planeDrift, 6),
     roots: findAllVehicleRoots(root).map(o => o.name).sort(),
     holdHost: hold?.host?.name ?? null,
-    craftHold: spawnHoldOf(craft),
+    craftHoldHost: spawnHoldOf(craft)?.host?.name ?? null,
     looseHold: spawnHoldOf(loose), keptHoldHost: spawnHoldOf(kept)?.host?.name ?? null,
     heldOffDeck: round(Math.max(...held.elements.map((v, i) => Math.abs(v - onDeck.elements[i]))), 6),
   };

@@ -715,13 +715,20 @@ function insideNestedControlObject(node, root) {
  * The airframe owning an engine outside every nested PCO is what tells them
  * apart, and it needs no name matching.
  */
+/** The Engine types an airframe flies on its engine law: the plane's, and the
+ *  self-started rocket and torpedo motors of a round a player rides (DC's
+ *  Guided_Tomahawk carries one of each, ledger FA-29, PHY-20). */
+const FLOWN_ENGINE_TYPES = new Set(['c_ETPlane', 'c_ETRocket', 'c_ETTorpedo']);
+/** The ones that push through the air, which is what makes a root fly. */
+const AIR_ENGINE_TYPES = new Set(['c_ETPlane', 'c_ETRocket']);
+
 function ownsAnEngine(root) {
   let own = false;
   root.traverse(node => {
     if (own || node === root) return;
     const data = node.userData || {};
     if (data.templateKind !== 'Engine') return;
-    if (data.physics?.engineType !== 'c_ETPlane') return;
+    if (!AIR_ENGINE_TYPES.has(data.physics?.engineType)) return;
     if (!insideNestedControlObject(node, root)) own = true;
   });
   return own;
@@ -850,7 +857,7 @@ function surveyAircraft(root, physics, options) {
       group.nodes.push(node.name);
       gearOf.set(node, group);
     }
-    if (data.templateKind === 'Engine' && part?.engineType === 'c_ETPlane') {
+    if (data.templateKind === 'Engine' && FLOWN_ENGINE_TYPES.has(part?.engineType)) {
       engines.push({
         id: node.name,
         engineType: part.engineType,
@@ -1665,7 +1672,7 @@ export class Aircraft extends Vehicle {
    *  step, the gear. */
   #lawTick(h) {
     for (const engine of this.lawEngines) {
-      engine.advance(h, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+      engine.advance(h, engine.pinnedInput ?? (engine.input ? this.input(engine.input) : 0), this.engineRunning);
     }
     this.step(h);
     this.autoGear();
@@ -1890,7 +1897,7 @@ export class Aircraft extends Vehicle {
         // its gearbox runs on its own constant `T1` while the engine runs,
         // which is the whole of what turns Flettner_LeftRotor and _RightRotor
         // (`engine-spin.js`, PHY-30).
-        engine.advance(dt, 0, running);
+        engine.advance(dt, engine.pinnedInput ?? 0, running);
       } else {
         engine.revs = running && engine.input === 'c_PIThrottle' ? spooled : 0;
       }
@@ -2284,7 +2291,7 @@ export class Aircraft extends Vehicle {
       const seen = new Map();
       this.node.traverse(n => {
         const data = n.userData;
-        if (data?.templateKind !== 'Engine' || data.physics?.engineType !== 'c_ETPlane') return;
+        if (data?.templateKind !== 'Engine' || !FLOWN_ENGINE_TYPES.has(data.physics?.engineType)) return;
         const k = seen.get(n.name) ?? 0;
         seen.set(n.name, k + 1);
         const engine = this.lawEngines.filter(e => e.id === n.name)[k];
@@ -2362,7 +2369,10 @@ export class Aircraft extends Vehicle {
       engine.stepBundles(h, this._inputOf);
       engine.pose(s.orientation, _fwd, _r);
       const worldY = s.position.y + _r.y;
-      if (worldY < this.waterHeight) { engine.revs = 0; continue; }
+      // The water branch by the engine's bit 3: a plane's or a rocket's motor
+      // is stopped under the surface, a torpedo motor pushes nothing above it.
+      const wet = worldY < this.waterHeight;
+      if (engine.waterEngine ? !wet : wet) { if (!engine.waterEngine) engine.revs = 0; continue; }
       const rho = 1 - clamp(worldY / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
       const k = engine.thrust(s.velocity.dot(_fwd), rho);
       _force.copy(_fwd).multiplyScalar(k * engine.ratio);

@@ -73,5 +73,13 @@
   "level": "GC_Mos_Eisley",
   "retail_faithful": true,
   "evidence": "A hover bike with no lifting surface: GCMOD's Speederbike (objects.rfa Vehicles/Land/Speederbike) carries four c_ETPlane engines and two Wings, SpeederbikeRudderFront and SpeederbikeRudderRear, which declare setFlapLift 3 and no setWingLift. Placed level 500 m up by the audit's flight check it has nothing to hold it and falls (366 m in 7 s); it rides on its engines near the ground (checked 2026-11-12)."
+ },
+ {
+  "check": "veh.exit",
+  "cause_key": "veh.exit-refused",
+  "template_or_kit": "Britain_Factory_AI",
+  "level": "Battle_of_Britain",
+  "retail_faithful": true,
+  "evidence": "Refused in retail (SEAT-42): DC Final's Battle_of_Britain.rfa Objects/Britain_Factory_AI/Objects.con writes ObjectTemplate.hasRestrictedExit 1 and setSoldierExitLocation 6/12/-7, and the level's StaticObjects.con places rubble03_m1 (Objects.rfa Buildings/Common: setHasCollisionPhysics 1) at 1225.47/104.742/1729.82, 2.5 m from the factory's seat. The page's cast of the exit line (raised 0.5 m) hits that rubble 2.1 m out and, mirrored, 2.5 m out, so both sides are blocked and isAllowedToExit 0x08317490 returns 0: the Use press does nothing. Measured in the page 2026-11-27 (collision owner 512, rubble03_m1)."
  }
 ]

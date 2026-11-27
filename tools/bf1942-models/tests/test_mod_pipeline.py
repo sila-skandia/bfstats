@@ -69,6 +69,15 @@ class RecipeShape(unittest.TestCase):
             for a in s.after:
                 self.assertIn(a, n[:i], f"{s.name} must come after {a}")
 
+    def test_every_tree_gets_its_soldiers_faces(self):
+        # `soldier-face.js` fetches `poses/faces/faces.json` on every level;
+        # dc_final, the first tree built after it landed, had none and 404'd
+        # on all 48 levels (2026-11-27).
+        step = next(s for s in M.STEPS if s.name == "poses_faces")
+        self.assertIn("--faces", step.cmds[0])
+        self.assertIn(("{models}/poses/faces/faces.json", 1), step.outputs)
+        self.assertIn("poses_faces", M.GLB_WRITERS)
+
     def test_ordering_constraints_the_owner_found_by_hand(self):
         pos = {n: i for i, n in enumerate(names())}
         # build_mods_manifest.py after the work it counts, thumbs after the

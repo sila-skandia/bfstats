@@ -453,7 +453,11 @@ export function rootDriveKind(seat) {
   const land = types.includes('c_ETTank') ? 'tank' : types.includes('c_ETCar') ? 'ground' : null;
   if (category === 'VCLand' && land && seat.drivenSprings !== 0) return land;
   if (category === 'VCSea' && types.includes('c_ETShip')) return 'ship';
-  if (category === 'VCAir' && types.includes('c_ETPlane')) return 'air';
+  // A `VCAir` root flies on a plane's engine or on a rocket motor: DC's
+  // Guided_Tomahawk, the round a Fletcher's gunner rides (FA-29), carries a
+  // `c_ETRocket` and a `c_ETTorpedo` and no `c_ETPlane`, and was a bare seat
+  // that hung at the barrel until 2026-11-27.
+  if (category === 'VCAir' && (types.includes('c_ETPlane') || types.includes('c_ETRocket'))) return 'air';
   // A propeller sled: a `VCLand` hull with no land engine whose `c_ETPlane`
   // pushes it along on its own wheels, with no `Wing` to lift it (FH's and
   // FHSW's `NKL26` aerosan, four RollGrip skis and a pusher prop). The engine

@@ -249,6 +249,54 @@ muzzles 35.0 degrees off, and the screenshot shows the bombs under the belly
 lying along it. Not checked on the page: the AV-8B Mk 83s and the C-47 box, which
 rest on the same data. Engine side: see FA-5; the dummy-placing code was not read.
 
+## DC Final imported, 2026-11-27
+
+All 48 of DC Final's own levels went through `mod_pipeline.py` into
+`viewer/{models,maps}/mods/dc_final` (the first tree built from scratch since
+2026-11-13). Its quick behaviour check found 195 majors; these were fixed:
+
+- **Faces**: no pipeline step wrote `poses/faces/`, so every level 404'd
+  `faces.json`. Step `poses_faces` now does, for every tree.
+- **DC's mortar** (`Mortar_weap`, every Support kit's slot 4): a grafted
+  weapon read `undefined.clips` (`hand-weapon.js` never kept the arms rig's
+  document). 136 of the 195.
+- **Missiles a player flies.** The Patriot and SA-3 rockets are `c_ETPlane`
+  with a pinned span and rode already. DC's `Guided_Tomahawk` (the Fletcher's
+  tub) is `c_ETRocket` + `c_ETTorpedo`: it was classed a bare seat and hung at
+  the barrel. It is now an aircraft whose rocket motor runs with its roll input
+  pinned (PHY-20) and whose torpedo motor pushes only under water; 238 m in
+  5 s from the tub's 30 m/s (`test_flight.py`). Getting out with the use key
+  seats the rider back in the launcher inside the exit, before the round's
+  `destroyOnExit` burst (`GameServer::exitVehicle`); it was a frame late and
+  the burst killed them.
+- Midway's and Kharkov's spawners name `BRMD2` (the mod's misspelling of
+  `BRDM2`; nothing declares it, so retail spawns nothing): the page no longer
+  guesses a glb for a name no catalogue lists.
+- Audit misreadings: a ride read as a gun that never fired, a landing craft
+  on its ship's hold judged at its entry pose, a rocket tester killed by their
+  own splash read as a reload that never completes.
+- Battle of Britain's `Britain_Factory_AI` refusing the use key is retail
+  (SEAT-42: restricted exit, `rubble03_m1` 2.5 m off both sides); accepted.
+
+Open, with what was measured:
+
+- **EE-9 steers the wrong way at speed.** Right (D) yaws it right at 9 m/s
+  (Urban Siege, +94 deg) and left at 18-22 m/s (Twin Rivers -81 to -97 deg,
+  three runs; DustBowl +0.24 rad/s for the first moments, then -73 deg). Its
+  steered front pair is `c_PGFEngineGrip` under `c_PIYaw` bundles at -1.96 m,
+  the middle pair `c_PGFRollGripWhenOccupied`, the rear pair engine grip;
+  `tracked-vehicle.js` drives it. The DPV at 21.6 m/s turns the right way.
+  What retail does at that speed is unread: the next step is the friction
+  sum's per-wheel weighting at speed against `ResponsePhysics::addFriction`
+  `0x0825c1b0`, or a lab capture of the EE-9 at speed.
+- **The static Nimitz's helm is silent.** `Nimitz_Static_Heli` writes
+  `hasMobilePhysics 0`, so the page builds no drive for it and no engine audio
+  (`veh.no-engine-sound`, DC_Sea_Rigs). Retail runs the Engine regardless
+  (PHY-17 makes only the physics node static) and `NimitzEngine.ssc` would
+  play, but what the rev state does on a `StaticPhysicsNode` (whether
+  `updatePhysics` advances it) is unread, so its pitch cannot be drawn
+  honestly yet.
+
 ## Open
 
 Not landed:
@@ -290,7 +338,7 @@ Gaps found and not built:
 - Hand weapons: under DEV-12 a hand round still carries its own pull's bloom.
 - ObjectiveMode: no objectives HUD; no `Factory_Objective` wreck glb; the
   defender's share reads 0 with a time limit; Medina Ridge's rock dropper.
-- Artillery spotting (SPOT-1..16); missiles a player flies (SA-3, Tomahawk);
+- Artillery spotting (SPOT-1..16);
   stationary guns as static roots; dividing `geometryScale` out of physics;
   projectile flight sounds.
 - Load settle against statics (replace `standsOverTheSea`); COL-17 for

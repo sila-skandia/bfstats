@@ -50,7 +50,7 @@
 // Pure arithmetic over the baked `spec.parts`, with no three.js, so the
 // harness and the page run the same thing.
 
-import { currentRatio, currentTorque, loadSample, revAdvance } from './engine-revs.js';
+import { currentRatio, currentTorque, engineTypeBits, loadSample, revAdvance } from './engine-revs.js';
 
 /** `g_simulationFps` (physics.md section 3): the gearbox filter's 0.05 is per tick. */
 export const ENGINE_TICK_HZ = 30;
@@ -72,16 +72,9 @@ export const ROCKET_ENGINE_DEFAULTS = Object.freeze({
   differential: 10, torque: 60, noPropellerEffectAtSpeed: 100,
 });
 
-/** `operator<<(ostream&, EngineType)`'s table (ledger TANK-1). */
-const ENGINE_TYPE_BITS = {
-  c_etplane: 0x1, c_etcar: 0x2, c_ettank: 0x6, c_etship: 0x9,
-  c_etrocket: 0x11, c_ettorpedo: 0x19,
-};
-
-/** An Engine's `setEngineType` as its bit flags; 0 for one the table lacks. */
-export function engineTypeBits(name) {
-  return ENGINE_TYPE_BITS[String(name || '').toLowerCase()] ?? 0;
-}
+// `engineTypeBits` lives in `engine-revs.js`, which `vectored-engines.js`
+// reads too; re-exported here for this module's callers.
+export { engineTypeBits };
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 

@@ -230,3 +230,14 @@ export function revAdvance(revs, t1, load = 0, ticks = 1) {
 export function loadSample(load, count, l0) {
   return LOAD_DECAY * (load * count + l0) / (count + 1);
 }
+
+/** `operator<<(ostream&, EngineType)`'s table (ledger TANK-1). */
+const ENGINE_TYPE_BITS = {
+  c_etplane: 0x1, c_etcar: 0x2, c_ettank: 0x6, c_etship: 0x9,
+  c_etrocket: 0x11, c_ettorpedo: 0x19,
+};
+
+/** An Engine's `setEngineType` as its bit flags; 0 for one the table lacks. */
+export function engineTypeBits(name) {
+  return ENGINE_TYPE_BITS[String(name || '').toLowerCase()] ?? 0;
+}

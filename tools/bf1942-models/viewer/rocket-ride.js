@@ -414,6 +414,17 @@ export function createRocketRide(page) {
     });
   }
 
+  /** The human has just got out of `node` with the use key: when it is the
+   *  round they ride, they are seated back in its launcher now, as
+   *  `GameServer::exitVehicle` 0x0814e2c0 does on `BFPlayer+0x6c`, so the
+   *  round's `destroyOnExit` blast meets an empty round. True when seated. */
+  ride.exited = node => {
+    if (!active || active.node !== node) return false;
+    const { launcher } = active;
+    active = null;
+    return returnToLauncher(launcher);
+  };
+
   ride.reset = () => {
     pending = null; active = null; linger = null;
     botPending.length = 0; botRides.clear();

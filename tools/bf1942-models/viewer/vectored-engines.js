@@ -42,7 +42,7 @@
 // Engine's own `rig` roll axis and `physics.maxRotation`. No number is fitted.
 
 import * as THREE from 'three';
-import { currentRatio, currentTorque, loadSample, revAdvance } from './engine-revs.js';
+import { currentRatio, currentTorque, engineTypeBits, loadSample, revAdvance } from './engine-revs.js';
 import { SIMULATION_FPS } from './body-friction.js';
 import { unboundRollAxis } from './engine-spin.js';
 import { DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED } from './ship-spec.js';
@@ -258,11 +258,22 @@ export function engineGeometry(root, node) {
   // `calculateAndClipAngle` every tick: with the span's bounds equal (the
   // Flettner's rotors, `0/0/150` and `0/0/-150`) the clip pins the angle on
   // the bound and `T1` is 1 for as long as the engine runs (ledger PHY-30).
+  // An engine type with bit 4 (`c_ETRocket` 0x11, `c_ETTorpedo` 0x19) is
+  // started by its own type and has its roll input pinned to 1.0 every
+  // `handleUpdate` (`0x0823e16e`, ledger PHY-20): its servo runs to the span's
+  // top at its own rate whatever binds it. Its floor is the template's 0 when
+  // the .con leaves `minRotation` out (DC's Guided_Tomahawk), which is a
+  // known floor here, not the old-export guess `unboundRollAxis` refuses.
+  const bits = engineTypeBits(physics.engineType);
+  const pinned = (bits & 0x10) !== 0;
   const throttle = roll
     ? axisOf(roll, rig.automaticReset, accel || undefined)
-    : unboundRollAxis(physics);
+    : unboundRollAxis(pinned && !Array.isArray(physics.minRotation)
+      ? { ...physics, minRotation: [0, 0, 0] } : physics);
   const maxRotationZ = Array.isArray(physics.maxRotation) ? physics.maxRotation[2] : (roll?.max ?? 0);
-  return { chain, local, throttle, maxRotationZ, offNose };
+  // Bit 3 (`c_ETShip`, `c_ETTorpedo`): the branch that thrusts under the
+  // water and pushes nothing above it (`0x0824cc89`, PHY-19).
+  return { chain, local, throttle, maxRotationZ, offNose, pinned, waterEngine: (bits & 0x8) !== 0 };
 }
 
 // Scratch for the per-sub-step pose; nothing here may allocate.
@@ -287,6 +298,10 @@ export class VectoredEngine {
     this.torque = spec.torque ?? DEFAULT_TORQUE;
     this.fadeSpeed = spec.noPropellerEffectAtSpeed || DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED;
     this.throttle = spec.throttle || null;
+    // `engineGeometry`'s bit-4 pin: the input the servo is driven at, or null
+    // for an engine that takes its pedal (or nothing) from the seat.
+    this.pinnedInput = spec.pinned ? 1 : null;
+    this.waterEngine = !!spec.waterEngine;
     // The rocket motors' burn (PHY-45, `rocket-burn.js`): null without heat.
     const heat = engineHeatSpec(spec);
     this.heat = heat ? new EngineHeat(heat) : null;

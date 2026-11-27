@@ -290,6 +290,15 @@ STEPS: tuple[Step, ...] = (
        fixes="the room server and the headless runner meet a soldier on a stand-in sphere and "
              "aim the bots at its centre, where the page hits and aims at the drawn skeleton: "
              "the bot judges then score another fight than the one a player meets"),
+    _s("poses_faces", "Each soldier's animated head, its face clips and poses/faces/faces.json",
+       inputs=('{models}/kits.json',),
+       cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--faces",
+              "--out", "{models}/poses"),),
+       needs=("{models}/kits.json",), outputs=(("{models}/poses/faces/faces.json", 1),),
+       after=("poses_shared",),
+       fixes="a new tree had no faces/: the page fetched faces.json, 404'd on every level and "
+             "drew rigid heads with no blinks or lip-sync (soldier-face.js, 2026-11-13; the "
+             "first tree built after it, dc_final, 2026-11-27)"),
     _s("poses_matrix", "Soldier x weapon matrix export (replay poses for non-kit weapons)",
        inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--matrix", "--export",
@@ -1593,7 +1602,7 @@ def select_steps(only: list[str] | None, from_step: str | None, cfg: ModConfig) 
 # together: each rewrites or reads files the other is rewriting.
 GLB_WRITERS = frozenset({
     "models", "level_variants", "levels", "flag_cloth", "optimise", "kits",
-    "poses_kit", "poses_shared", "poses_matrix", "effects", "viewmodels"})
+    "poses_kit", "poses_shared", "poses_faces", "poses_matrix", "effects", "viewmodels"})
 GLB_READERS = frozenset({"thumbs"})
 SHARED_SOUND_WRITERS = frozenset({"levels", "effects"})
 # A step may start beside others while the cores they keep busy stay within

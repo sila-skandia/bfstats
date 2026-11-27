@@ -133,12 +133,14 @@ class SeatsModuleTests(unittest.TestCase):
 
     def test_a_ships_landing_craft_is_split_off_as_its_own_vehicle(self) -> None:
         # `HatsuzukiDaihatsuSpawner` & co.: the engine spawns the craft as an
-        # object of its own; the exporter bakes it under the ship.
+        # object of its own; the exporter bakes it under the ship. Since
+        # 63a5bbe6b (FEEDBACK 83) the craft rides her ship's spawner until its
+        # helm opens the throttle, as a deck aircraft does, so it is held.
         c = self.results["spawnedCraft"]
         self.assertEqual(c["craftParent"], "spawners")
         self.assertEqual(c["seatParent"], "Hatsuzuki")
         self.assertEqual(c["drift"], 0)
-        self.assertIsNone(c["craftHold"])
+        self.assertEqual(c["craftHoldHost"], "Hatsuzuki")
 
     def test_a_carriers_deck_aircraft_is_split_off_and_held(self) -> None:
         # Brief Q: `Enterprise_corsairSpawner` / `ShokakuZeroSpawner` spawn the
@@ -213,6 +215,15 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("air", kinds["gasExplosion"])
         self.assertEqual("air", kinds["wheelless"])
         self.assertEqual("air", kinds["vcair"])
+
+    def test_a_ridden_rocket_flies_on_its_rocket_motor(self) -> None:
+        """DC's Guided_Tomahawk (FA-29) is `VCAir` with a `c_ETRocket` and a
+        `c_ETTorpedo` and no `c_ETPlane`: it is an aircraft, flown on the
+        rocket motor (PHY-20), where it was a bare seat that hung at the
+        Fletcher's barrel (2026-11-27). A torpedo motor alone does not fly."""
+        kinds = self.results["mixedEngines"]
+        self.assertEqual("air", kinds["tomahawk"])
+        self.assertNotEqual("air", kinds["torpedoOnly"])
 
     def test_a_root_without_mobile_physics_drives_nothing(self) -> None:
         """PHY-17: `setPhysicsNodeComponent` (`0x081dd490`) gives a template

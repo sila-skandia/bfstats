@@ -1620,5 +1620,22 @@ class FlightModelTests(unittest.TestCase):
         self.assertLess(abs(folding["noseY"]), 0.3)
         self.assertEqual(1, folding["levers"][-1])
 
+    def test_a_ridden_rocket_flies_on_its_pinned_motor(self) -> None:
+        """PHY-20 / FA-29: DC Final's Guided_Tomahawk carries a `c_ETRocket`
+        (bit 4: started by its type, roll input pinned to 1.0) and a
+        `c_ETTorpedo` (bit 3: pushes only under water). Hands off from the
+        tub's 30 m/s it flies away on the rocket alone."""
+        real = self.results.get("realGuidedTomahawk")
+        if not real:
+            self.skipTest("no dc_final tree on this PC")
+        types = {e["type"]: e for e in real["engines"]}
+        self.assertTrue(types["c_ETRocket"]["pinned"])
+        self.assertFalse(types["c_ETRocket"]["water"])
+        self.assertTrue(types["c_ETTorpedo"]["water"])
+        # Faster than its launch: a body coasting at 30 m/s covers at most
+        # 150 m in the 5 s (237.7 m measured, 2026-11-27).
+        self.assertGreater(real["travelled"], 180.0)
+        self.assertGreater(real["speed"], 30.0)
+
 if __name__ == "__main__":
     unittest.main()

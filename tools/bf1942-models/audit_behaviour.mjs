@@ -1069,9 +1069,24 @@ async function testShip(s, tpl, level, rec) {
       rec.failed = true;
     }
   }
-  if (ship0 && Math.abs(ship0.y - ship0.target) > 2) {
+  // A landing craft on its ship's spawner hold rides her at the spawner's
+  // pose until its helm opens the throttle (63a5bbe6b, FEEDBACK 83), so its
+  // draught is judged once the run has let it go and it has had 4 s to settle.
+  let judged = ship0, when = 'on entry';
+  if (ship0?.held) {
+    await s.step(240);
+    judged = await s.ev(c => window.__ships().find(x => x.control === c) ?? null, ship0.control);
+    when = 'after the hold let it go';
+    if (judged?.held) {
+      add({ check: 'ship.float', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.hold-never-released',
+        evidence: `still on its spawner's hold after 8 s of full throttle (y ${judged.y})` });
+      rec.failed = true;
+      judged = null;
+    }
+  }
+  if (judged && Math.abs(judged.y - judged.target) > 2) {
     add({ check: 'ship.float', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.draft-wrong',
-      evidence: `y ${ship0.y} vs equilibrium ${ship0.target} on entry` });
+      evidence: `y ${judged.y} vs equilibrium ${judged.target} ${when}` });
     rec.failed = true;
   }
 }
@@ -1276,8 +1291,14 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       deploy.before = was.n;
     }
     const fired = deploy ? await clock() : null;
+    // A round that is a vehicle (FA-29, `rocket-ride.js`): the trigger takes the
+    // tester out of the launcher and into the round, and `__hull()` is the
+    // round from then on. The launch is the shot; the use key puts them back.
+    let rode = null;
     for (let i = 0; i < (deploySeat ? 400 : 30); i++) {
       await s.step(4);
+      rode = await s.ev(() => window.__rocketRide?.()?.riding ?? null);
+      if (rode) break;
       if (deploy) {
         const d = await s.ev(([o, stands, old]) => {
           const v = window.__vehicles?.().find(x => x.owner === o);
@@ -1326,6 +1347,35 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       fxPlays = Math.max(fxPlays, st.fx);
     }
     await s.ev(() => window.__setSeatFire(false, false));
+    if (rode) {
+      // Clear of the launcher first: a warhead set off at the barrel bursts
+      // on the ship and its crew, the rider back in their seat among them.
+      // A round that ends its own flight (the sea, the ground) puts its rider
+      // back the same way (`rideOut`); only one still flying is left by key.
+      let flying = true;
+      // 10 s: a round that leaves at 30 m/s can still be 35 m off its
+      // launcher at 3 s, inside its own blast (measured 2026-11-27).
+      for (let i = 0; i < 150 && flying; i++) {
+        await s.step(4);
+        flying = !!(await s.ev(() => window.__rocketRide?.()?.riding));
+      }
+      if (flying) await s.ev(() => window.__exitSeat?.());
+      // Back in the seat, and still there a second later: the warhead's
+      // burst has been dealt by then.
+      let back = false;
+      for (let i = 0; i < 15; i++) {
+        await s.step(4);
+        back = await s.ev(name => !window.__rocketRide?.()?.riding && window.__hull?.()?.template === name, tpl);
+      }
+      rec[`fire_${seat.index}`] = { shots: 1, rode, back, outByKey: flying };
+      if (!back) {
+        add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.ride-no-return',
+          evidence: `the trigger put the tester in ${rode}; getting out did not seat them back in ${tpl}` });
+        rec.failed = true;
+        break;
+      }
+      continue;
+    }
     const post = await s.ev(top => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()),
       launched: window.__roundSpawners?.()?.launched ?? null,
       depotRounds: window.__roundDepots?.() ?? null,
@@ -2421,7 +2471,14 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
       if ((x.hw?.rounds ?? 0) > 0) { refilled = true; break; }
     }
     wr.reload = { refilled, sawReloading, clips: [...rc], reloadTime, stepped_s: +stepped.toFixed(1), hp, asked };
-    if (!refilled) {
+    if (!refilled && hp === 0) {
+      // Dead before the change could finish: `footFire` stops with the
+      // soldier, so the magazine stays as it was (a rocket kit's tester,
+      // dead after the fire test just before, 2026-11-27). The reload is
+      // untested, not broken.
+      add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'info', cause_key: 'kit.reload-tester-died',
+        evidence: `the tester was dead (hp 0) within ${stepped.toFixed(1)} s of the reload key; the reload was not tested` });
+    } else if (!refilled) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.reload-never-completes',
         evidence: `magazine emptied, R pressed, ${budget.toFixed(1)} s later (reloadTime ${reloadTime}) rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]}, hp ${hp}; at the key ${JSON.stringify(asked)})` });
       rec.failed = true;

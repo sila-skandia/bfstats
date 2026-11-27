@@ -1590,6 +1590,10 @@ const vehicleEntry = createVehicleEntry(bag(
     get isTouchDevice() { return isTouchDevice; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get optOnFoot() { return optOnFoot; },
+    // Out of a ridden round: back in its launcher within the exit
+    // (`rocket-ride.js` `exited`), declared below and called only once a
+    // player is seated.
+    rideExited: node => rocketRide.exited(node),
   },
 ));
 

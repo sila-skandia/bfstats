@@ -306,7 +306,17 @@ export function createVehicleWrecks(page) {
    * the side its level did not bake (`level-statics.js` `loadPadVariants`).
    */
   async function modelUrls(template) {
-    return variantUrls(template, 'complex');
+    // A pad names the template its spawner says, which need not exist: DC
+    // Final's Midway and Kharkov spawners name `BRMD2` for the BRDM2, and the
+    // engine spawns nothing from such a pad. When the trees' catalogues are
+    // there and none lists the name, no file name is guessed for it.
+    return variantUrls(template, 'complex', { drawn: !(await catalogued()) });
+  }
+
+  /** Whether every tree's `models.json` answered with a list. */
+  async function catalogued() {
+    const lists = await Promise.all(poseBases(page.MODELS_BASE).map(catalogue));
+    return lists.length > 0 && lists.every(list => list.size > 0);
   }
 
   async function variantUrls(template, configuration, { drawn = true } = {}) {

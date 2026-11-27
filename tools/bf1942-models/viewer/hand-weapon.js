@@ -521,7 +521,11 @@ export function createHandWeapon(page) {
       hasClip: familiesOf(Object.keys(actions ?? {})),
       fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
                              // weapon's aim state registers several (the knife)
-      clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
+      // The arms rig's document: a graft (`armsRig.graftRig`) keeps the arms
+      // and reads their `view.center1pHands` and clips from here. Unset, a
+      // graft read `undefined.clips` and threw (DC's Mortar_weap, 2026-11-27).
+      doc: fp ? doc ?? null : null,
+      clips: fp ? doc?.clips ?? null : null,   // per-family frames/speed/span extras
       active: graft ? held.active : null,   // the clip currently owning the arms
       fidgetNames,           // baked idle fidget families (`idle1..idleN`)
       fidget: null,          // the fidget selected/playing, or null

@@ -266,6 +266,9 @@ export function installVehicleHooks(page) {
       x: +host.node.matrixWorld.elements[12].toFixed(3),
       z: +host.node.matrixWorld.elements[14].toFixed(3),
       sinking: !!host.sinking,
+      // On its ship's spawner hold (`spawned-craft.js`): riding the ship, not
+      // floating, until its helm opens the throttle.
+      held: spawnHoldOf(host.node)?.released === false,
     };
   });
   // The helm of whatever ship is occupied: the state that decides how fast she

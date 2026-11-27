@@ -571,8 +571,15 @@ export function createVehicleEntry(page) {
    *  Returns whether he left. */
   function exitSeat({ press = false } = {}) {
     if (!page.occupancy) return false;
-    if (!page.mannedActive() && (page.aircraft || page.car)) return exitVehicle({ press });
-    return exitManned({ press });
+    const root = page.occupancy.root;
+    const out = !page.mannedActive() && (page.aircraft || page.car)
+      ? exitVehicle({ press }) : exitManned({ press });
+    // A ridden round's rider (FA-29): `GameServer::exitVehicle` 0x0814e2c0
+    // seats them back in the launcher inside the exit, before the round's
+    // `destroyOnExit` death blast (SEAT-38) is dealt. Returned a frame later,
+    // they stood beside DC's Guided_Tomahawk when it burst and died with it.
+    if (out && !page.occupancy) page.rideExited?.(root);
+    return out;
   }
 
   Object.assign(vehicleEntry, {

@@ -3180,46 +3180,50 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   results.foldingWing.afterReset = { lever: lever(), angle: angle(folding.mount, straight.mount) };
 }
 
+// A real tree's glb, its textures stripped (node has no image decoder): the
+// root node of its scene.
+async function loadRealGlb(file) {
+    const data = readFileSync(file);
+    let offset = 12, json = null, bin = null;
+    while (offset + 8 <= data.length) {
+      const length = data.readUInt32LE(offset), type = data.readUInt32LE(offset + 4);
+      offset += 8;
+      if (type === 0x4e4f534a) json = JSON.parse(data.toString('utf8', offset, offset + length));
+      else if (type === 0x4e4942) bin = data.subarray(offset, offset + length);
+      offset += length;
+    }
+    delete json.images; delete json.textures; delete json.samplers;
+    for (const material of json.materials || []) {
+      const pbr = material.pbrMetallicRoughness || {};
+      delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture;
+      delete material.normalTexture; delete material.occlusionTexture; delete material.emissiveTexture;
+      delete material.extensions;
+    }
+    for (const key of ['extensionsUsed', 'extensionsRequired']) {
+      if (json[key]) json[key] = json[key].filter(name => !/texture/i.test(name));
+    }
+    const pad = (bytes, fill) => Buffer.concat([bytes, Buffer.alloc((4 - bytes.length % 4) % 4, fill)]);
+    const chunk = (bytes, type) => {
+      const header = Buffer.alloc(8);
+      header.writeUInt32LE(bytes.length, 0); header.writeUInt32LE(type, 4);
+      return [header, bytes];
+    };
+    const body = Buffer.concat([...chunk(pad(Buffer.from(JSON.stringify(json)), 0x20), 0x4e4f534a),
+                                ...(bin ? chunk(pad(Buffer.from(bin), 0), 0x4e4942) : [])]);
+    const head = Buffer.alloc(12);
+    head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + body.length, 8);
+    const out = Buffer.concat([head, body]);
+    return new Promise((resolve, reject) => new GLTFLoader().parse(
+      out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength), 'file:///', g => resolve(g.scene.children[0]), reject));
+}
+
 // The real trees, when this PC has FHSWEurope's: the folding Avenger flown off
 // a deck beside the plain one, the same stick, the same seconds.
 {
   const base = process.env.BF42_VIEWER_MODELS;
   const path = name => `${base}/mods/fhsweurope/${name}.glb`;
   if (base && ['Avenger', 'Avenger_WingFold'].every(name => existsSync(path(name)))) {
-    const load = async file => {
-      const data = readFileSync(file);
-      let offset = 12, json = null, bin = null;
-      while (offset + 8 <= data.length) {
-        const length = data.readUInt32LE(offset), type = data.readUInt32LE(offset + 4);
-        offset += 8;
-        if (type === 0x4e4f534a) json = JSON.parse(data.toString('utf8', offset, offset + length));
-        else if (type === 0x4e4942) bin = data.subarray(offset, offset + length);
-        offset += length;
-      }
-      delete json.images; delete json.textures; delete json.samplers;
-      for (const material of json.materials || []) {
-        const pbr = material.pbrMetallicRoughness || {};
-        delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture;
-        delete material.normalTexture; delete material.occlusionTexture; delete material.emissiveTexture;
-        delete material.extensions;
-      }
-      for (const key of ['extensionsUsed', 'extensionsRequired']) {
-        if (json[key]) json[key] = json[key].filter(name => !/texture/i.test(name));
-      }
-      const pad = (bytes, fill) => Buffer.concat([bytes, Buffer.alloc((4 - bytes.length % 4) % 4, fill)]);
-      const chunk = (bytes, type) => {
-        const header = Buffer.alloc(8);
-        header.writeUInt32LE(bytes.length, 0); header.writeUInt32LE(type, 4);
-        return [header, bytes];
-      };
-      const body = Buffer.concat([...chunk(pad(Buffer.from(JSON.stringify(json)), 0x20), 0x4e4f534a),
-                                  ...(bin ? chunk(pad(Buffer.from(bin), 0), 0x4e4942) : [])]);
-      const head = Buffer.alloc(12);
-      head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + body.length, 8);
-      const out = Buffer.concat([head, body]);
-      return new Promise((resolve, reject) => new GLTFLoader().parse(
-        out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength), 'file:///', g => resolve(g.scene.children[0]), reject));
-    };
+    const load = loadRealGlb;
     const fly = async name => {
       const plane = new Aircraft(await load(path(name)), null, { cockpit: false });
       plane.groundHeight = () => 18;
@@ -3245,6 +3249,29 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
                levers: plane.gears.map(gear => plane.input(gear.input)) };
     };
     results.realFoldingAvenger = { plain: await fly('Avenger'), folding: await fly('Avenger_WingFold') };
+  }
+}
+
+// DC Final's Guided_Tomahawk, the round a Fletcher's gunner rides (FA-29):
+// launched at the tub's 30 m/s along its nose, 100 m up, hands off. Its
+// `c_ETRocket` runs from birth with its roll input pinned (PHY-20), so it
+// flies off under its own motor; before 2026-11-27 nothing in the page ran
+// it and it hung where it was stood.
+{
+  const base = process.env.BF42_VIEWER_MODELS;
+  const file = base && `${base}/mods/dc_final/Guided_Tomahawk.glb`;
+  if (file && existsSync(file)) {
+    const missile = new Aircraft(await loadRealGlb(file), null, { cockpit: false });
+    missile.groundHeight = () => -1000;
+    missile.waterHeight = -1000;
+    missile.state.position.set(0, 100, 0);
+    missile.state.velocity.set(0, 0, -30);
+    missile.applyTransform();
+    const engines = missile.lawEngines.map(e => ({ id: e.id, type: e.engineType, pinned: e.pinnedInput, water: e.waterEngine }));
+    for (let t = 0; t < 30 * 5; t++) missile.integrate(DT);
+    const p = missile.state.position;
+    results.realGuidedTomahawk = { engines, travelled: Math.hypot(p.x, p.z), speed: missile.state.velocity.length(),
+      revs: missile.lawEngines.map(e => +e.revs.toFixed(3)) };
   }
 }
 
