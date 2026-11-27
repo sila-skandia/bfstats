@@ -120,10 +120,11 @@ BFV-only endpoints: a recording's game is one more property, read from the file.
   (PV and claim, applied by hand); the deployment's init container hands it to
   uid 1000, mode 0750. Checked: `/dev/sdc` is mounted at `/mnt/bfv-data` itself
   (its `lost+found` is there), so the folder is on bfv's disk beside `site/`.
-  Applied to the live deployment as a patch of these lines only: the live
-  deployment and `deploy/app/deployment.yaml` differ elsewhere (live has
-  `DiscordSuspicious__*`, the repo has `SidecarDownloads__Path` and a required
-  `Shorts__UploadKey`), which a whole apply would have changed.
+  Applied to the live deployment as a patch of these lines only, because the
+  live deployment and `deploy/app/deployment.yaml` differed elsewhere then.
+  They match again since 2026-11-27, when the whole file was applied for
+  `features/password-reset`: the dead `DiscordSuspicious__*` vars went and
+  `SidecarDownloads__Path` (the code's default) came in.
 - [x] HAProxy (2026-11-27, `backend bfv_site`): `Cookie` dropped on requests to
   bfv and `Set-Cookie` on its answers, so bfv can neither read bfstats.io's
   cookie nor set one a browser would send to bfstats.io. Checked with

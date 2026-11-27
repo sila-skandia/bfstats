@@ -69,6 +69,11 @@ and drops, so a dev machine and the E2E API need no credentials.
 | `CloudflareEmail__ApiToken` | secret `cloudflare-email`, key `api-token` (optional) |
 | `DiscordPasswordReset__WebhookUrl` | secret `discord-secrets`, key `password-reset-webhook` (optional) |
 
+Live since 2026-11-27: both secrets created, the whole `deployment.yaml`
+applied (the Jenkins build only restarts the deployment, it never applies the
+manifest, so a new env var needs that apply), migration
+`20261127122407_AddPasswordResetTokens` in the production database.
+
 Both secrets are optional, so the pod starts without them. Without the token,
 emails are dropped; without the webhook, notices are skipped.
 
