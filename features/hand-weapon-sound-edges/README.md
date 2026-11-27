@@ -279,3 +279,20 @@ installed). DC, DC Final and EoD trees are not re-run (parked).
 Checked on the page: Ulsnes, `Hagle` raised, one pull, eight
 `AudioBufferSourceNode` starts (the 3.0 s `pzb35LR` report and its foley)
 where there were none.
+
+## A replay plays each magazine change (2026-11-28)
+
+Reported on `q8uwcxrjcg` (Berlin): "Reload sounds for hand weapons are
+inaudible." The replay drew a recorded reload (the torso's reload state,
+`replay-bodies.js` -> `botReloaded`) but by design played no sound: its
+`primeReports` primed the report alone (`edges: false`) because "the replay
+plays no magazine change". Now, as playback walks into a fresh reload state
+(within `FIRE_STATE_FRESH` of its start, never on a seek or a drag), it plays
+the weapon's Reload slot at the soldier (`ctx.playWorldReload`, map.html ->
+`page-audio.js` `playWorldReload`, SND-17), as the page's own bots do, and
+`primeReports` primes each weapon's edges so the first change is heard.
+
+Checked on the page (`map.html?mod=bf1942&map=berlin&replay=...&shots`,
+headless Chromium, `WorldFire.play` counted): a minute of the round played a
+`Mp40#reload`, where it played none before. Guard: the prime's assertion in
+`tests/test_replay_auto_fire_sound.mjs`.

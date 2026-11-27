@@ -249,8 +249,9 @@ export class ReplaySoldiers {
    * yet and only then starts building one, so a weapon's first burst was
    * silent while its samples were fetched and decoded: on 3cqup373fj
    * (manchuria-1945, pid 16) the first 9 of an Mp18's 41 rounds, 0.8 s,
-   * went unheard. Report only (`edges: false`): the replay plays no magazine
-   * change. A hull gun's name is not in `weapons.json` and primes nothing.
+   * went unheard. With its edges: the replay plays each magazine change's
+   * Reload slot too, and an edge left to its first use is silent (world-fire.js
+   * `primeWeapon`). A hull gun's name is not in `weapons.json` and primes nothing.
    */
   primeReports() {
     const prime = this.player.ctx?.playWorldShot?.prime;
@@ -262,7 +263,7 @@ export class ReplaySoldiers {
       if (!names.has(key)) names.set(key, f.weapon);
     }
     const primed = [...names.values()];
-    for (const name of primed) prime(name, { edges: false });
+    for (const name of primed) prime(name);
     return primed;
   }
 
@@ -921,7 +922,16 @@ export class ReplaySoldiers {
     // A reload is the torso's reload state and nothing else: no round
     // says when a magazine went in, so none played until now.
     const reloading = Boolean(body?.reloading) && !dead;
-    if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
+    if (reloading && !actor.reloading) {
+      this.bodies?.botReloaded?.(actor);
+      // And its sound: `FireArms::Reload` triggers the weapon's Reload slot
+      // as the change starts (SND-17), heard at him -- only as playback walks
+      // into a fresh one, not on a seek that lands mid-change.
+      if (this.player.playing && !this.dragging) {
+        const weapon = actor.weaponAi?.name ?? actor.kitPrimary;
+        if (weapon && actor.recordedUpperAt <= FIRE_STATE_FRESH) this.player.ctx.playWorldReload?.(weapon, s.x, s.y + 1.4, s.z, actor);
+      }
+    }
     actor.reloading = reloading;
     // A blow he lives through: his grunt, and his torso's flinch.
     this.hurt(actor, life, body, t, dead, Boolean(seated));

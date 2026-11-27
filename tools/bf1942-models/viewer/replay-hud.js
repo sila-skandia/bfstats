@@ -46,6 +46,9 @@ import { weaponOfProjectile } from './replay-props.js';
 import { weaponTableFrom } from './replay-accuracy.js';
 import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
 import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
+import { kitPackSpec } from './kit-loadout.js';
+import { ROCKETEERING_LOWER } from './rocket-pack.js';
+import { PackFuel } from './replay-pack-fuel.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
  *  hardly decays is taken as settled after this. */
@@ -308,6 +311,7 @@ export class ReplayHud {
     this.written = null;        // 'foot' | 'seat' | null: which variables the page holds of ours
     this.sightShown = false;    // the page's `replay-sight` class
     this.events = new WeakMap(); // life -> Map<weapon or gun, its recorded rounds (and reloads)>
+    this.packFuel = new PackFuel(); // the rocket pack's fuel bar, per life (replay-pack-fuel.js)
     this.hitMarks = null;       // pid -> his hit marks' times (replay-hitmarks.js), once
     this.hitMarkFuses = null;   // the projectile table they were worked out with
     this.weapons = undefined;   // weapon -> { speed, projectile }, null until fetched
@@ -455,8 +459,17 @@ export class ReplayHud {
           recorded: true,
         };
       }
+      // XPack2's jet pack: its fuel, the pack's heat law over the burns his
+      // heights show while his legs are in a rocketeering state.
+      const kit = kitAt(life, t);
+      const kitName = loadouts?.kits?.[kit] || !kit ? kit
+        : Object.keys(loadouts?.kits ?? {}).find(name => lower(name) === lower(kit)) ?? kit;
+      const spec = kitPackSpec(loadouts, kitName);
+      const fuel = spec ? this.packFuel.at(life, spec, t,
+        at => ROCKETEERING_LOWER.has(bodyAt(rec, life.nid, at)?.lower)) : null;
       return {
-        kind: 'foot', pid, team, life, kit: kitAt(life, t), hitMark: this.hitMarkOf(pid, t),
+        kind: 'foot', pid, team, life, kit, hitMark: this.hitMarkOf(pid, t),
+        pack: spec ? { fuel: fuel ?? 1 } : null,
         outside: this.outsideOf(pid, t),
         stance: body?.stance ?? 'stand',
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
@@ -640,6 +653,12 @@ export class ReplayHud {
         vars['CrossHair/ScopeIcon'] = s.zoom.icon || 'sniper.tga';
         if (!s.zoom.sniperSight) vars['CrossHair/SightIcon'] = s.zoom.sightIcon || 'scout_ring_128x128.tga';
       }
+      // The pack's fuel on the layout's `Recover` bar beside the soldier icon
+      // (`ShowRecover == 3`, `rocketpackbar_full_32x64`), as the page's own
+      // soldier-hud.js writes it.
+      vars['Recover/ShowRecover'] = s.pack ? 3 : 0;
+      if (s.pack) vars['Recover/Recover'] = s.pack.fuel;
+      else delete vars['Recover/Recover'];
       if (s.data && s.ammo) writeSoldierAmmo(vars, s.data, s.ammo.rounds, s.ammo.mags);
       else for (const name of SOLDIER_AMMO_VARS) delete vars[name];
       return;
@@ -717,6 +736,8 @@ export class ReplayHud {
     vars['Vehicle/ShowVehicleIcon'] = false;
     vars['Weapon/ShowWeaponIcon'] = false;
     vars['Outside/OutsideTime'] = 0;
+    vars['Recover/ShowRecover'] = 0;
+    delete vars['Recover/Recover'];
     this.written = null;
   }
 

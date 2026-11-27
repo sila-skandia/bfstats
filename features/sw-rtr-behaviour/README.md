@@ -202,3 +202,27 @@ Open: `setWeaponLink 3` on the bayonet rifles (the engine's use is unread;
 the two Garands keep separate magazines here). The third-person body and the
 bots do not stab. A prone stab plays the standing clip: the rigs bake no
 `Ub_LieAltFire<W>` family.
+
+## The fuel bar in a replay (2026-11-28)
+
+Reported: "in Secret Weapons the jetpack reload bar is not visible". The bar
+is the layout's `Recover` leaf beside the soldier icon (`ShowRecover == 3`,
+`rocketpackbar_full_32x64` over `reloadtimebar_empty_32x64`). The page's own
+soldier fed it (`soldier-hud.js`, from `soldier.pack.fuel`), but a replay's
+first person wrote no `Recover/*` at all (`replay-hud.js`), and the page's
+feed wrote `ShowRecover 0` under it, so a replayed pack wearer had no bar.
+
+The recording carries no pack heat. `replay-pack-fuel.js` `PackFuel` runs the
+pack's own heat law (`RocketPack.update`) at 30 Hz over the life, its trigger
+down on each tick his heights read as a burn (`replayBurning`) while his legs
+are in a rocketeering state; `replay-hud.js` writes the result as the page
+does. `replayBurning` alone calls standing still a burn (no fall), so the
+rocketeering gate is what keeps a man on the ground from emptying it.
+
+Checked on `4dbzkzc6sv` (Raid on Agheila, pid 8 on the pack from 129 s),
+followed in first person on `map.html?mod=xpack2&map=raid_on_agheila`: the bar
+is up beside the soldier icon and refills after his burns. Guard:
+`tests/test_replay_pack_fuel.py`. Still an estimate in the way the burn is:
+a takeoff's first ticks, before his legs enter the rocketeering state, burn
+nothing here.
+

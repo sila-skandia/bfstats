@@ -24,6 +24,7 @@ import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
 import { RING_ART_BIAS } from './capture-rings.js';
+import { cpStripSlots } from './cp-strip.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -702,8 +703,8 @@ export function createMapSurfaces(page) {
   /** The HUD widget's chrome, all of it in the canvas: the `icon_mapbar_small`
    *  bezel as the nine-patch it is (a four-pixel frame round a transparent
    *  middle), the grid readout in the lower-left corner, and the flag-status
-   *  strip along the bottom edge — one `cpbar` segment per control point in
-   *  its holder's colour.
+   *  strip along the bottom edge — retail's tally of the capturable control
+   *  points, each side's from its own end (`cp-strip.js`).
    *
    *  The strip is retail's own bottom edge: below the frame the capture has a
    *  second, shorter plate of its own (y ~207.4..216.9). This widget keeps the
@@ -750,19 +751,21 @@ export function createMapSurfaces(page) {
     // beside the closed frame (MEME-12); the retail open map shows neither,
     // only the lettered art in its frame.
     if (z > 0.5) return;
-    const cps = page.extras.controlPoints || [];
+    // Retail's tally, not a list: team 2's points fill from the left, team
+    // 1's from the right, grey between, main bases left out (cp-strip.js).
+    const slots = cpStripSlots(page.extras.controlPoints, page.extras.gameplayMode);
     const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
     const gap = Math.round(2 * ratio);
     let x = d + gap;
     const y = h - d - segH - gap;
-    for (const cp of cps) {
+    for (const team of slots) {
       if (x + segW > size - d) break;
-      const name = cp.team === 1 ? 'cpbar_red_cp_16x8'
-        : cp.team === 2 ? 'cpbar_blue_cp_16x8' : 'cpbar_gray_cp_16x8';
+      const name = team === 1 ? 'cpbar_red_cp_16x8'
+        : team === 2 ? 'cpbar_blue_cp_16x8' : 'cpbar_gray_cp_16x8';
       const seg = page.sprite(name);
       if (seg) ctx.drawImage(seg, x, y, segW, segH);
       else {
-        ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
+        ctx.fillStyle = TEAM_FILL[team] || TEAM_FILL[0];
         ctx.fillRect(x, y, segW, segH);
       }
       x += segW + gap;

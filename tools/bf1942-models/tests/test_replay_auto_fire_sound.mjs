@@ -168,7 +168,7 @@ async function liveBurst() {
   const names = ReplaySoldiers.prototype.primeReports.call({ player });
   assert.deepEqual(names, ['Thompson', 'Mp40', 'BF109Guns'],
     'each weapon the recording fires once, whatever its case; no press, no soldier stand-in');
-  assert.ok(primed.every(([, opts]) => opts?.edges === false), 'the report alone: the replay plays no magazine change');
+  assert.ok(primed.every(([, opts]) => opts === undefined), 'report and edges: the replay plays each magazine change too');
   assert.deepEqual(ReplaySoldiers.prototype.primeReports.call({ player: { ctx: {}, rec: player.rec } }), [],
     'a page without the prime primes nothing and does not throw');
 }

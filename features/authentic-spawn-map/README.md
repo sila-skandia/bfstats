@@ -254,8 +254,11 @@ All six steps, in one change to `map.html` plus the new extractor:
   `minimap_icon_ring_32x32` for the player. Names, capture radii, the
   combat-area box and the per-entry spawn dots are gone.
 - The HUD widget lost its CSS panel; the `icon_mapbar_small` nine-patch bezel,
-  the grid readout and a `cpbar` segment per control point are painted into the
-  canvas, and the art is drawn translucent over the world.
+  the grid readout and the `cpbar` strip are painted into the canvas, and the
+  art is drawn translucent over the world. The strip is retail's tally, not a
+  segment per control point (2026-11-28, ledger HUD-32, `cp-strip.js`): one
+  slot per capturable point (main bases left out), team 2's from the left,
+  team 1's from the right, grey between, seven at most, and none in CTF or TDM.
 - The deploy state is the two-pane spawn screen: AXIS / ALLIED tabs, flag header
   (`icon_flag_<nation>`), five kit rows with the kit photographs (Japanese,
   Soviet and Canadian variants where the game has them), dimmed map with one

@@ -4348,6 +4348,9 @@ replayController = createReplayController({
   playWorldShot: Object.assign((weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner), {
     prime: (weapon, opts) => pageAudio.playWorldShot.prime?.(weapon, opts) ?? Promise.resolve(null),
   }),
+  // A replayed soldier's magazine change: his weapon's Reload slot, at him
+  // (SND-17), as the page's own bots play it (replay-bodies.js `place`).
+  playWorldReload: (weapon, x, y, z, owner) => pageAudio.playWorldReload(weapon, x, y, z, owner),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
   // A replayed soldier's hurt grunt (`c_SstHitDamage`, replay-bodies.js
