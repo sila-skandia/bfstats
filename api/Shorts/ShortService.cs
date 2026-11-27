@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text.Json;
+using api.Authorization;
 using api.PlayerTracking;
 using api.Recordings;
 using api.Shorts.Models;
@@ -177,7 +178,7 @@ public sealed class ShortService(
         return true;
     }
 
-    public async Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct)
+    public async Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct, string? game = null)
     {
         var limits = options.Value;
         var now = clock.GetCurrentInstant();
@@ -186,7 +187,7 @@ public sealed class ShortService(
         // studio, theirs to take down, not the render job's to tidy away.
         var stale = await db.ReplayShorts
             .Where(s => s.PrunedAt == null && s.CreatedAtMs <= cutoff && s.Views <= limits.RetentionMaxViews
-                && s.CreatorUserId == null)
+                && s.CreatorUserId == null && (game == null || s.Game == game))
             .OrderBy(s => s.CreatedAtMs)
             .ToListAsync(ct);
         var taken = new List<PrunedShortDto>(stale.Count);
@@ -332,8 +333,15 @@ public sealed class ShortService(
         return ShortDto.From(row);
     }
 
-    public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct) =>
-        ReceiveAsync(contentType, body, contentLength, flatten: false, meta => Task.FromResult(Describe(meta)), ct, rollsAllowed: true);
+    public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct, string? onlyGame = null) =>
+        ReceiveAsync(contentType, body, contentLength, flatten: false, meta => Task.FromResult(Describe(meta)), ct, rollsAllowed: true, onlyGame: onlyGame);
+
+    public async Task<string?> GameWriterAsync(int userId, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.Role, u.Email }).FirstOrDefaultAsync(ct);
+        if (user is null) return null;
+        return user.Role == AppRoles.BfvAdmin || AppRoles.IsAdminEmail(user.Email) ? RecordingGames.Bfv : null;
+    }
 
     public async Task<ShortUploadResult> ShareAsync(string? contentType, Stream body, long? contentLength, int userId, CancellationToken ct)
     {
@@ -376,7 +384,7 @@ public sealed class ShortService(
     /// and its larger video; until the meta part says what kind it is, a part is held to the
     /// largest limit the way in allows, and to its kind's once that is known.</summary>
     private async Task<ShortUploadResult> ReceiveAsync(string? contentType, Stream body, long? contentLength, bool flatten,
-        Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct, bool rollsAllowed = false)
+        Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct, bool rollsAllowed = false, string? onlyGame = null)
     {
         var limits = options.Value;
         var boundary = Boundary(contentType);
@@ -470,7 +478,7 @@ public sealed class ShortService(
             row.HdVideoBytes = hdVideoFile is null ? 0 : new FileInfo(hdVideoFile).Length;
             row.PosterBytes = new FileInfo(posterFile).Length;
 
-            var (saved, created) = await CommitAsync(row, videoFile, hdVideoFile, posterFile);
+            var (saved, created) = await CommitAsync(row, videoFile, hdVideoFile, posterFile, onlyGame);
             // Joined, the parts are spent either way: in place, or the kill's Short already there.
             DiscardParts(videoUpload);
             DiscardParts(hdVideoUpload);
@@ -516,7 +524,7 @@ public sealed class ShortService(
     /// <summary>The kill clipped already is the Short there; else this one, weighed against the
     /// room the volume has, moved into place and recorded.</summary>
     private async Task<(ReplayShort Short, bool Created)> CommitAsync(ReplayShort row, string videoFile, string? hdVideoFile,
-        string posterFile)
+        string posterFile, string? onlyGame = null)
     {
         var ct = CancellationToken.None;
         await Commit.WaitAsync(ct);
@@ -530,6 +538,10 @@ public sealed class ShortService(
             // listed on bfv.bfstats.io and kept on bfv's disk (features/bfv-through-bfstats).
             row.Game = await db.Recordings.AsNoTracking().Where(r => r.Slug == row.RecordingSlug)
                 .Select(r => r.Game).FirstOrDefaultAsync(ct) ?? RecordingGames.Bf1942;
+            if (onlyGame is not null && row.Game != onlyGame)
+            {
+                throw new RecordingRejectedException("This account uploads Shorts of Battlefield Vietnam recordings only.", StatusCodes.Status403Forbidden);
+            }
             var files = storage.Of(row.Game);
             if (files.RoomFor(await StoredBytesAsync(row.Game, ct), row.VideoBytes + row.HdVideoBytes + row.PosterBytes) is { } full)
             {

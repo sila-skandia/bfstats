@@ -24,6 +24,7 @@ public sealed class RecordingGameTests : IDisposable
     [InlineData(null, null, 3, "bf1942")]
     [InlineData("bf1942", "server-replay-recorder/3", 5, "bf1942")]
     [InlineData("bfv", "bfvplus/2", 5, "bfv")]
+    [InlineData("bfv", "server-replay-recorder-bfv/1", 5, "bfv")]
     public void GameOf_TakesWhatTheHeaderSays(string? game, string? plus, int version, string expected)
     {
         var (of, refusal) = RecordingInspector.GameOf(game, plus, version);
@@ -34,6 +35,7 @@ public sealed class RecordingGameTests : IDisposable
 
     [Theory]
     [InlineData(null, "bfvplus/2", 5)] // bfvplus, but no game: never let through as BF1942
+    [InlineData(null, "server-replay-recorder-bfv/1", 5)]
     [InlineData("bf1942", "bfvplus/2", 5)]
     [InlineData("bfv", "2.0", 5)] // BFV from anything but bfvplus
     [InlineData("bfv", null, 5)]

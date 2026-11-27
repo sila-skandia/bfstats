@@ -17,11 +17,18 @@ public static class AppRoles
     /// </summary>
     public const string EarlyAdopter = "EarlyAdopter";
 
+    /// <summary>
+    /// Whoever runs BattleView Vietnam's Shorts (features/bfv-through-bfstats): may upload, replace,
+    /// take down and prune Shorts of Battlefield Vietnam recordings, and no others, from any
+    /// sign-in, a bfv-site one included. Read from the account, not the token.
+    /// </summary>
+    public const string BfvAdmin = "BfvAdmin";
+
     /// <summary>The policy for early access: an Early Adopter or an admin.</summary>
     public const string EarlyAccessPolicy = "EarlyAccess";
 
     /// <summary>The roles an admin can give a user on the Access tab. Admin is the configured email, never given.</summary>
-    public static readonly IReadOnlyList<string> Assignable = [User, EarlyAdopter, Support];
+    public static readonly IReadOnlyList<string> Assignable = [User, EarlyAdopter, Support, BfvAdmin];
 
     /// <summary>True for an Early Adopter or an admin (the role, or the configured email).</summary>
     public static bool HasEarlyAccess(ClaimsPrincipal user) =>

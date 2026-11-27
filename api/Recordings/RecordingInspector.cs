@@ -176,34 +176,40 @@ public static class RecordingInspector
     /// <summary>The header's <c>plus</c> bfvplus writes: <c>bfvplus/2</c>.</summary>
     internal const string BfvRecorderPrefix = "bfvplus/";
 
+    /// <summary>The header's <c>plus</c> Battlefield Vietnam's server recorder writes:
+    /// <c>server-replay-recorder-bfv/1</c> (bfv.bfstats.io's own server recordings).</summary>
+    internal const string BfvServerRecorderPrefix = "server-replay-recorder-bfv";
+
     /// <summary>The only format bfvplus writes.</summary>
     internal const int BfvFormat = 5;
 
-    /// <summary>The record kinds bfvplus writes (bfv's own upload checks, 2026-11-25). A
-    /// Battlefield Vietnam recording with any other kind is refused: a strict check, as bfv's
-    /// own uploads always had.</summary>
+    /// <summary>The record kinds bfvplus writes (bfv's own upload checks, 2026-11-25), and
+    /// <c>pin</c>, the players' inputs bfv's server recorder keeps. A Battlefield Vietnam
+    /// recording with any other kind is refused: a strict check, as bfv's own uploads always had.</summary>
     internal static readonly FrozenSet<string> BfvKinds = FrozenSet.ToFrozenSet(
-        "h e o s d p a cp chat f hg i hm lod jn j g st tk anim roster end pn pd perf cam camv in info far pj".Split(' '),
+        "h e o s d p a cp chat f hg i hm lod jn j g st tk anim roster end pn pd perf cam camv in info far pj pin".Split(' '),
         StringComparer.Ordinal);
 
     /// <summary>
     /// The game a header names (features/bfv-through-bfstats), or the reason it is refused. No
     /// <c>game</c> is BF1942, as every recorder for it writes; <c>bf1942</c> says the same;
-    /// <c>bfv</c> is Battlefield Vietnam, and only from bfvplus in its format. A header that
-    /// names bfvplus under any other game, or a game the API does not take, is refused: a file
+    /// <c>bfv</c> is Battlefield Vietnam, and only from bfvplus or bfv's server recorder in its
+    /// format. A header that names either under any other game, or a game the API does not take, is refused: a file
     /// is one game or the other, never what its uploader would like it to be.
     /// </summary>
     internal static (string Game, string? Refusal) GameOf(string? game, string? plus, int version)
     {
-        var fromBfvPlus = plus is not null && plus.Trim().StartsWith(BfvRecorderPrefix, StringComparison.Ordinal);
+        var fromBfvPlus = plus is not null
+            && (plus.Trim().StartsWith(BfvRecorderPrefix, StringComparison.Ordinal)
+                || plus.Trim().StartsWith(BfvServerRecorderPrefix, StringComparison.Ordinal));
         switch (game)
         {
             case null or RecordingGames.Bf1942:
                 return fromBfvPlus
-                    ? (RecordingGames.Bf1942, "The recording was made by bfvplus but does not say it is of Battlefield Vietnam.")
+                    ? (RecordingGames.Bf1942, "The recording was made by a Battlefield Vietnam recorder but does not say it is of Battlefield Vietnam.")
                     : (RecordingGames.Bf1942, null);
             case RecordingGames.Bfv:
-                if (!fromBfvPlus) return (RecordingGames.Bfv, "A Battlefield Vietnam recording has to be one bfvplus made.");
+                if (!fromBfvPlus) return (RecordingGames.Bfv, "A Battlefield Vietnam recording has to be one bfvplus or bfv's server recorder made.");
                 return version == BfvFormat
                     ? (RecordingGames.Bfv, null)
                     : (RecordingGames.Bfv, $"The recording is format {version}; bfvplus writes format {BfvFormat}.");
