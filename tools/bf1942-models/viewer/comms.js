@@ -942,31 +942,84 @@ export function createComms(page) {
     ctx.globalAlpha = 1;
   }
 
-  function paintChat(ctx) {
+  /** `line` broken at its spaces into pieces no longer than `room`; a word
+   *  longer than that is cut. */
+  function wrap(line, room) {
+    if (measure(line) <= room) return [line];
+    const out = [];
+    let at = '';
+    for (const word of line.split(' ')) {
+      const next = at ? `${at} ${word}` : word;
+      if (measure(next) <= room) {
+        at = next;
+        continue;
+      }
+      if (at) out.push(at);
+      at = word;
+      while (at.length > 1 && measure(at) > room) {
+        let n = at.length - 1;
+        while (n > 1 && measure(at.slice(0, n)) > room) n--;
+        out.push(at.slice(0, n));
+        at = at.slice(n);
+      }
+    }
+    if (at) out.push(at);
+    return out;
+  }
+
+  /** The message log. `across` is the width of the screen it is painted in,
+   *  virtual units, where that is not the game's own 800 (a narrow clip): a
+   *  line longer than it wraps, and what is below moves down. `corner` is the
+   *  minimap's part of that screen, `{ left, bottom }`, which a line level
+   *  with it wraps short of. `chatShown` and `killsShown` are what a clip
+   *  asks for: the chat's section, and the kill
+   *  lines with the game's information (captures, joins). */
+  function paintChat(ctx, { across = null, down = null, corner = null, chatShown = true, killsShown = true } = {}) {
+    const shown = section => (section === SECTION_CHAT ? chatShown : killsShown);
     const { rows, dividers } = chat.rows();
+    const placed = [];
+    /** The rows the wrapped lines above a row have pushed it down. */
+    const pushed = row => placed.reduce((n, p) => n + (p.row.row < row ? p.pieces.length - 1 : 0), 0);
+    for (const row of rows) {
+      if (!shown(row.section)) continue;
+      const g = rowGeometry(chatLayout, row.row);
+      const top = g.baseline - chatLayout.rowHeight + pushed(row.row) * chatLayout.rowHeight;
+      const edge = corner && top < corner.bottom ? Math.min(across, corner.left) : across;
+      const pieces = across === null || !font ? [row.text] : wrap(row.text, edge - g.textX - 4);
+      placed.push({ row, g, pieces });
+    }
     // The divider: a white 1-px column at the box's x 5, black either side
     // and black end caps (`menu/InGame`'s BfTransformNodeSize).
     for (const d of dividers) {
+      if (!shown(d.section)) continue;
       const g = dividerGeometry(chatLayout, d.firstRow, d.count);
+      const y = g.y + pushed(d.firstRow) * chatLayout.rowHeight;
+      const h = g.h + (pushed(d.firstRow + d.count) - pushed(d.firstRow)) * chatLayout.rowHeight;
       ctx.fillStyle = '#000';
-      ctx.fillRect(g.x - 1, g.y - 1, 3, g.h + 2);
+      ctx.fillRect(g.x - 1, y - 1, 3, h + 2);
       ctx.fillStyle = '#fff';
-      ctx.fillRect(g.x, g.y, 1, g.h);
+      ctx.fillRect(g.x, y, 1, h);
     }
-    for (const row of rows) {
-      const g = rowGeometry(chatLayout, row.row);
+    for (const { row, g, pieces } of placed) {
+      const drop = pushed(row.row) * chatLayout.rowHeight;
       if (row.team === 1 || row.team === 2) {
         // The side's ticket flag: its soldier's own art (`ticketFlag`).
         const key = page.ticketFlag ? page.ticketFlag(row.team) : `flag_ticket_${page.teamNation?.(row.team)}`;
         const flag = key ? page.sprite?.(key) : null;
-        if (flag) ctx.drawImage(flag, ...g.flag);
+        const [fx, fy, fw, fh] = g.flag;
+        if (flag) ctx.drawImage(flag, fx, fy + drop, fw, fh);
       }
-      if (font) text(ctx, row.text, g.textX, g.baseline, lineColor(chatLayout, row), true, true);
+      if (font) {
+        pieces.forEach((piece, i) => text(ctx, piece, g.textX, g.baseline + drop + i * chatLayout.rowHeight, lineColor(chatLayout, row), true, true));
+      }
     }
-    if (centre && font) {
+    if (centre && font && killsShown) {
       const [x, y, w] = chatLayout.killMessage.rect;
       const tw = measure(centre.text);
-      text(ctx, centre.text, Math.round(x + (w - tw) / 2), y + font.meta.baseline,
+      const left = across === null ? x + (w - tw) / 2 : (across - tw) / 2;
+      // As far down the frame as the game has it on its own screen.
+      const top = down === null ? y : y * down / VIRTUAL_H;
+      text(ctx, centre.text, Math.round(left), top + font.meta.baseline,
         chatLayout.killMessage.color, true);
     }
   }
@@ -987,9 +1040,14 @@ export function createComms(page) {
     }
   }
 
-  comms.paint = (stageW, stageH) => {
+  comms.paint = (stageW, stageH, { clip = null } = {}) => {
     if (!canvas || !stageW || !stageH) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    // A clip being filmed: its own frame, scale, resolution and sections
+    // (replay-studio-fx.js `clipLayout`).
+    const dpr = clip?.dpr ?? Math.min(window.devicePixelRatio || 1, 3);
+    const frame = clip?.frame ?? { x: 0, y: 0, w: stageW, h: stageH };
+    const unit = clip?.unit ?? null;
+    const clipSig = clip ? `${frame.x},${frame.y},${frame.w},${frame.h},${unit},${clip.chat},${clip.kills}` : '';
     // The canvas sits over the spawn screen (map.css, the menu/InGame chain
     // puts the chat and the kill lines after it); the F-key strip is
     // menu/RadioMenu's, whose order against the spawn screen is not read, so
@@ -1002,7 +1060,7 @@ export function createComms(page) {
     const radioUp = radioShown && !page.deployActive?.() && (page.localAlive?.() ?? true);
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
       + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioUp}`
-      + `|${say.version}|${say.caretShown()}`;
+      + `|${say.version}|${say.caretShown()}|${clipSig}`;
     if (!dirty && sig === lastSig) return;
     dirty = false;
     lastSig = sig;
@@ -1015,9 +1073,18 @@ export function createComms(page) {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
-    ctx.setTransform(stageW / VIRTUAL_W * dpr, 0, 0, stageH / VIRTUAL_H * dpr, 0, 0);
+    const sx = unit ?? frame.w / VIRTUAL_W;
+    const sy = unit ?? frame.h / VIRTUAL_H;
+    ctx.setTransform(sx * dpr, 0, 0, sy * dpr, frame.x * dpr, frame.y * dpr);
     ctx.imageSmoothingEnabled = false;
-    if (chatLayout) paintChat(ctx);
+    if (chatLayout) {
+      const map = unit ? clip.corner?.() : null;
+      paintChat(ctx, {
+        corner: map && { left: (frame.w - map.inset) / unit, bottom: (map.bottom - frame.y) / unit },
+        across: unit ? frame.w / unit : null, down: unit ? frame.h / unit : null,
+        chatShown: clip?.chat ?? true, killsShown: clip?.kills ?? true,
+      });
+    }
     if (radioLayout && radioUp) paintRadio(ctx);
     paintSay(ctx);
   };

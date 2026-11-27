@@ -457,10 +457,15 @@ clips keeps one style.
   whenever the camera is through their eyes. They show
   on the monitor and go into the recording and the thumbnail. Turning it on
   turns the studio's own kill feed off; the look, text and effects still
-  work over it. In a frame narrower than 4:3 (9:16, 1:1) the message log
-  keeps the game's 4:3 screen across the top of the frame, so its letters
-  are not squeezed; in a vertical Short they are small, as the game's are
-  at that width. The setting goes with a shared edit and a kept clip.
+  work over it. The same switch is under Post as a Short, as Game HUD in the
+  Short. Under it, Include chat (the players' chat, the server's lines and
+  the radio calls) and Include kill feed (the kill lines, the flags taken
+  and players joining a side) are each yours to untick. In a frame narrower
+  than 4:3 (9:16, 1:1) the text, the panels and the crosshair are drawn at
+  one size, big enough to read, rather than shrunk to the width: the chat
+  across the top wraps long lines, the soldier's and vehicle's panels sit
+  along the bottom, and in a vehicle the ammunition sits just above them.
+  The setting goes with a shared edit and a kept clip.
 - Share this edit: name it and click Share this edit. The link is copied:
   paste it in Discord or send it. Whoever opens it gets the studio on your
   clip with its cameras (yours too), slow motion, the hit's pin, look, text,

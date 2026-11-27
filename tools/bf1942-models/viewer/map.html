@@ -2163,6 +2163,7 @@ const vehicleHud = createVehicleHud(bag(
     get guns() { return guns; },
     // A replay's first person: the followed player's own cross.
     get replayAim() { return replayController?.crosshairAim() ?? null; },
+    clipHud: (w, h) => replayController?.hudLayout?.(w, h) ?? null,
   },
 ));
 // The submarine's gauges, periscope and deep fade (submarine-hud.js), fed
@@ -5042,17 +5043,16 @@ function paintHud(dt) {
   // The tooltip plate's clock and variables (tooltips.js); a compare a frame
   // while the profile's option is off.
   toolTips.frame(dt);
-  // The studio's game HUD in a narrow frame: the message log lays the game's
-  // screen out 4:3 across the top (replay-studio.js `commsSize`); the HUD
-  // keeps the whole frame, its panels at the bottom and its tickets at the
-  // top (hud.js `ANCHOR_BOTTOM`); anywhere else, the stage.
-  const commsSize = replayController?.commsSize?.(hudW, hudH) ?? { w: hudW, h: hudH };
-  hudFeed.gameHud.paint(hudW, hudH, { anchored: replayController?.hudAnchored?.(hudW, hudH) ?? false });
+  // A clip with the game's HUD in it lays the HUD and the message log out in
+  // its own frame, at the game's size in a narrow one (replay-studio-fx.js
+  // `clipLayout`); anywhere else, null and the stage.
+  const clipHud = replayController?.hudLayout?.(hudW, hudH) ?? null;
+  hudFeed.gameHud.paint(hudW, hudH, { clip: clipHud });
   // A replay runs the message log on the recording's clock: its speed while
   // it plays, stopped while it is paused. Without one the rate is 1.
   comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
-  comms.paint(commsSize.w, commsSize.h);
+  comms.paint(hudW, hudH, { clip: clipHud });
   // A replay's followed artillery gunner has the recording's (replay-spotting.js).
   // Its box and icon sit in retail's place unless the replay's bar, card or
   // callouts are up over it; then they lift clear of them (map-spotter.js

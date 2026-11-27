@@ -24,7 +24,7 @@ import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, KILL_CAMS, MOTIONS, camChoices, camGlyph, camLabel, camTitle, camsFor, chasedKills, holdsEnd, killKey } from './replay-cuts.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
-import { EXPORT_QUALITY, FADES, FRAMES, FREEZES, FX_WORDS, GRADES, NAME_INKS, NAME_PLATES, NAME_SPOTS, commsBox, drawOverlay, drawSafeArea, editsOf, editsShow, exportBitrate, fxMoments, gradeOf } from './replay-studio-fx.js';
+import { EXPORT_QUALITY, FADES, FRAMES, FREEZES, FX_WORDS, GRADES, NAME_INKS, NAME_PLATES, NAME_SPOTS, drawOverlay, drawSafeArea, editsOf, editsShow, exportBitrate, fxMoments, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
 /** The game's outside views the Game view button names (replay-camera.js
@@ -235,7 +235,6 @@ export class Studio {
     }
     this.setRecording(false);
     document.documentElement.classList.remove('replay-studio', 'st-gamehud');
-    this.syncHudBox();
     this.back.remove();
     this.el.remove();
     const bar = creator.clipbar.el;
@@ -274,50 +273,6 @@ export class Studio {
     s.width = `${box.w}px`;
     s.height = `${box.h}px`;
     if (this.sizeText) this.sizeText.textContent = this.outputSize();
-    this.syncHudBox();
-  }
-
-  /**
-   * The message log's screen while the game's HUD is in the picture: the
-   * game lays its 800 x 600 screen over the stage stretched on each axis
-   * (comms.js), which in a frame narrower than 4:3 squeezes the letters to
-   * unreadable (9:16 to 42% of their width). There it gets a 4:3 box across
-   * the top of the frame instead, the game's screen scaled evenly; the
-   * minimap stays the page's. Null where the stage is the screen.
-   */
-  commsSize(w, h) {
-    return this.open && this.creator.edits.hud ? commsBox(w, h) : null;
-  }
-
-  /**
-   * Whether the HUD's panels go to the bottom of the frame and its tickets to
-   * the top: the game's HUD in the clip's picture, in a frame narrower than
-   * 4:3. The log is boxed across the top (`commsSize`) and left there; the
-   * HUD had been boxed with it, which floated the soldier's and the vehicle's
-   * panels and the ammunition up under the log (2026-11-24, a Short on
-   * Guadalcanal), so it keeps the whole frame and `Hud.paint` lays it out.
-   */
-  hudAnchored(w, h) {
-    return this.commsSize(w, h) !== null;
-  }
-
-  /** The log's canvas boxed to `commsSize`, or back to the stage's. */
-  syncHudBox() {
-    if (typeof document === 'undefined') return;
-    const stage = this.stage;
-    const size = this.open ? this.commsSize(stage.clientWidth, stage.clientHeight) : null;
-    const h = size ? `${size.h}px` : '';
-    const layer = document.getElementById('comms-canvas');
-    if (layer && layer.style.height !== h) {
-      layer.style.height = h;
-      layer.style.bottom = size ? 'auto' : '';
-    }
-    // The HUD canvas is the whole frame, whatever the log is boxed to.
-    const hud = document.getElementById('hud-canvas');
-    if (hud && (hud.style.height || hud.style.bottom)) {
-      hud.style.height = '';
-      hud.style.bottom = '';
-    }
   }
 
   /** What a recording will measure, device pixels, in the frame. */
@@ -984,7 +939,7 @@ export class Studio {
         'Kill shot on a kill (the round\'s timeline, or the Kills tab) opens it here, filmed and looping.',
         'Look: pick a recipe. Frag movie and Shorts are good starts.',
         'Post as a Short (top right) records the clip vertical and puts it in the Shorts strip: one click, then a title.',
-        'Export: Record the clip. It plays once and downloads. The game\'s HUD there puts the game\'s own chat and minimap in the picture.',
+        'Export: Record the clip. It plays once and downloads. The game\'s HUD there puts the game\'s own HUD in the picture, with the chat and the kill feed each yours to leave out.',
         'Keep the clip, open the next kill, and the Montage tab plays the kept clips together and records them as one video.',
       ]),
       col('Cameras', [
@@ -1054,7 +1009,6 @@ export class Studio {
     // The game's HUD over the monitor while the clip has it: the monitor is
     // the recording.
     document.documentElement.classList.toggle('st-gamehud', Boolean(creator.edits.hud));
-    this.syncHudBox();
     for (const fn of this.syncs) {
       try { fn(); } catch (error) { console.warn('studio: a control', error); }
     }
@@ -1128,6 +1082,30 @@ export class Studio {
     if (title) row.title = title;
     this.syncs.push(() => { box.checked = Boolean(get()); });
     return row;
+  }
+
+  /** The game's HUD switch with what its message log shows under it
+   *  (2026-11-28: "in addition to off and on, you can say: include chat,
+   *  include kill feed"); the two wait while the HUD is off. */
+  hudChecks(label, title) {
+    const { creator } = this;
+    const hud = this.check(label, () => creator.edits.hud,
+      v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s HUD in the picture' : null), title);
+    const part = (text, field, tip) => {
+      const row = this.check(text, () => creator.edits[field], v => creator.setEdits({ [field]: v }), tip);
+      row.classList.add('st-sub');
+      const box = row.querySelector('input');
+      this.syncs.push(() => {
+        box.disabled = !creator.edits.hud;
+        row.classList.toggle('off', !creator.edits.hud);
+      });
+      return row;
+    };
+    return [
+      hud,
+      part('Include chat', 'hudChat', 'The players\' chat, the server\'s lines and the radio calls'),
+      part('Include kill feed', 'hudKills', 'The kill lines, with the captures and the players joining a side'),
+    ];
   }
 
   slider(label, min, max, step, get, set, show) {
@@ -1768,23 +1746,15 @@ export class Studio {
     // The game's own HUD in the picture (2026-11-18, the owner: "record the
     // gameplay as-is, not our own simulated kill feed ... the raw chat, the
     // minimap at the top right, that's it").
-    const hud = this.check('The game\'s HUD', () => creator.edits.hud,
-      v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s chat and minimap in the picture' : null),
-      'The game\'s message log and minimap, in the monitor and the recorded file');
+    const hud = this.hudChecks('The game\'s HUD', 'The game\'s HUD, in the monitor and the recorded file');
     const hudNote = this.note('The game\'s whole HUD for the player followed: their health, ammunition and vehicle panel in any camera, their crosshair in first person, the chat, kills and flags as the game prints them, and the minimap at the top right, on the monitor and in the file. The studio\'s own kill feed goes off with it.');
     const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
     const shortNote = this.note('');
-    // The same switch, where a Short is posted from: a Short is without the
+    // The same switches, where a Short is posted from: a Short is without the
     // game's HUD unless it is asked for here (2026-11-24, a player's report).
-    const shortHud = this.check('Game HUD in the Short', () => creator.edits.hud,
-      v => creator.setEdits(v ? { hud: true, feed: false } : { hud: false }, v ? 'The game\'s HUD in the picture' : null),
-      'Draw the game\'s own HUD in the Short: health and ammunition at the bottom, the chat at the top, the minimap and tickets');
-    const shortHudNote = this.note('Off by default: the Short is the world alone. On, the soldier\'s and the vehicle\'s panels sit along the bottom of the frame, the chat and kills along the top.');
-    this.syncs.push(() => {
-      const why = creator.shortBlocked();
-      shortNote.classList.toggle('bad', Boolean(why));
-      shortNote.textContent = why ?? 'One step: the clip plays once, recorded vertical (9:16) whatever frame is set, then you name it and it goes in the Shorts strip on the REPLAY tab.';
-    });
+    const shortHud = this.hudChecks('Game HUD in the Short',
+      'Draw the game\'s own HUD in the Short: health and ammunition at the bottom, the minimap, the tickets and the crosshair');
+    const shortHudNote = this.note('Off by default: the Short is the world alone. On, the text and the crosshair are drawn large enough to read rather than shrunk to the narrow frame, and the chat and the kill feed are each yours to leave out.');
     // How big the file is drawn: the screen's size, or a size of its own.
     const quality = this.seg(Object.entries(EXPORT_QUALITY).map(([id, q]) => [id, q.label, id === 'screen' ? 'The size the studio draws at on this screen' : `${q.label} whatever the window: drawn at that size while it records`]),
       () => creator.prefs.quality, v => {
@@ -1799,8 +1769,8 @@ export class Studio {
         + ' Post as a Short is always 1080 x 1920.';
     });
     page.append(
-      this.group('Post as a Short', short, shortNote, shortHud, shortHudNote),
-      this.group('In the picture', hud, hudNote),
+      this.group('Post as a Short', short, shortNote, ...shortHud, shortHudNote),
+      this.group('In the picture', ...hud, hudNote),
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
       this.group('Export', quality, qualityNote, rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it as a file on your computer when it ends, to put on YouTube or anywhere else. Keep other windows quiet while it runs.')),
@@ -2176,6 +2146,8 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-facts b { color: var(--rp-ink); font-family: var(--rp-mono); }
 .st-toggle { display: flex; align-items: center; gap: 9px; min-height: 30px; cursor: pointer; font-weight: 700; }
 .st-toggle input { width: 18px; height: 18px; accent-color: var(--rp-gold); margin: 0; }
+.st-toggle.st-sub { margin-left: 27px; font-weight: 400; }
+.st-toggle.off { opacity: .45; cursor: default; }
 .st-slider { display: grid; grid-template-columns: 96px minmax(0, 1fr) 52px; align-items: center; gap: 8px; font-size: 12px; color: var(--rp-muted); }
 .st-slider input { width: 100%; accent-color: var(--rp-gold); }
 .st-slider output { text-align: right; color: var(--rp-ink); font: 12px var(--rp-mono); }

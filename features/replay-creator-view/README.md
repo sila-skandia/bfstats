@@ -2711,6 +2711,54 @@ the HUD an option, and when it is drawn put it at the bottom.
   with it off, wide). Looked at headless with the real HUD pack at 540 x 960:
   panels along the bottom, tickets top right, art in proportion.
 
+### The HUD at the game's own size in a Short (2026-11-28)
+
+The owner: "because we're cramming everything in a short frame size, it's
+accordingly shrinking things like the kill feed text and cross hairs. You can
+try rendering them at the same size as normal ... make it an option what to
+include in the HUD, so in addition to off and on, you can say: include chat,
+include kill feed", and "for the cross hairs make them normal size rather
+than shrinking to the view port". This replaces the chat's 4:3 box and the
+2026-11-24 layout above.
+
+- **Why they shrank.** The log was scaled off the frame's width as if it were
+  the game's 800-wide screen (a 4:3 box), and the crosshair 0.6 across by 1.4
+  down at 9:16.
+- **One scale.** `clipLayout` (replay-studio-fx.js) gives a frame narrower
+  than 4:3 `unit` = short side / 480 (`NARROW_UNITS`) on both axes: 2.25
+  pixels a game unit in a 1080 x 1920 file, where 1920 x 1080 draws 2.4
+  across and 1.8 down. The message log, the HUD and the crosshair
+  (`vehicle-hud.js`) all take it. 480 rather than the screen's 600 because
+  at 600 the chat was still hard to read in a recorded file.
+- **The panels** (`hud.js` `ANCHORS`) keep their own edge or middle. The
+  vehicle's panel (to 464 of the game's 800) and the guns' boxes (from 549)
+  do not fit side by side, so in a vehicle the right side sits just over the
+  panel (higher while the seat diagram is up). The weapon bar (512 wide) is
+  shrunk to fit. The scope, periscope and damage
+  wash still cover the frame.
+- **The log** wraps a long line (`comms.js` `wrap`) and, level with the
+  minimap, wraps short of it (`corner`).
+- **Sharpness.** The canvases are drawn at the file's resolution while it
+  records, and as a 1080 Short on the monitor.
+- **Without the studio** (a take recorded cropped from the wider view) the
+  same layout is applied inside the crop.
+- **Options.** `edits.hudChat` (the chat section: chat, server lines, radio
+  calls) and `edits.hudKills` (kill lines, captures, joins, the yellow kill
+  message), both on by default, so a saved edit with the HUD on looks as it
+  did in content. Under the HUD switch in both places on the Export tab,
+  greyed while the HUD is off.
+
+Checked: `test_hud.py` and `test_replay_creator.py` (the layout's numbers).
+Headless, the local Bocage recording, 1080 x 1920 files: a foot clip through
+their eyes (chat and kill lines readable, panels in the bottom corners,
+tickets and clock top right); a plane clip with Include chat unticked by its
+checkbox (kill lines and captures only, ammunition above the plane's
+panel, crosshair at the middle with equal units). The shared Short the owner
+pointed at (svbh27wdma, a Chi-Ha on an SBD, Midway) filmed again from its
+recording: chat and tickets readable where they were not, the crosshair
+square where it was tall and thin. Recording was slow in that
+browser with the HUD on or off alike (a 10 s clip took 76-150 s).
+
 ## The studio's minimap marks one side (2026-11-19)
 
 The owner: "On the studio / creator mode - we should not show the other

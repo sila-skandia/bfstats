@@ -1491,17 +1491,11 @@ export function createReplayController(ctx) {
     feedRate() {
       return guarded('the feed rate', () => player.feedRate(), 1);
     },
-    /** The message log's screen for a stage `w` x `h`: the stage, or the
-     *  studio's 4:3 box across the top of a narrow frame while the game's
-     *  HUD is in the clip's picture (replay-studio.js `syncHudBox`). */
-    commsSize(w, h) {
-      return guarded('the message log\'s size', () => player.creator?.studio?.commsSize?.(w, h) ?? null, null) ?? { w, h };
-    },
-    /** Whether the game's HUD keeps its panels to the bottom of a tall
-     *  frame and its tickets to the top (hud.js `ANCHOR_BOTTOM`): while the
-     *  studio's clip has the game's HUD in its picture. */
-    hudAnchored(w, h) {
-      return guarded('the HUD\'s layout', () => Boolean(player.creator?.studio?.hudAnchored?.(w, h)), false);
+    /** How the page's HUD, message log and crosshair are laid out on a
+     *  stage `w` x `h` for a clip with the game's HUD in it, or null
+     *  (replay-creator.js `hudLayout`). */
+    hudLayout(w, h) {
+      return guarded('the HUD\'s layout', () => player.creator?.hudLayout?.(w, h) ?? null, null);
     },
     /** The followed player's HUD into the page's HUD variables, in his
      *  first person (replay-hud.js); `art` the page's sprite lookups. One

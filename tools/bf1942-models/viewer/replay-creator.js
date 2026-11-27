@@ -59,7 +59,7 @@ import { decodePlayerName } from './vehicle-players.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { ClipBar, crossedOut } from './replay-clipbar.js';
 import { Studio } from './replay-studio.js';
-import { EXPORT_QUALITY, FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, exportBitrate, freezesOf, gradeOf, hudRect, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
+import { EXPORT_QUALITY, clipLayout, FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, exportBitrate, freezesOf, gradeOf, hudRect, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
 
 /** The keys that pick a camera by hand (replay-ui.js `key`): orbit, first
  *  person, free and Auto, C, the game's F9-F12 and the scout view's J. */
@@ -672,6 +672,37 @@ export class ReplayCreator {
     if (shown) hidden.delete(key);
     else hidden.add(key);
     this.setEdit('names.hidden', [...hidden]);
+  }
+
+  /**
+   * The game's HUD as the clip has it, on a stage `w` x `h` CSS pixels:
+   * `clipLayout`'s frame, scale and resolution with `chat` and `kills`, what
+   * the message log is to show. Null where the page's HUD is its own: the
+   * clip is without it, or it is neither on the studio's monitor nor being
+   * recorded.
+   */
+  hudLayout(w, h) {
+    const r = this.recorder;
+    if (!this.edits.hud || !r && !this.studio?.open) return null;
+    const canvas = this.ctx.renderer?.domElement;
+    const layout = clipLayout(w, h, {
+      crop: r?.crop, px: canvas && { w: canvas.width, h: canvas.height },
+      out: r?.source && { w: r.source.width, h: r.source.height },
+    });
+    return layout && { ...layout, chat: this.edits.hudChat, kills: this.edits.hudKills, corner: () => this.minimapCorner() };
+  }
+
+  /** The corner the minimap takes of the view, `{ inset, bottom }` in CSS
+   *  pixels from the view's right edge and top, or null without one. Read
+   *  only as the message log repaints (comms.js): it measures the page. */
+  minimapCorner() {
+    if (typeof document === 'undefined') return null;
+    const box = document.getElementById('minimap');
+    const map = document.getElementById('minimap-canvas');
+    const view = this.ctx.renderer?.domElement?.getBoundingClientRect();
+    const rect = box && !box.hidden ? map?.getBoundingClientRect() : null;
+    if (!view || !(rect?.width > 0)) return null;
+    return { inset: view.right - rect.left, bottom: rect.bottom - view.top };
   }
 
   /** The recording's frame from the view: the crop, the grade, the text and

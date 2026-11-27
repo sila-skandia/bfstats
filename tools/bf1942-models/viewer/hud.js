@@ -127,24 +127,49 @@ export const TIME_DEFAULT = {
   ],
 };
 
-/** A frame taller than 4:3 (a 9:16 Short) lays the game's screen out at one
- *  scale across its width rather than stretched, so the letters keep their
- *  shape, and each group keeps the edge it sits on in the game's own 800 x 600
- *  screen: the soldier's and the vehicle's panels and the ammunition at the
- *  bottom of the frame, the tickets and the messages at the top. Whatever is
- *  in neither (the crosshair, the hit marks, the periscope) is the whole
- *  frame, as before. */
-export const ANCHOR_BOTTOM = Object.freeze(new Set([
-  'soldierIcon', 'soldierAmmo', 'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
-  'supplyIcon', 'weaponBar', 'submarine',
-]));
-export const ANCHOR_TOP = Object.freeze(new Set(['tickets', 'time', 'spawnTimer', 'spawnText', 'statusMessage', 'disconnectMessage']));
+/** Where each group of the layout sits in a frame narrower than 4:3 (a 9:16
+ *  Short, `clipLayout`'s `unit`): the game's 800 x 600 screen at one scale,
+ *  big enough to read, rather than stretched or shrunk to the width. At that
+ *  scale the screen is wider than
+ *  the frame, so each group keeps the edge or the middle it sits on there:
+ *  `[across, down]`, the virtual x that goes to the frame's left, middle or
+ *  right, and the top or the bottom edge. The crosshair's group is placed
+ *  leaf by leaf (`ANCHOR_CENTRE_MAX`); a group not named here (the
+ *  periscope, the damage wash) is the whole frame. */
+export const ANCHORS = Object.freeze({
+  soldierIcon: ['left', 'bottom'], vehicleIcon: ['left', 'bottom'], vehicleHealth: ['left', 'bottom'],
+  vehicleSeats: ['left', 'bottom'], submarine: ['left', 'bottom'],
+  soldierAmmo: ['right', 'bottom'], primaryAmmo: ['right', 'bottom'], secondaryAmmo: ['right', 'bottom'],
+  supplyIcon: ['right', 'bottom'], weaponBar: ['middle', 'bottom'],
+  tickets: ['right', 'top'], time: ['right', 'top'], outside: ['middle', 'top'], spawnTimer: ['middle', 'top'], spawnText: ['middle', 'top'],
+  statusMessage: ['middle', 'top'], disconnectMessage: ['middle', 'top'],
+});
+/** The virtual x each `middle` group is centred on in the game's screen. */
+const MIDDLE_X = Object.freeze({ weaponBar: 466, outside: 433, spawnTimer: 433, spawnText: 433, statusMessage: 433, disconnectMessage: 433 });
+/** The widest a `middle` group's art is, virtual units, where that is wider
+ *  than a narrow frame may be: it is drawn smaller to fit. */
+const MIDDLE_WIDTH = Object.freeze({ weaponBar: 520 });
+/** The rows a group is raised, virtual units. In a vehicle the panel on the
+ *  left reaches 464 (its turret dial) and the guns' boxes on the right start
+ *  at 549 of 800, which a narrow frame has not the width for side by side:
+ *  the right side goes just over the panel's art (from 505), and over the
+ *  seat diagram (from 457) while that is up. The weapon bar goes above the
+ *  soldier's. */
+const RAISE_IN_VEHICLE = 110;
+const RAISE_OVER_SEATS = 170;
+const RAISE_WEAPON_BAR = 80;
+const IN_VEHICLE_RAISED = Object.freeze(new Set(['primaryAmmo', 'secondaryAmmo', 'soldierAmmo', 'supplyIcon']));
+/** A leaf of the crosshair's group no larger than this on either side, virtual
+ *  units, is drawn at the frame's middle at its own shape (the cross, the hit
+ *  marks, the sight's ring); a larger one (the scope's picture and its lines)
+ *  covers the frame. */
+export const ANCHOR_CENTRE_MAX = 200;
 
 /** `groups` in `PAINT_ORDER`, then whatever else the file has. */
 export function paintOrder(groups) {
   const known = PAINT_ORDER.filter(key => groups[key]);
   const rest = Object.keys(groups).filter(key => !PAINT_ORDER.includes(key));
-  // Each group knows its own name, for the anchored layout (`ANCHOR_BOTTOM`).
+  // Each group knows its own name, for a narrow clip's layout (`ANCHORS`).
   return [...known, ...rest].map(key => {
     groups[key].key ??= key;
     return groups[key];
@@ -768,14 +793,16 @@ export class Hud {
    *  Called once per RENDERED frame (HUD-3: the engine itself recomputes
    *  this HUD once per `Renderer_drawFrame`, not the 30 Hz tick) -- never
    *  more than that, and never at all when nothing changed. */
-  paint(stageW, stageH, { anchored = false } = {}) {
+  paint(stageW, stageH, { clip = null } = {}) {
     if (!this.ready || !this.canvas || !stageW || !stageH) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const [vw, vh] = this.layout?.virtual || DEFAULT_VIRTUAL;
-    // Anchored only where the frame is taller than the game's own screen.
-    anchored = anchored && stageW / stageH < vw / vh;
-    if (anchored !== this._anchored) {
-      this._anchored = anchored;
+    // A clip being filmed lays the HUD out in its own frame, at the file's
+    // resolution while it records (replay-studio-fx.js `clipLayout`).
+    const dpr = clip?.dpr ?? Math.min(window.devicePixelRatio || 1, 3);
+    const frame = clip?.frame ?? { x: 0, y: 0, w: stageW, h: stageH };
+    const unit = clip?.unit ?? null;
+    const framed = `${frame.x},${frame.y},${frame.w},${frame.h},${unit}`;
+    if (framed !== this._framed) {
+      this._framed = framed;
       this._dirty = true;
     }
     if (!this._isDirty(stageW, stageH, dpr)) return;
@@ -788,18 +815,37 @@ export class Hud {
     const ctx = this.canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
-    const s = this._scaleFor(stageW, stageH);
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    const [vw, vh] = this.layout?.virtual || DEFAULT_VIRTUAL;
+    const s = this._scaleFor(frame.w, frame.h);
+    const whole = () => ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, (s.ox + frame.x) * dpr, (s.oy + frame.y) * dpr);
+    const at = (x, y, k = unit) => ctx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
+    const centred = () => at(frame.x + frame.w / 2 - unit * vw / 2, frame.y + frame.h / 2 - unit * vh / 2);
+    whole();
     ctx.imageSmoothingEnabled = false;   // every asset here is point art
-    const u = stageW / vw;
+    const vehicleRaise = !this.vars['Vehicle/ShowVehicleIcon'] ? 0
+      : this.vars['Vehicle/ShowVehiclePlayers'] ? RAISE_OVER_SEATS : RAISE_IN_VEHICLE;
     for (const group of this._groups) {
-      if (anchored && (ANCHOR_BOTTOM.has(group.key) || ANCHOR_TOP.has(group.key))) {
-        const oy = ANCHOR_BOTTOM.has(group.key) ? stageH - vh * u : 0;
-        ctx.setTransform(u * dpr, 0, 0, u * dpr, 0, oy * dpr);
-      } else ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-      for (const el of group.elements) this._paintElement(ctx, el);
+      const anchor = unit ? ANCHORS[group.key] : null;
+      if (anchor) {
+        const [across, down] = anchor;
+        const k = MIDDLE_WIDTH[group.key] ? Math.min(unit, frame.w / MIDDLE_WIDTH[group.key]) : unit;
+        const x = across === 'left' ? frame.x
+          : across === 'right' ? frame.x + frame.w - k * vw
+            : frame.x + frame.w / 2 - k * MIDDLE_X[group.key];
+        const raise = group.key === 'weaponBar' ? RAISE_WEAPON_BAR
+          : IN_VEHICLE_RAISED.has(group.key) ? vehicleRaise : 0;
+        at(x, down === 'top' ? frame.y : frame.y + frame.h - k * (vh + raise), k);
+      } else whole();
+      for (const el of group.elements) {
+        if (unit && group.key === 'crosshair') {
+          const [, , w, h] = el.rect || [0, 0, 0, 0];
+          if (w <= ANCHOR_CENTRE_MAX && h <= ANCHOR_CENTRE_MAX) centred();
+          else whole();
+        }
+        this._paintElement(ctx, el);
+      }
     }
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    whole();
     ctx.globalAlpha = 1;
     for (const o of this.overlays) {
       ctx.save();

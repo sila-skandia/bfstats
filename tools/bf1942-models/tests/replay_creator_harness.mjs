@@ -1069,8 +1069,14 @@ results.clip = {
     })(),
     quality: [FX.exportBitrate(1920, 1080), FX.exportBitrate(1280, 720), FX.exportBitrate(2560, 1440), FX.exportBitrate(3840, 2160), FX.exportBitrate(1080, 1920)],
     qualities: Object.entries(FX.EXPORT_QUALITY).map(([id, q]) => [id, q.short]),
-    // The log's screen: the stage at 16:9 and 4:3, a 4:3 box over 9:16 and 1:1.
-    box: [[1600, 900], [800, 600], [607, 1080], [900, 900]].map(([w, h]) => FX.commsBox(w, h)),
+    // The game's HUD in a clip: the game's screen stretched at 16:9 and 4:3,
+    // one scale in 9:16 and 1:1; a recording's crop out of a wider canvas, at
+    // the file's resolution.
+    layout: [
+      ...[[1600, 900], [800, 600], [540, 960], [900, 900]].map(([w, h]) => FX.clipLayout(w, h)),
+      FX.clipLayout(1600, 900, { crop: { x: 1094, y: 0, w: 1012, h: 1800 }, px: { w: 3200, h: 1800 }, out: { w: 1080, h: 1920 } }),
+    ],
+    sections: [FX.editsOf({ hud: true }), FX.editsOf({ hud: true, hudChat: false, hudKills: false })].map(x => [x.hudChat, x.hudKills]),
   };
   results.studio = {
     hud,

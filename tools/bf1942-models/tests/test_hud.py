@@ -51,23 +51,46 @@ class FillPictureGeometryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_a_tall_frame_anchors_the_panels_to_the_bottom_and_the_tickets_to_the_top(self) -> None:
-        # 540 x 960 (9:16) at 540/800 a pixel, no stretching: the soldier's
-        # panel under a shift that puts the game's bottom edge on the frame's,
-        # the tickets on its top edge, the crosshair stretched over the frame.
-        # The DPR is 1 headless.
-        tall = self.results["anchored"]["tall"]
-        u = 540 / 800
-        self.assertEqual(tall["soldierIcon"], [u, 0, 0, u, 0, 960 - 600 * u])
-        self.assertEqual(tall["tickets"], [u, 0, 0, u, 0, 0])
-        self.assertEqual(tall["crosshair"], [540 / 800, 0, 0, 960 / 600, 0, 0])
+    def assertTransform(self, got, expected) -> None:
+        for g, e in zip(got, expected, strict=True):
+            self.assertAlmostEqual(g, e)
 
-    def test_anchoring_off_or_in_a_wide_frame_stretches_the_screen_as_before(self) -> None:
-        for key in ("tallOff", "wide"):
-            frame = self.results["anchored"][key]
-            self.assertEqual(frame["soldierIcon"], frame["crosshair"])
-            self.assertEqual(frame["soldierIcon"], frame["tickets"])
-        self.assertEqual(self.results["anchored"]["wide"]["tickets"], [2, 0, 0, 1.5, 0, 0])
+    def test_a_narrow_clip_draws_the_game_screen_at_one_scale_on_its_edges(self) -> None:
+        # 540 x 960 at 0.9 a virtual unit, wider than the frame as
+        # a whole screen: each group keeps its edge. The soldier's panel on the
+        # left and bottom, the ammunition on the right, the weapon bar centred
+        # a row up, the tickets top right; the crosshair at the middle at its
+        # own shape, the scope and the periscope over the whole frame.
+        tall = self.results["clip"]["tall"]
+        u = 0.9
+        bottom = 960 - 600 * u
+        self.assertTransform(tall["soldierIcon"], [u, 0, 0, u, 0, bottom])
+        self.assertTransform(tall["primaryAmmo"], [u, 0, 0, u, 540 - 800 * u, bottom])
+        self.assertTransform(tall["weaponBar"], [u, 0, 0, u, 270 - 466 * u, 960 - 680 * u])
+        self.assertTransform(tall["tickets"], [u, 0, 0, u, 540 - 800 * u, 0])
+        self.assertTransform(tall["time"], tall["tickets"])
+        self.assertTransform(tall["cross"], [u, 0, 0, u, 270 - 400 * u, 480 - 300 * u])
+        for whole in ("scope", "periscope"):
+            self.assertTransform(tall[whole], [540 / 800, 0, 0, 960 / 600, 0, 0])
+
+    def test_in_a_vehicle_the_ammunition_goes_a_row_up_clear_of_the_panel(self) -> None:
+        vehicle = self.results["clip"]["vehicle"]
+        self.assertTransform(vehicle["primaryAmmo"], [0.9, 0, 0, 0.9, 540 - 720, 960 - 710 * 0.9])
+        self.assertTransform(vehicle["soldierIcon"], [0.9, 0, 0, 0.9, 0, 960 - 540])
+        # Higher while the seat diagram is up.
+        self.assertTransform(self.results["clip"]["seats"]["primaryAmmo"], [0.9, 0, 0, 0.9, 540 - 720, 960 - 770 * 0.9])
+
+    def test_a_recorded_crop_is_laid_out_in_the_crop_at_the_files_resolution(self) -> None:
+        cropped = self.results["clip"]["cropped"]
+        # Canvas pixels: the whole 1600 x 900 stage at 2 a CSS pixel.
+        self.assertEqual(cropped["canvas"], [3200, 1800])
+        self.assertTransform(cropped["soldierIcon"], [1.8, 0, 0, 1.8, 1060, 2 * (900 - 540)])
+        self.assertTransform(cropped["scope"], [2 * 540 / 800, 0, 0, 3, 1060, 0])
+
+    def test_without_a_clip_the_game_screen_is_stretched_over_the_stage(self) -> None:
+        frame = self.results["clip"]["none"]
+        for key in ("soldierIcon", "tickets", "cross", "scope", "periscope"):
+            self.assertTransform(frame[key], [2, 0, 0, 1.5, 0, 0])
 
     def test_the_combat_area_warning_wraps_into_its_own_plate(self) -> None:
         # The first leaf whose string is wider than its rect. `menu/InGame`

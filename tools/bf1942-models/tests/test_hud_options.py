@@ -391,7 +391,7 @@ class TextPathTests(unittest.TestCase):
     def test_the_list_and_the_text_field_snap(self) -> None:
         comms = (VIEWER / "comms.js").read_text()
         # The message log's rows and the open chat line.
-        self.assertIn("text(ctx, row.text, g.textX, g.baseline, lineColor(chatLayout, row), true, true);", comms)
+        self.assertIn("text(ctx, piece, g.textX, g.baseline + drop + i * chatLayout.rowHeight, lineColor(chatLayout, row), true, true)", comms)
         self.assertIn("text(ctx, say.text, ex, baseline, rgb, true, true);", comms)
         board = (VIEWER / "scoreboard.js").read_text()
         self.assertIn("Math.round(cell.x), Math.round(cell.y), rgb, true);", board)

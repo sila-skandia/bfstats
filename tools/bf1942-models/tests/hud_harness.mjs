@@ -742,9 +742,10 @@ const grenadeVars = footPage({ weapon: grenade });
 results.grenadeBar = { heat: grenadeVars['Overheat/OverHeat'] ?? null,
                        ammoType: grenadeVars['Ammo/AmmoType'] ?? null };
 
-// The anchored layout (a 9:16 Short with the game's HUD): the transform each
-// group is drawn under, read off a context that records `setTransform`.
-function anchoredTransforms(W, H, anchored) {
+// A narrow clip's layout (a 9:16 Short with the game's HUD): the transform
+// each group, or each leaf of the crosshair's, is drawn under, read off a
+// context that records `setTransform`.
+function clipTransforms(W, H, clip, vars = {}) {
   globalThis.window ??= { devicePixelRatio: 1 };
   let current = null;
   const seen = {};
@@ -755,15 +756,23 @@ function anchoredTransforms(W, H, anchored) {
   const hud = new Hud({ canvas, sprite: () => null });
   hud.ready = true;
   hud.layout = { virtual: [800, 600] };
-  hud._groups = ['soldierIcon', 'tickets', 'crosshair'].map(key => ({ key, elements: [{ key }] }));
-  hud._paintElement = (_ctx, el) => { seen[el.key] = current; };
-  hud.paint(W, H, { anchored });
-  return seen;
+  const leaf = (id, w = 64, h = 64) => ({ id, rect: [0, 0, w, h] });
+  hud._groups = [
+    ...['soldierIcon', 'primaryAmmo', 'weaponBar', 'tickets', 'time', 'periscope'].map(key => ({ key, elements: [leaf(key)] })),
+    { key: 'crosshair', elements: [leaf('cross', 20, 20), leaf('scope', 825, 625)] },
+  ];
+  Object.assign(hud.vars, vars);
+  hud._paintElement = (_ctx, el) => { seen[el.id] = current; };
+  hud.paint(W, H, { clip });
+  return { ...seen, canvas: [canvas.width, canvas.height] };
 }
-results.anchored = {
-  tall: anchoredTransforms(540, 960, true),
-  tallOff: anchoredTransforms(540, 960, false),
-  wide: anchoredTransforms(1600, 900, true),
+const tallClip = { frame: { x: 0, y: 0, w: 540, h: 960 }, unit: 0.9, dpr: null };
+results.clip = {
+  tall: clipTransforms(540, 960, tallClip),
+  vehicle: clipTransforms(540, 960, tallClip, { 'Vehicle/ShowVehicleIcon': 1 }),
+  seats: clipTransforms(540, 960, tallClip, { 'Vehicle/ShowVehicleIcon': 1, 'Vehicle/ShowVehiclePlayers': 1 }),
+  cropped: clipTransforms(1600, 900, { frame: { x: 530, y: 0, w: 540, h: 900 }, unit: 0.9, dpr: 2 }),
+  none: clipTransforms(1600, 900, null),
 };
 
 console.log(JSON.stringify(results));

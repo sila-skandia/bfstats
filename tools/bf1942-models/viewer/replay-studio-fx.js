@@ -91,6 +91,10 @@ export function defaultEdits() {
     // The game's own HUD in the picture: its message log (chat, kills,
     // captures, as the game prints them) and its minimap, as on the page.
     hud: false,
+    // What the game's message log shows while `hud` is on: the chat and the
+    // radio calls, and the kill lines with the captures and joins.
+    hudChat: true,
+    hudKills: true,
     // A name card as a Follow camera takes over (who the camera switched to,
     // their side's flag), styled here, each one on the Text lane; `hidden`
     // the cards taken off one by one (their keys).
@@ -130,6 +134,8 @@ export function editsOf(raw) {
     tag: { on: Boolean(raw.tag?.on), text: str(raw.tag?.text, 40) },
     feed: Boolean(raw.feed),
     hud: Boolean(raw.hud),
+    hudChat: raw.hudChat !== false,
+    hudKills: raw.hudKills !== false,
     names: namesOf(raw.names),
     safe: Boolean(raw.safe),
     fadeIn: FADES.includes(raw.fadeIn) ? raw.fadeIn : 0,
@@ -197,12 +203,37 @@ export function exportBitrate(w, h) {
   return Math.round(Math.min(60e6, Math.max(6e6, 16e6 * (px / (1920 * 1080)))));
 }
 
-/** The game's message log's screen on a stage `w` x `h` narrower than 4:3:
- *  a 4:3 box across its top, so the game's 800 x 600 screen is scaled
- *  evenly rather than squeezed; null where the stage is the screen. */
-export function commsBox(w, h) {
-  if (!(w > 0) || !(h > 0) || w / h >= 4 / 3) return null;
-  return { w, h: Math.round((w * 3) / 4) };
+/** The virtual units of the game's screen across a narrow frame's short side:
+ *  wide enough for the widest panel on a side (the vehicle's, 464). */
+export const NARROW_UNITS = 480;
+/** A posted Short's width in pixels (`EXPORT_QUALITY['1080']`). */
+const SHORT_WIDTH = 1080;
+
+/**
+ * How the game's HUD is laid out for a clip (features/replay-creator-view,
+ * "The HUD at the game's own size in a Short"), on a stage `w` x `h`:
+ * `{ frame, unit, dpr }`. `frame` is the part of the stage that goes in the
+ * file, the whole of it or the recording's `crop` (of a canvas `px`), in CSS
+ * pixels. `unit` is, in a frame narrower than 4:3, the CSS pixels of one of
+ * the game's 800 x 600 screen's units, the same on both axes: the short side
+ * over `NARROW_UNITS`, so the chat, the kill lines and the crosshair do not
+ * shrink with the width (a 1080 x 1920 Short draws them at 2.25 pixels a
+ * unit; a 1920 x 1080 picture at 2.4 across and 1.8 down). Null in a wider
+ * frame, which stretches the game's screen over it as retail
+ * does. `dpr` the canvas pixels a CSS pixel needs to be sharp in a file
+ * `out` wide while it records; a narrow frame on the monitor is drawn as a
+ * Short's 1080 would be, so the preview reads as the file does on a 1x
+ * screen too. Null elsewhere (the screen's own).
+ */
+export function clipLayout(w, h, { crop = null, px = null, out = null } = {}) {
+  if (!(w > 0) || !(h > 0)) return null;
+  const frame = crop && px?.w > 0 && px.h > 0
+    ? { x: crop.x * w / px.w, y: crop.y * h / px.h, w: crop.w * w / px.w, h: crop.h * h / px.h }
+    : { x: 0, y: 0, w, h };
+  const unit = frame.w / frame.h < 4 / 3 ? Math.min(frame.w, frame.h) / NARROW_UNITS : null;
+  const wide = out?.w > 0 ? out.w : unit ? SHORT_WIDTH : null;
+  const dpr = wide ? Math.min(4, Math.max(1, wide / frame.w)) : null;
+  return { frame, unit, dpr };
 }
 
 /** Whether the edits draw anything over the footage or change its colour. */

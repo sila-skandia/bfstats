@@ -713,8 +713,20 @@ class StudioTests(unittest.TestCase):
         # Export quality: 16 Mbit/s at 1080p, in proportion to the pixels.
         self.assertEqual(h["quality"], [16000000, 7111111, 28444444, 60000000, 16000000])
         self.assertEqual(h["qualities"], [["1080", 1080], ["1440", 1440], ["2160", 2160], ["screen", None]])
-        # The message log keeps the game's 4:3 screen in a narrow frame.
-        self.assertEqual(h["box"], [None, None, {"w": 607, "h": 455}, {"w": 900, "h": 675}])
+        # A wide stage stretches the game's screen; a narrow one has one scale,
+        # its short side over 480 units, so nothing shrinks with the
+        # width. A recording's crop is laid out in the crop, at the file's size.
+        wide, four3, tall, square, cropped = h["layout"]
+        self.assertEqual([wide["unit"], four3["unit"], tall["unit"], square["unit"]], [None, None, 1.125, 1.875])
+        self.assertEqual(tall["frame"], {"x": 0, "y": 0, "w": 540, "h": 960})
+        # On the monitor as in a 1080 file; a wide frame at the screen's own.
+        self.assertEqual(tall["dpr"], 2)
+        self.assertIsNone(wide["dpr"])
+        self.assertEqual(cropped["frame"], {"x": 547, "y": 0, "w": 506, "h": 900})
+        self.assertAlmostEqual(cropped["unit"], 506 / 480)
+        self.assertAlmostEqual(cropped["dpr"], 1080 / 506)
+        # The message log's two parts, both shown unless taken out.
+        self.assertEqual(h["sections"], [[True, True], [False, False]])
 
     def test_fades_title_lower_third_flash_and_tag_over_time(self) -> None:
         a = {round(t * 100): o for t, o in zip([100, 100.5, 100.8, 101.5, 102.5, 103.2, 104, 104.2, 107.75, 108], self.st["at"])}

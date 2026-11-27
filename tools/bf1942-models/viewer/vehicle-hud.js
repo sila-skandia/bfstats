@@ -691,15 +691,18 @@ export function createVehicleHud(page) {
     // axis like the rest of it (hud.js `_scaleFor`, VHUD-11), so its sizes are
     // per-axis units: 1 unit thick (the node's `Thickness 1`), on the
     // (400..401) line (XHIT-11).
-    const ux = width / CROSSHAIR_VIRTUAL[0];
-    const uy = height / CROSSHAIR_VIRTUAL[1];
+    // A narrow clip being filmed has one size on both axes, the game's own
+    // rather than its width squeezed (replay-studio-fx.js `clipLayout`).
+    const unit = page.clipHud?.(width, height)?.unit ?? null;
+    const ux = unit ?? width / CROSSHAIR_VIRTUAL[0];
+    const uy = unit ?? height / CROSSHAIR_VIRTUAL[1];
     setCrosshairVar('--ch-ux', ux);
     setCrosshairVar('--ch-uy', uy);
     if (icon) {
       const leaf = crosshairIconLeaf();
       if (!leaf) return;
-      setCrosshairVar('--ch-icon-w', leaf.rect[2] * width / leaf.virtual[0]);
-      setCrosshairVar('--ch-icon-h', leaf.rect[3] * height / leaf.virtual[1]);
+      setCrosshairVar('--ch-icon-w', leaf.rect[2] * ux * CROSSHAIR_VIRTUAL[0] / leaf.virtual[0]);
+      setCrosshairVar('--ch-icon-h', leaf.rect[3] * uy * CROSSHAIR_VIRTUAL[1] / leaf.virtual[1]);
       return;
     }
     // Each arm runs from Radius off centre to the rect's half-size plus
