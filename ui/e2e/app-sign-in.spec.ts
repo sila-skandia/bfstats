@@ -96,6 +96,7 @@ test.describe('App sign-in through the browser', () => {
     await page.goto(allowPageUrl(requestParams(device, challenge, state)));
     await expect(page.getByRole('heading', { name: /Allow bfstats Relay on .* to use your account\?/ })).toBeVisible();
     await expect(page.getByTestId('app-sign-in-device')).toHaveText(device);
+    await expect(page.getByTestId('bfv-band')).toHaveCount(0);
     await expect(page.getByText('Read and change your game profiles')).toBeVisible();
     await expect(page.getByText(`Returns to 127.0.0.1:${PORT}`)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('app-sign-in-allow.png'), fullPage: true });
@@ -218,6 +219,8 @@ test.describe('App sign-in through the browser', () => {
     await page.goto(allowPageUrl(requestParams('', challenge, state, bfv)));
     await expect(page.getByRole('heading', { name: 'Allow bfv.bfstats.io to use your account?' })).toBeVisible();
     await expect(page.getByTestId('app-sign-in-device')).toHaveCount(0);
+    // In BattleView Vietnam's banner and colours, so the player knows where they are.
+    await expect(page.getByTestId('bfv-band')).toBeVisible();
     await expect(page.getByText('Share Battlefield Vietnam recordings and Shorts as you')).toBeVisible();
     // The admin's own sign-in, read while the page is still bfstats.io's.
     const siteHeaders = await authHeaders(page);
