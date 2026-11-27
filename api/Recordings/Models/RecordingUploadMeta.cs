@@ -6,7 +6,8 @@ namespace api.Recordings.Models;
 /// fill in what the file does not say (the level of a recording begun mid-round, which the
 /// browser recognised by its flags or asked for). <see cref="AuthorName"/> is optional: a
 /// recording is shared under the name of the player who recorded it unless it names one of
-/// the account's linked names instead.
+/// the account's linked names instead. <see cref="Description"/> and <see cref="Visibility"/>
+/// (<c>public</c>, the default, or <c>unlisted</c>) are the uploader's own.
 /// </summary>
 public record RecordingUploadMeta(
     string? Title,
@@ -18,4 +19,6 @@ public record RecordingUploadMeta(
     string? RecordedBy,
     string? Start,
     double? DurationSeconds,
-    IReadOnlyList<string>? Players);
+    IReadOnlyList<string>? Players,
+    string? Description = null,
+    string? Visibility = null);

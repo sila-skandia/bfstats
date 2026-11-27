@@ -98,7 +98,7 @@ public sealed class RecordingStatsRoundService(
     public async Task<List<StatsRoundRecordingDto>> ForRoundAsync(string roundId, CancellationToken ct)
     {
         var recordings = await db.Recordings.AsNoTracking()
-            .Where(r => r.StatsRoundId == roundId && !r.FileMissing)
+            .Where(r => r.StatsRoundId == roundId && r.Visibility == RecordingVisibility.Public && !r.FileMissing)
             .ToListAsync(ct);
         if (recordings.Count == 0) return [];
         var uploaders = recordings.Select(r => r.UploaderName).Where(n => n.Length > 0)
@@ -143,7 +143,7 @@ public sealed class RecordingStatsRoundService(
         var ids = roundIds.Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToList();
         if (ids.Count == 0) return [];
         var rows = await db.Recordings.AsNoTracking()
-            .Where(r => r.StatsRoundId != null && ids.Contains(r.StatsRoundId) && !r.FileMissing)
+            .Where(r => r.StatsRoundId != null && ids.Contains(r.StatsRoundId) && r.Visibility == RecordingVisibility.Public && !r.FileMissing)
             .Select(r => new { r.StatsRoundId, r.Id, r.RoundId, r.Slug, r.Mod, r.Level, r.DurationSeconds, r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt })
             .ToListAsync(ct);
         return rows

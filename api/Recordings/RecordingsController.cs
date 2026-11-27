@@ -249,7 +249,7 @@ public class RecordingsController(
         if (Actor() is not { } actor) return Unauthorized();
         try
         {
-            return await recordings.RenameAsync(slug, actor, request.Title, ct) is { } detail ? Ok(detail) : NotFound();
+            return await recordings.UpdateAsync(slug, actor, request, ct) is { } detail ? Ok(detail) : NotFound();
         }
         catch (RecordingRejectedException ex)
         {

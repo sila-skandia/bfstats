@@ -41,7 +41,8 @@ public sealed class ServerMediaService(
     {
         var recordings = await db.Recordings.AsNoTracking()
             // bfstats.io's servers are BF1942's (features/bfv-through-bfstats).
-            .Where(r => r.Game == RecordingGames.Bf1942 && !r.FileMissing && r.ServerName != "")
+            .Where(r => r.Game == RecordingGames.Bf1942 && r.Visibility == api.Recordings.Models.RecordingVisibility.Public
+                && !r.FileMissing && r.ServerName != "")
             .OrderByDescending(r => r.Id)
             .Take(Window)
             .Select(r => new { r.Id, r.RoundId, r.Slug, r.Title, r.ServerName, r.Mod, r.Level, r.DurationSeconds, r.CreatedAt, r.ThumbnailBytes, r.UpdatedAt })

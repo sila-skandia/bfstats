@@ -39,4 +39,7 @@ public record RecordingDetailDto(
     bool CanEditRound = false,
     bool RoundWeak = false,
     string? StatsRoundId = null,
-    string? Source = null);
+    string? Source = null,
+    string Description = "",
+    string Visibility = "public",
+    string Game = RecordingGames.Bf1942);
