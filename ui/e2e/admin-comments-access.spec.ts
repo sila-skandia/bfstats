@@ -49,4 +49,26 @@ test.describe('Admin Comments and Access tabs', () => {
     await expect(adminRow.locator('.mm-admin-access__date').first()).not.toHaveText('—');
     await expect(adminRow.locator('.mm-admin-access__date').nth(1)).toContainText(/ago|Just now/);
   });
+
+  // Every role the menu offers saves (features/bfv-through-bfstats): BattleView Vietnam admin
+  // was offered and silently never saved, 2026-11-27.
+  test('Access saves a BattleView Vietnam admin, and it is still set after a reload', async ({ page, request }) => {
+    const username = `e2e_bfv_${Date.now() % 1e9}`;
+    const made = await request.post('/stats/auth/register', { data: { username, password: 'e2e-password-123' } });
+    expect(made.ok(), await made.text()).toBeTruthy();
+
+    await loginAsAdmin(page);
+    await page.goto('/v4/admin/data?tab=comments');
+    await page.locator('button.mm-admin-tab', { hasText: 'Access' }).click();
+    const row = page.locator('.mm-admin-table tbody tr', { hasText: username });
+    const saved = page.waitForResponse(r => /\/stats\/admin\/data\/users\/\d+\/role$/.test(r.url()) && r.request().method() === 'PUT');
+    await row.locator('select.mm-admin-access__select').selectOption('BfvAdmin');
+    expect((await saved).ok()).toBeTruthy();
+
+    await page.reload();
+    await page.locator('button.mm-admin-tab', { hasText: 'Access' }).click();
+    await expect(page.locator('.mm-admin-table tbody tr', { hasText: username }).locator('select.mm-admin-access__select'))
+      .toHaveValue('BfvAdmin');
+  });
 });
+

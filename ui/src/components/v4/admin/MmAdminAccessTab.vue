@@ -118,7 +118,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { adminDataService, type UserWithRoleResponse } from '@/services/adminDataService'
-import { ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT } from '@/constants/roles'
+import { ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT, ROLE_BFV_ADMIN } from '@/constants/roles'
 import { formatDate, formatLocalTooltip, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
 
 const users = ref<UserWithRoleResponse[]>([])
@@ -131,7 +131,8 @@ const resettingId = ref<number | null>(null)
 const generated = ref<{ userId: number; username: string; temporaryPassword: string } | null>(null)
 const copied = ref(false)
 
-const ALLOWED_ROLES = [ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT]
+// Every role the menu offers must be here: one missing is picked and silently never saved.
+const ALLOWED_ROLES = [ROLE_USER, ROLE_EARLY_ADOPTER, ROLE_SUPPORT, ROLE_BFV_ADMIN]
 
 /**
  * A signed-in browser refreshes its session without a new sign-in, so the
