@@ -1357,6 +1357,13 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Empty(ShortFiles());
         Assert.Empty((await service.ListAsync(7, null, 1, 24, default)).Items);
         Assert.Equal([dto.Slug], (await service.ListAsync(7, null, 1, 24, default, game: RecordingGames.Bfv)).Items.Select(i => i.Slug));
+        // Its players are in bfv's strip filter, not bfstats.io's.
+        Assert.Empty((await service.PlayersAsync(7, default)).Items);
+        Assert.NotEmpty((await service.PlayersAsync(7, default, RecordingGames.Bfv)).Items);
+
+        // Its share link opens bfv.bfstats.io's player, where it is listed.
+        var page = Assert.IsType<ContentResult>(await Controller().ShareLink(dto.Slug, default));
+        Assert.Contains($"https://bfv.bfstats.io/play/?tab=replay&amp;short={dto.Slug}", page.Content);
 
         var served = Assert.IsType<PhysicalFileResult>(await Controller().Video(dto.Slug));
         Assert.Equal(bfv.VideoPath(dto.Slug), served.FileName);

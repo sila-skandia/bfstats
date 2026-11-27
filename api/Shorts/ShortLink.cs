@@ -30,10 +30,11 @@ public static class ShortLink
     public static string WatchPath(string slug) => $"/play/?tab=replay&short={Uri.EscapeDataString(slug)}";
 
     /// <summary>The page for a Short: its video and poster tags, and a refresh to the player on
-    /// <paramref name="playOrigin"/>. <paramref name="linkOrigin"/> is the share link's host.</summary>
-    public static string Page(ShortDto s, string playOrigin, string linkOrigin)
+    /// <paramref name="watchOrigin"/> (its game's site), else <paramref name="playOrigin"/>, which
+    /// also serves the files. <paramref name="linkOrigin"/> is the share link's host.</summary>
+    public static string Page(ShortDto s, string playOrigin, string linkOrigin, string? watchOrigin = null)
     {
-        var watch = playOrigin + WatchPath(s.Slug);
+        var watch = (watchOrigin ?? playOrigin) + WatchPath(s.Slug);
         var self = $"{linkOrigin}/s/{s.Slug}";
         // The link copy when there is one: Discord shows a linked video over about 50 MB as a
         // bare link (2026-11-12, a roll's 479 MB 4K take).
