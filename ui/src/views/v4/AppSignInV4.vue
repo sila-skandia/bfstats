@@ -101,7 +101,9 @@ function deny() {
         <div class="mm-eyebrow mm-eyebrow--strong">App sign-in</div>
         <h1 class="mm-appsign__title">
           Allow <span class="mm-appsign__app">{{ request.clientName }}</span>
-          on <span class="mm-appsign__device" data-testid="app-sign-in-device">{{ request.device }}</span>
+          <template v-if="request.app.onDevice">
+            on <span class="mm-appsign__device" data-testid="app-sign-in-device">{{ request.device }}</span>
+          </template>
           to use your account?
         </h1>
 
@@ -112,14 +114,13 @@ function deny() {
         <section class="mm-appsign__grants" aria-label="What the app can do">
           <div class="mm-appsign__label">It will be able to</div>
           <ul>
-            <li>Read and change your game profiles</li>
-            <li>See your account name</li>
+            <li v-for="grant in request.app.grants" :key="grant">{{ grant }}</li>
           </ul>
         </section>
 
         <p class="mm-appsign__note">
-          Allow only if you just started signing in from the app on this computer. It stays signed in
-          until you sign it out, here under Dashboard, Signed-in apps, or in the app.
+          {{ request.app.allowWhen }} It stays signed in until you sign it out, here under Dashboard,
+          Signed-in apps, or in {{ request.app.onDevice ? 'the app' : request.clientName }}.
         </p>
         <p class="mm-appsign__target">Returns to {{ request.returnsTo }}</p>
 

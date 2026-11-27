@@ -45,6 +45,8 @@ public sealed class AppSignInServiceTests : IDisposable
         var tokens = Substitute.For<ITokenService>();
         tokens.CreateAccessToken(Arg.Any<User>())
             .Returns(call => ($"access-for-{call.Arg<User>().Id}", DateTime.UtcNow.AddDays(7)));
+        tokens.CreateAppAccessToken(Arg.Any<User>(), Arg.Any<string>())
+            .Returns(call => ($"access-for-{call.Arg<User>().Id}", DateTime.UtcNow.AddDays(7)));
 
         service = new AppSignInService(db, refreshTokens, tokens, clock, NullLogger<AppSignInService>.Instance);
     }

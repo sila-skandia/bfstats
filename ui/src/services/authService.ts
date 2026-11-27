@@ -1,4 +1,4 @@
-import { rememberReturnUrl } from './authReturn';
+import { peekReturnUrl, rememberReturnUrl, signUpViaFor } from './authReturn';
 
 export interface UserProfile {
   id: number;
@@ -154,7 +154,11 @@ class AuthService {
   }
 
   /** Username + password sign-up. Email and player link are optional. */
-  async register(input: { username: string; password: string; email?: string | null; playerName?: string | null }): Promise<void> {
+  async register(input: {
+    username: string; password: string; email?: string | null; playerName?: string | null
+    /** The site the sign-up came from: `bfv` on the way to bfv.bfstats.io's Allow page. */
+    signUpVia?: 'bfv'
+  }): Promise<void> {
     const response = await fetch('/stats/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -199,7 +203,10 @@ class AuthService {
         },
         body: JSON.stringify({
           discordCode: code,
-          redirectUri: this.discordRedirectUri
+          redirectUri: this.discordRedirectUri,
+          // A first Discord sign-in on its way to bfv.bfstats.io's Allow page makes a bfv
+          // account (features/bfv-through-bfstats). Read, not taken: the callback takes it.
+          signUpVia: signUpViaFor(peekReturnUrl()),
         })
       });
 

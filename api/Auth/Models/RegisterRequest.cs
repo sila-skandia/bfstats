@@ -12,4 +12,6 @@ public class RegisterRequest
     public string Password { get; set; } = "";
     public string? Email { get; set; }
     public string? PlayerName { get; set; }
+    /// <summary>The site the sign-up came from (<see cref="SignUpSites"/>).</summary>
+    public string? SignUpVia { get; set; }
 }

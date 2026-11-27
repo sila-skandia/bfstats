@@ -140,6 +140,11 @@ spec:
                   key: admin-email
             - name: Cors__AllowedOrigins
               value: "https://bfstats.io,https://staging.bfstats.io"
+            # Sites hosted for someone else, signed in through the app hand-off
+            # (features/bfv-through-bfstats). Never in Cors__AllowedOrigins, which is
+            # credentialed: bfv.bfstats.io would read bfstats.io's sign-in (api/Auth/SiteCors.cs).
+            - name: Cors__SiteOrigins
+              value: "https://bfv.bfstats.io"
             # Bot Detection Configuration
             - name: BotDetection__DefaultPlayerNames__0
               value: "BFPlayer"

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using api.AppSignIn.Models;
 using api.Recordings;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -35,16 +36,19 @@ public class AppSignInController(IAppSignInService appSignIn) : ControllerBase
     }
 
     [HttpPost("token")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [EnableRateLimiting(TokenLimit)]
     public async Task<IActionResult> Token([FromBody] AppTokenRequest request, CancellationToken cancellationToken) =>
         Answer(await appSignIn.ExchangeAsync(request, ClientAddress.Of(HttpContext), UserAgent(), cancellationToken));
 
     [HttpPost("refresh")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [EnableRateLimiting(RefreshLimit)]
     public async Task<IActionResult> Refresh([FromBody] AppRefreshRequest request, CancellationToken cancellationToken) =>
         Answer(await appSignIn.RefreshAsync(request.RefreshToken, ClientAddress.Of(HttpContext), UserAgent(), cancellationToken));
 
     [HttpPost("revoke")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [EnableRateLimiting(RefreshLimit)]
     public async Task<IActionResult> Revoke([FromBody] AppRefreshRequest request, CancellationToken cancellationToken)
     {

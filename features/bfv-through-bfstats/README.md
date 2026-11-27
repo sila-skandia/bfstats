@@ -85,13 +85,30 @@ BFV-only endpoints: a recording's game is one more property, read from the file.
       `RecordingCardsV1.TriggersSql` again after a rollback.
 - [ ] Shorts: `Game` on the row, taken from the recording; files for game `bfv`
       under the bfv mount.
-- [ ] App sign-in: client `bfv-site`, its exact redirect, in `AppSignInRules.cs`
-      and `ui/src/utils/appSignIn.ts`; the Allow page names bfv.bfstats.io.
-      Its access tokens short-lived (about 15 min) so a revoke lands quickly
-      (today every access token lives 7 days and none is checked against
-      revoked sessions). Optional: no Admin role in `bfv-site` tokens.
-- [ ] `User.SignedUpVia`, carried through the Allow page's sign-up detour.
-- [ ] `Cors__AllowedOrigins` gains `https://bfv.bfstats.io`.
+- [x] App sign-in client `bfv-site` (`AppSignInRules.cs`, `ui/src/utils/appSignIn.ts`).
+      It is sent back to `https://bfv.bfstats.io/auth/callback` exactly, or to
+      `http://localhost:<port>/auth/callback` so Lucca can work on a local bfv
+      page against bfstats; nowhere else, and the relay is never sent there. The
+      Allow page names bfv.bfstats.io, no device, and what it can do.
+- [x] Its access tokens (`TokenService.CreateAppAccessToken`): 15 minutes
+      (`Jwt:SiteAccessTokenMinutes`), refreshed through the hand-off, so a revoke
+      lands within that (every other access token lives 7 days and none is checked
+      against revoked sessions). Always role `User`, and no email claim at all:
+      the configured admin address is an admin by its email claim alone
+      (`AppRoles.HasAdminEmail`), so an admin who signs in on bfv hands bfv's
+      script nothing an admin can do. Each app token names its `client`.
+- [x] `User.SignedUpVia` (`bfstats` / `bfv`, null before it was kept;
+      `AddUserSignedUpVia`). The sign-in page sends `signUpVia: 'bfv'` when its
+      return address is a `bfv-site` Allow page, for a password sign-up and a
+      first Discord sign-in alike; the API records it only when it makes the
+      account. A note, never a permission.
+- [x] CORS: **not** `Cors__AllowedOrigins`. That policy is credentialed, and
+      bfv.bfstats.io is the same site as bfstats.io for SameSite=Lax: a bfv page
+      could call `/stats/auth/refresh` with the visitor's refresh cookie and read
+      back a full sign-in. bfv's origin is `Cors__SiteOrigins` instead, its own
+      policy (`api/Auth/SiteCors.cs`) with no credentials, bearer tokens only, on
+      the hand-off's token, refresh and revoke and on sharing, renaming,
+      deleting, covering and viewing a recording. Reads were already public.
 - [ ] Regression: API tests for recordings, Shorts and app sign-in;
       `e2e/stats-page-replays.spec.ts`, `e2e/app-sign-in.spec.ts`; a real
       BF1942 upload on staging before and after.
@@ -118,6 +135,46 @@ BFV-only endpoints: a recording's game is one more property, read from the file.
 - HAProxy (the reason): drop the `Cookie` header on requests for `bfv.bfstats.io`. The `rt`
   cookie is `Domain=bfstats.io; Path=/stats`, so browsers send it to bfv, whose
   nginx config is in Lucca's image. Independent of the rest; do it anyway.
+
+## What bfv's pages call (the contract for phase 2)
+
+Everything is `https://bfstats.io/stats/...` from the browser, tokens in
+`Authorization: Bearer`, never cookies (`credentials: 'omit'`).
+
+1. **Sign in.** Make a PKCE pair (32 random bytes base64url; challenge =
+   base64url(SHA-256(verifier))) and a random `state`, keep both in
+   `sessionStorage`, and send the browser to
+   `https://bfstats.io/auth/app?client=bfv-site&redirect_uri=https://bfv.bfstats.io/auth/callback&state=<state>&code_challenge=<challenge>&code_challenge_method=S256`.
+   bfstats.io signs the visitor in (Discord or username/password; a new account
+   is marked as bfv's) and shows Allow.
+2. **Callback.** `/auth/callback?code=...&state=...`: check `state`, then
+   `POST /stats/auth/app/token` `{ code, codeVerifier, redirectUri }` gives
+   `{ accessToken, expiresAt, refreshToken, refreshExpiresAt, user: { id, username } }`.
+   `?error=access_denied` is a Deny.
+3. **Stay signed in.** The access token lasts 15 minutes. Before it lapses,
+   `POST /stats/auth/app/refresh` `{ refreshToken }` returns a new pair; the
+   refresh token rotates, and presenting an old one signs the visitor out.
+   Sign out: `POST /stats/auth/app/revoke` `{ refreshToken }`.
+4. **Upload.** `POST /stats/recordings`, multipart: `recording` (the
+   `replay_*.ndjson`, gzipped with `CompressionStream` where the browser can),
+   `meta` (JSON, `RecordingUploadMeta`: `title`, and the details the page read
+   of the file), optionally `thumbnail`. No server log for BFV. It goes up under
+   the player the file says recorded it; a file that does not say needs a
+   player name linked to the account. The file's own header makes it a BFV recording; 503 means
+   bfstats is not taking BFV recordings just now. Under 95 MB as sent
+   (Cloudflare's 100 MB a request).
+5. **List and play.** `GET /stats/recordings?game=bfv` (and `/filters?game=bfv`)
+   for the REPLAY tab; each recording's `recordingUrl`
+   (`/stats/recordings/<slug>.ndjson`, served gzipped) and cover. Reads need no
+   token. `GET /stats/recordings/me` with the token: who is signed in, and the
+   player names they may share as.
+6. **Manage their own.** `PATCH /stats/recordings/<slug>` `{ title }`,
+   `DELETE /stats/recordings/<slug>`, `PUT /stats/recordings/<slug>/thumbnail`.
+   Only the uploader (or a bfstats admin) may.
+
+For local work: a bfv page on `http://localhost:<port>` uses
+`http://localhost:<port>/auth/callback` as its `redirect_uri`, against
+staging or a local bfstats API (whose `Cors__SiteOrigins` must name that origin).
 
 ## Phase 2: bfv (Lucca's `bfv` branch, in a branch of its own)
 

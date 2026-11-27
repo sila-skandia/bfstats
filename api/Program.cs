@@ -515,6 +515,16 @@ try
         // viewer browsing the live feed), with no credentials.
         options.AddPolicy(api.Recordings.RecordingsController.PublicReadCors, policy =>
             policy.AllowAnyOrigin().AllowAnyHeader().WithMethods("GET"));
+        // Sites hosted for someone else (api.Auth.SiteCors): their origins only, bearer
+        // tokens only. No AllowCredentials, ever: see SiteCors.
+        var siteOrigins = CorsOriginMatcher.Parse(builder.Configuration[api.Auth.SiteCors.OriginsKey]);
+        options.AddPolicy(api.Auth.SiteCors.Policy, policy =>
+        {
+            if (siteOrigins.Length > 0)
+            {
+                policy.WithOrigins(siteOrigins).WithHeaders("Authorization", "Content-Type").WithMethods("GET", "POST", "PUT", "PATCH", "DELETE");
+            }
+        });
     });
 
     // JWT Auth

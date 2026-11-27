@@ -298,6 +298,13 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        // bfv's accounts, for the day they are managed (features/bfv-through-bfstats).
+        modelBuilder.Entity<User>()
+            .Property(u => u.SignedUpVia)
+            .HasMaxLength(api.Auth.SignUpSites.MaxLength);
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.SignedUpVia);
+
         // Password accounts log in by name; Discord accounts leave it null and
         // SQLite's unique index skips nulls, so the backfill needed nothing.
         modelBuilder.Entity<User>()
@@ -1895,6 +1902,9 @@ public class User
     public string AuthProvider { get; set; } = "discord";
     /// <summary>Assigned role: User (default), EarlyAdopter or Support. Admin is determined by email only, not stored here.</summary>
     public string? Role { get; set; }
+    /// <summary>The site the account was made on, <see cref="api.Auth.SignUpSites"/>: <c>bfstats</c> or
+    /// <c>bfv</c>. Null for accounts made before it was kept (bfstats.io's).</summary>
+    public string? SignedUpVia { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastLoggedIn { get; set; }
     public bool IsActive { get; set; } = true;

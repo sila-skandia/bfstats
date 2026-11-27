@@ -3,14 +3,49 @@
 // it never shows Allow for a request the API would refuse, and never sends the
 // browser to an address that is not the app's loopback listener.
 
-export const APP_CLIENTS: Record<string, string> = {
-  'bfstats-relay': 'bfstats Relay',
+export interface AppClient {
+  /** What the Allow page calls it. */
+  name: string
+  /** Whether the request names the device it is on: an app does, a site does not. */
+  onDevice: boolean
+  /** What it can do with the account, as the Allow page lists it. */
+  grants: string[]
+  /** When to allow it. */
+  allowWhen: string
+  /** Where it may send the browser back to. */
+  isValidRedirectUri(value: string | null | undefined): value is string
+  /** What the page says of an address it may not. */
+  wrongRedirect: string
+}
+
+export const BFV_SITE_REDIRECT_URI = 'https://bfv.bfstats.io/auth/callback'
+
+export const APP_CLIENTS: Record<string, AppClient> = {
+  'bfstats-relay': {
+    name: 'bfstats Relay',
+    onDevice: true,
+    grants: ['Read and change your game profiles', 'See your account name'],
+    allowWhen: 'Allow only if you just started signing in from the app on this computer.',
+    isValidRedirectUri,
+    wrongRedirect: 'The address this would send you back to is not the app on this computer.',
+  },
+  // bfv.bfstats.io, Battlefield Vietnam's site, hosted for someone else
+  // (features/bfv-through-bfstats). Its tokens are short-lived and a plain user's.
+  'bfv-site': {
+    name: 'bfv.bfstats.io',
+    onDevice: false,
+    grants: ['Share Battlefield Vietnam recordings and Shorts as you', 'See your account name'],
+    allowWhen: 'Allow only if you just pressed Sign in on bfv.bfstats.io.',
+    isValidRedirectUri: isValidBfvRedirectUri,
+    wrongRedirect: 'The address this would send you back to is not bfv.bfstats.io.',
+  },
 }
 
 export const MAX_DEVICE_LENGTH = 64
 export const UNNAMED_DEVICE = 'Unnamed device'
 
 const REDIRECT_URI = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{3,4})\/callback$/
+const LOCAL_SITE_REDIRECT_URI = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{3,4})\/auth\/callback$/
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/
 const STATE = /^[A-Za-z0-9._~-]{1,256}$/
 
@@ -19,6 +54,19 @@ export function isValidRedirectUri(value: string | null | undefined): value is s
   if (!value) return false
   // `$` in a JS regex without the m flag does not match before a trailing newline, unlike .NET's.
   const match = REDIRECT_URI.exec(value)
+  if (!match) return false
+  const port = Number(match[1])
+  return port >= 1024 && port <= 65535
+}
+
+/**
+ * bfv.bfstats.io's callback, exactly, or a bfv page on this computer while it is being
+ * worked on (`http://localhost:<port>/auth/callback`), as the API allows (AppSignInRules).
+ */
+export function isValidBfvRedirectUri(value: string | null | undefined): value is string {
+  if (value === BFV_SITE_REDIRECT_URI) return true
+  if (!value) return false
+  const match = LOCAL_SITE_REDIRECT_URI.exec(value)
   if (!match) return false
   const port = Number(match[1])
   return port >= 1024 && port <= 65535
@@ -37,6 +85,7 @@ export function normalizeDevice(value: string | null | undefined): string {
 export interface AppSignInRequest {
   client: string
   clientName: string
+  app: AppClient
   device: string
   redirectUri: string
   state: string
@@ -64,9 +113,10 @@ export function parseAppSignIn(query: Query): AppSignInParse {
   const client = one(query, 'client')
   if (!client || !(client in APP_CLIENTS)) return { ok: false, reason: 'The app that sent you here is not one bfstats.io knows.' }
 
+  const app = APP_CLIENTS[client]
   const redirectUri = one(query, 'redirect_uri')
-  if (!isValidRedirectUri(redirectUri)) {
-    return { ok: false, reason: 'The address this would send you back to is not the app on this computer.' }
+  if (!app.isValidRedirectUri(redirectUri)) {
+    return { ok: false, reason: app.wrongRedirect }
   }
 
   const state = one(query, 'state')
@@ -85,7 +135,8 @@ export function parseAppSignIn(query: Query): AppSignInParse {
     ok: true,
     request: {
       client,
-      clientName: APP_CLIENTS[client],
+      clientName: app.name,
+      app,
       device: normalizeDevice(one(query, 'device')),
       redirectUri,
       state,

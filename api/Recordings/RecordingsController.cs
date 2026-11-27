@@ -91,6 +91,7 @@ public class RecordingsController(
 
     /// <summary>The signed-in viewer: the player names they can post as.</summary>
     [HttpGet("me")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [Authorize]
     public async Task<ActionResult<RecordingViewerDto>> Me(CancellationToken ct) =>
         Actor() is { } actor ? Ok(await recordings.ViewerAsync(actor, ct)) : Unauthorized();
@@ -173,6 +174,7 @@ public class RecordingsController(
 
     /// <summary>Sets the cover: an image in the body, a frame the replay page grabbed.</summary>
     [HttpPut("{slug:length(10)}/thumbnail")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [Authorize]
     [RequestSizeLimit(RecordingThumbnails.MaxBytes + 1)]
     [DisableFormValueModelBinding]
@@ -220,6 +222,7 @@ public class RecordingsController(
 
     [HttpPost]
     [Authorize]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [RequestSizeLimit(UploadLimitBytes)]
     [DisableFormValueModelBinding]
     [EnableRateLimiting(UploadLimit)]
@@ -239,6 +242,7 @@ public class RecordingsController(
     }
 
     [HttpPatch("{slug:length(10)}")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [Authorize]
     public async Task<ActionResult<RecordingDetailDto>> Rename(string slug, [FromBody] UpdateRecordingRequest request, CancellationToken ct)
     {
@@ -254,6 +258,7 @@ public class RecordingsController(
     }
 
     [HttpDelete("{slug:length(10)}")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [Authorize]
     public async Task<IActionResult> Delete(string slug, CancellationToken ct)
     {
@@ -310,6 +315,7 @@ public class RecordingsController(
     /// <summary>The replay page says so when it opens a recording. Counted a few seconds
     /// later, in a batch, once per viewer per window: accepted either way.</summary>
     [HttpPost("{slug:length(10)}/views")]
+    [EnableCors(api.Auth.SiteCors.Policy)]
     [EnableRateLimiting(ViewLimit)]
     public async Task<IActionResult> View(string slug, CancellationToken ct)
     {

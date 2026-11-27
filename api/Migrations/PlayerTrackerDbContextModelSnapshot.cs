@@ -2109,6 +2109,10 @@ namespace api.Migrations
                     b.Property<string>("Role")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SignedUpVia")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Username")
                         .HasColumnType("TEXT");
 
@@ -2118,6 +2122,8 @@ namespace api.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("SignedUpVia");
 
                     b.HasIndex("Username")
                         .IsUnique();
