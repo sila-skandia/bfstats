@@ -1757,3 +1757,24 @@
   }
 }
 
+/*
+ * BattleView Vietnam's colours (bfv.bfstats.io's welcome page), for bfstats.io's own
+ * sign-in and Allow pages when the visitor came from bfv (features/bfv-through-bfstats).
+ * Only the theme's own variables change; the pages are bfstats.io's.
+ */
+.mm.mm-site-bfv {
+  --mm-bg: #0b0806;
+  --mm-bg-soft: #130e08;
+  --mm-bg-mute: #1b140c;
+  --mm-rule: #2a2016;
+  --mm-rule-strong: #3d2e1c;
+  --mm-ink: #efe6d2;
+  --mm-ink-soft: #b5a88e;
+  --mm-ink-muted: #7f735e;
+  --mm-ink-faint: #54493a;
+  --mm-accent: #e8a23a;
+  --mm-accent-soft: #ffc35e;
+  --mm-highlight: #b98a4a;
+  --mm-highlight-ink: #0b0806;
+}
+

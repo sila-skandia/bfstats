@@ -223,6 +223,14 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- the health group's rect and bindings --------------------------------
 
+    def test_the_ticket_bars_middle_cell_is_the_round_time(self) -> None:
+        # Top 28, after the tickets (ledger HUD-31): one text leaf the client
+        # fills with the round's time left, culled on `Time/ShowTime`.
+        (leaf,) = self.group("time")["elements"]
+        self.assertEqual(leaf["rect"], [690.0, 12.0, 37.0, 20.0])
+        self.assertEqual((leaf["var"], leaf["font"], leaf["align"]), ("Time/Time", "standard6_latin", "center"))
+        self.assertEqual(leaf["when"], [{"var": "Time/ShowTime", "op": "eq", "value": True}])
+
     def test_soldier_icon_group_rect(self) -> None:
         self.assertEqual([47.0, 525.0, 107.0, 64.0], self.group("soldierIcon")["rect"])
 
@@ -365,10 +373,10 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_twenty_groups_are_present_and_non_empty(self) -> None:
+    def test_all_twenty_one_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair", "tickets", "outside",
+                    "hitIndicator", "weaponBar", "crosshair", "tickets", "time", "outside",
                     "spawnTimer", "spawnText", "statusMessage", "disconnectMessage",
                     "periscope", "depthFade", "submarine"}
         self.assertEqual(expected, set(self.hud["groups"]))
@@ -704,7 +712,7 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         "vehicleSeats": ["vehiclePanel", "vehiclePlayers"],
         "primaryAmmo": ["vehicleAmmo"], "secondaryAmmo": ["vehicleAmmo"],
         "supplyIcon": list(hud.SUPPLY_KEYS), "hitIndicator": ["hitIndicator"],
-        "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"],
+        "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"], "time": ["time"],
         "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
         "statusMessage": ["statusMessage"], "disconnectMessage": ["disconnectMessage"],
         # The submarine's three tops, found by what each one draws (SUB-4).

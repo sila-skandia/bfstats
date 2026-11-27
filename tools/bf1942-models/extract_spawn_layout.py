@@ -431,7 +431,9 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
     fonts: set[str] = set()
     variables: dict[str, object] = {}
     strings: dict[str, str] = {}
-    for key, var in (("spawn", "Kit/ShowKit"), ("tickets", "ShowTicket")):
+    # `time` is the ticket bar's middle cell, the round's time left (top 28,
+    # ledger HUD-31), another sibling top the game draws over this screen.
+    for key, var in (("spawn", "Kit/ShowKit"), ("tickets", "ShowTicket"), ("time", "Time/ShowTime")):
         top = find_group(root, var)
         if top is None:
             raise SystemExit(f"menu/InGame has no {var} group")

@@ -37,6 +37,20 @@ export function ticketBlinks(gpm, points, tickets = null) {
 }
 
 /**
+ * The ticket bar's middle cell, the client's own text (BF1942.exe
+ * 0x006aec81, ledger HUD-31): the round's seconds left `ftol`-truncated, as
+ * `%.2d:%.2d` minutes and seconds (0x0091de40), so 25 minutes reads "25:00"
+ * and two hours "120:00". Null for none: a round with no time limit, or one
+ * past it.
+ */
+export function roundTimeText(left) {
+  if (!(left > 0)) return null;
+  const s = Math.trunc(left);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(Math.trunc(s / 60))}:${pad(s % 60)}`;
+}
+
+/**
  * The ticket counter's HUD variables and the flag icons beside them, fed
  * from the live round (`round-state.js`). Split out of `map-surfaces.js`.
  *
@@ -44,8 +58,8 @@ export function ticketBlinks(gpm, points, tickets = null) {
  * page, as getters (a binding the page reassigns is read live):
  * `capturePosition`, `currentDir`, `deployTeamId`, `extras`, `hudPack`,
  * `LOCAL_PLAYER`, `nearestEnemyFlag`, `round`, `soldierDead`,
- * `spawnersRoot`, `teamArt`, `teamNation`, `world`, and `loadouts` (a memo
- * key).
+ * `spawnersRoot`, `teamArt`, `teamNation`, `world`, `loadouts` (a memo
+ * key), and `roundTimeLeft`, the round's seconds left or null.
  */
 export function createTicketFeed(page) {
   const ticketFeed = {};
@@ -172,6 +186,11 @@ export function createTicketFeed(page) {
   /** Fill in the `ShowTicket` group's variables on a table. Returns whether the
    *  group will draw. */
   function feedTicketVars(vars, { paint = false } = {}) {
+    // The middle cell: its own top (`Time/ShowTime`), shown while the round
+    // has time left whatever the counts do.
+    const time = roundTimeText(page.roundTimeLeft ?? null);
+    vars['Time/ShowTime'] = time !== null;
+    vars['Time/Time'] = time ?? '';
     const memo = ticketMemoFor();
     if (!memo.show) {
       vars['ShowTicket'] = false;

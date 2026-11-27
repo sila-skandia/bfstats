@@ -8,6 +8,7 @@
 import { kitPhotoSprite, spriteState } from './kit-icon.js';
 import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
 import { respawnPlateLabel } from './spawn-timer.js';
+import { TIME_DEFAULT } from './hud.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -226,6 +227,16 @@ export function createDeployScreen(page) {
       console.warn('spawn layout unavailable', error);
       return;
     }
+    // The round's time left (`menu/InGame` top 28, the ticket bar's middle
+    // cell), another sibling top the game draws over this screen too; a file
+    // written before `extract_spawn_layout.py` carried it gets vanilla's leaf
+    // and its font from the same pack.
+    if (data.groups?.tickets && !data.groups.time) data.groups.time = structuredClone(TIME_DEFAULT);
+    for (const el of data.groups?.time?.elements ?? []) {
+      if (el.font && !data.fontFiles?.[el.font]) {
+        (data.fontFiles ??= {})[el.font] = { file: `fonts/${el.font}.png`, glyphs: `fonts/${el.font}.json` };
+      }
+    }
     spawnLayout.data = data;
     await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
       const meta = await fetch(`${page.hudPaths.url(entry.glyphs)}${page.bust()}`).then(r => r.json());
@@ -333,7 +344,7 @@ export function createDeployScreen(page) {
     return el.text || '';
   }
 
-  const TICKET_TEXT_VARS = new Set(['AxisTicket', 'AlliedTicket']);
+  const TICKET_TEXT_VARS = new Set(['AxisTicket', 'AlliedTicket', 'Time/Time']);
 
   // --- laying out and painting -------------------------------------------------
 
@@ -488,7 +499,8 @@ export function createDeployScreen(page) {
     // group in the file and is drawn alongside it here — in the file's own
     // order, which puts it over the spawn plates the way the game draws it.
     const chrome = [...data.groups.spawn.elements,
-                    ...(data.groups.tickets?.elements || [])];
+                    ...(data.groups.tickets?.elements || []),
+                    ...(data.groups.time?.elements || [])];
     const pack = page.hudPack;
     const photos = kitPictures(data.groups.spawn);
     const labelFont = spawnLayout.fonts.get(

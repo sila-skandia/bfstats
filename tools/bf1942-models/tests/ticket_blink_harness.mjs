@@ -9,7 +9,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { viewerDir, installModuleHooks } = await import(path.join(HERE, '..', 'sim', 'env.mjs'));
 const viewer = viewerDir();
 installModuleHooks(viewer);
-const { ticketBlinks } = await import(path.join(viewer, 'ticket-feed.js'));
+const { ticketBlinks, roundTimeText } = await import(path.join(viewer, 'ticket-feed.js'));
+const { parseRecording, timeLimitAt, roundTimeLeft } = await import(path.join(viewer, 'replay-recording.js'));
 const { GAME_PLAY_MODE } = await import(path.join(viewer, 'round-state.js'));
 
 const scene = JSON.parse(fs.readFileSync(path.join(viewer, 'maps', 'wake', 'scene.json'), 'utf8'));
@@ -22,4 +23,20 @@ out.conquestSame = ticketBlinks(GAME_PLAY_MODE.conquest, coop);
 out.tdm = ticketBlinks(GAME_PLAY_MODE.tdm, coop);
 out.ctf = ticketBlinks(GAME_PLAY_MODE.ctf, coop);
 out.objective = { low: ticketBlinks(GAME_PLAY_MODE.objective, coop, { team1: 10, team2: 11 }), none: ticketBlinks(GAME_PLAY_MODE.objective, coop, null) };
+// The ticket bar's middle cell (HUD-31): `%.2d:%.2d` of the seconds left.
+out.timeText = [1500, 59.9, 61, 7200, 0, -3, null].map(roundTimeText);
+// A recording's limit at a time: two rounds, 1800 then 2700, on the server
+// recorder's `clock` rows; the second round's clock starts again at 0.
+{
+  const L = o => JSON.stringify(o);
+  const rec = parseRecording([
+    L({ k: 'h', v: 5, start: '', hz: 30 }),
+    L({ k: 'e', t: 0, e: 'clock', timeLimit: 1800, worldTime: 0 }),
+    L({ k: 'e', t: 10, e: 'clock', timeLimit: 1800, worldTime: 10 }),
+    L({ k: 'e', t: 100, e: 'clock', timeLimit: 2700, worldTime: 0 }),
+    L({ k: 'e', t: 200, e: 'clock', timeLimit: 0, worldTime: 100 }),
+    L({ k: 'end', t: 210 }),
+  ].join('\n'));
+  out.limits = [5, 50, 150, 205].map(t => [timeLimitAt(rec, t), roundTimeLeft(rec, t)]);
+}
 console.log(JSON.stringify(out));

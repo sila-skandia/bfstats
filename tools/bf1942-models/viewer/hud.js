@@ -66,7 +66,7 @@ export function setGlyphTable(fn) {
 /** The groups in the order `menu/InGame` draws them: its root chain, each
  *  group at its first top's index (ledger HFD-8) -- crosshair 3, periscope 4,
  *  supply 6-13, depthFade 15, weaponBar 19, soldierIcon 21, soldierAmmo 22,
- *  the vehicle panel 23-26, tickets 27, spawnTimer 33, spawnText 35,
+ *  the vehicle panel 23-26, tickets 27, time 28, spawnTimer 33, spawnText 35,
  *  hitIndicator 37, submarine 41, outside 42, statusMessage 46.
  *  `hud-layout.json` lists them in
  *  its own order, which put the weapon bar, the crosshair group and the
@@ -76,7 +76,7 @@ export function setGlyphTable(fn) {
 export const PAINT_ORDER = [
   'crosshair', 'periscope', 'supplyIcon', 'depthFade', 'weaponBar', 'soldierIcon', 'soldierAmmo',
   'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
-  'tickets', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
+  'tickets', 'time', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
   'disconnectMessage',
 ];
 
@@ -112,6 +112,21 @@ export const DISCONNECT_MESSAGE_DEFAULT = {
   ],
 };
 
+/** The round's time left in the ticket bar's middle cell (`menu/InGame` top
+ *  28, culled on `Time/ShowTime`; ledger HUD-31) as vanilla's file has it,
+ *  for a `hud-layout.json` written before `extract_hud_layout.py` carried the
+ *  group: `Time/Time` at (690, 12), 37 x 20, centred, `standard6_latin`,
+ *  colour (0.8438, 0.73, 0.65). Every mod's file puts the bar where vanilla's
+ *  does. */
+export const TIME_DEFAULT = {
+  rect: [690, 12, 37, 20],
+  elements: [
+    { kind: 'text', rect: [690, 12, 37, 20], color: [0.8438, 0.73, 0.65, 1],
+      when: [{ var: 'Time/ShowTime', op: 'eq', value: true }],
+      font: 'standard6_latin', align: 'center', text: '99:99', var: 'Time/Time' },
+  ],
+};
+
 /** A frame taller than 4:3 (a 9:16 Short) lays the game's screen out at one
  *  scale across its width rather than stretched, so the letters keep their
  *  shape, and each group keeps the edge it sits on in the game's own 800 x 600
@@ -123,7 +138,7 @@ export const ANCHOR_BOTTOM = Object.freeze(new Set([
   'soldierIcon', 'soldierAmmo', 'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
   'supplyIcon', 'weaponBar', 'submarine',
 ]));
-export const ANCHOR_TOP = Object.freeze(new Set(['tickets', 'spawnTimer', 'spawnText', 'statusMessage', 'disconnectMessage']));
+export const ANCHOR_TOP = Object.freeze(new Set(['tickets', 'time', 'spawnTimer', 'spawnText', 'statusMessage', 'disconnectMessage']));
 
 /** `groups` in `PAINT_ORDER`, then whatever else the file has. */
 export function paintOrder(groups) {
@@ -631,6 +646,7 @@ export class Hud {
     if (!data.groups.disconnectMessage?.elements?.length) {
       data.groups.disconnectMessage = structuredClone(DISCONNECT_MESSAGE_DEFAULT);
     }
+    if (data.groups.tickets && !data.groups.time) data.groups.time = structuredClone(TIME_DEFAULT);
     const groups = this.groupFilter
       ? Object.fromEntries(Object.entries(data.groups).filter(([key]) => this.groupFilter(key)))
       : data.groups;

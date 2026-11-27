@@ -51,3 +51,10 @@ class TicketBlinkTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_the_round_time_reads_as_the_client_writes_it(self) -> None:
+        # `%.2d:%.2d`, truncated; nothing at or past the limit (HUD-31).
+        self.assertEqual(self.r["timeText"], ["25:00", "00:59", "01:01", "120:00", None, None, None])
+
+    def test_a_recordings_time_limit_follows_its_rounds(self) -> None:
+        self.assertEqual(self.r["limits"], [[1800, 1795], [1800, 1750], [2700, 2650], [0, None]])
