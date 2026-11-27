@@ -125,32 +125,35 @@ export function condOk(c, vars) {
 
 export const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars));
 
-/** The most CSS pixels one menu unit is drawn at: 1280 across the 800-unit
- *  stage. Past it the menu stops growing with the window and sits centred
- *  in black, the way a game run at a fixed resolution sits in a bigger
- *  screen. Without it a large display (a laptop at "More Space", a 27-inch
- *  monitor) drew the tab strip at 280 by 70 CSS pixels a plate, three times
- *  the size of the REPLAY feed's own text under it. */
-export const MAX_STAGE_SCALE = 1.6;
+/** The most CSS pixels one menu unit is drawn at: 1600 across the
+ *  800-unit stage. Past it the menu stops growing with the window. Without
+ *  it a large display (a laptop at "More Space", a 27-inch monitor) drew the
+ *  tab strip at 280 by 70 CSS pixels a plate, three times the size of the
+ *  REPLAY feed's own text under it. */
+export const MAX_STAGE_SCALE = 2;
 
 /** Virtual-to-stage mapping. The game stretches 800x600 to the display; at
  *  a narrower aspect than 4:3 a uniform scale is used instead so the panels
  *  do not turn to slivers — the same rule `map.html` follows for the spawn
- *  screen. That stage sits at the top of the screen, not centred: on a phone
- *  held upright a centred menu left a black band above it, and `portrait`
- *  tells the screens with a feed under the strip to grow it into the space
- *  below. Either way the scale stops at `MAX_STAGE_SCALE`: a wide stage keeps
- *  the window's stretch and is centred in it, a narrow one stays at the top. */
+ *  screen. The stage always sits at the top of the screen: a centred menu
+ *  left a black band above it, on a phone held upright and on a large
+ *  window alike. `portrait` says which rule drew it.
+ *
+ *  Past `MAX_STAGE_SCALE` across, the stage stops widening and is centred
+ *  side to side; its height follows the window up to the same scale, so a
+ *  capped stage is never stretched more across than down. What a big window
+ *  leaves below is the screens' own: REPLAY's feed and THE RANGE grow into
+ *  it (`stage.js`'s `widenBox`), and the menu's backdrop runs to the edges
+ *  (`paintBackdrop`). */
 export function stageScale(width, height, virtual = [800, 600]) {
   const [vw, vh] = virtual;
   if (width / height < vw / vh) {
     const s = Math.min(width / vw, height / vh, MAX_STAGE_SCALE);
     return { sx: s, sy: s, ox: (width - vw * s) / 2, oy: 0, portrait: true };
   }
-  const k = Math.min(1, MAX_STAGE_SCALE / (width / vw));
-  const sx = (width / vw) * k;
-  const sy = (height / vh) * k;
-  return { sx, sy, ox: (width - vw * sx) / 2, oy: (height - vh * sy) / 2, portrait: false };
+  const sx = Math.min(width / vw, MAX_STAGE_SCALE);
+  const sy = Math.min(height / vh, sx);
+  return { sx, sy, ox: (width - vw * sx) / 2, oy: 0, portrait: false };
 }
 
 /** Stage pixels back to virtual units, for hit-testing a pointer. */

@@ -258,15 +258,18 @@ assert.ok(box, 'the layout has a list box');
   assert.equal(tall.sx, 0.5);
   assert.equal(tall.oy, 0);
   assert.ok(tall.portrait && !wide.portrait);
-  // A large window stops growing the menu at MAX_STAGE_SCALE CSS pixels a
-  // unit: the stage keeps the window's stretch and is centred in it.
+  // A large window stops widening the menu at MAX_STAGE_SCALE CSS pixels a
+  // unit: centred side to side, at the top, and never stretched more across
+  // than down.
   const big = stageScale(3200, 1800, [800, 600]);
   assert.equal(big.sx, MAX_STAGE_SCALE);
-  assert.equal(big.sy, MAX_STAGE_SCALE * 0.75);
+  assert.equal(big.sy, MAX_STAGE_SCALE);
   assert.equal(big.ox, (3200 - 800 * big.sx) / 2);
-  assert.equal(big.oy, (1800 - 600 * big.sy) / 2);
-  const [cx, cy] = toVirtual(big, 1600, 900);
-  assert.deepEqual([cx, cy].map(Math.round), [400, 300], 'the window centre is the stage centre');
+  assert.equal(big.oy, 0, 'no black band above the strip');
+  // A wide, short window still stretches across, as the game does.
+  const short = stageScale(3200, 900, [800, 600]);
+  assert.equal(short.sx, MAX_STAGE_SCALE);
+  assert.equal(short.sy, 1.5);
   const tallBig = stageScale(2400, 4000, [800, 600]);
   assert.equal(tallBig.sx, MAX_STAGE_SCALE);
   assert.equal(tallBig.oy, 0);

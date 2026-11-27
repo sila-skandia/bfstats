@@ -28,6 +28,7 @@
 
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
+import { widenBox } from './stage.js';
 import { elementVisible, inRect, paintElement, stageScale, toVirtual } from './menu-screen.js';
 import { hudPaths as plainHudPaths } from '../hud-pack.js';
 import { provingGroundUrl, START_POINTS, vehiclesByLevel } from '../proving-ground.js';
@@ -822,18 +823,7 @@ export function createProvingGroundScreen({
   const stage = () => stageScale(canvas.clientWidth, canvas.clientHeight, layout?.virtual ?? [800, 600]);
 
   function box() {
-    const r = canvas.getBoundingClientRect();
-    const s = stage();
-    const [x, y, w, h] = BOX;
-    const out = { left: r.left + s.ox + x * s.sx, top: r.top + s.oy + y * s.sy, width: w * s.sx, height: h * s.sy };
-    if (s.portrait && r.height - (s.oy + 600 * s.sy) > 1) {
-      const mute = document.querySelector('.ld-mute-btn')?.getBoundingClientRect();
-      if (mute?.height) out.top = Math.max(out.top, mute.bottom + GUTTER);
-      out.left = r.left + GUTTER;
-      out.width = r.width - 2 * GUTTER;
-      out.height = r.bottom - GUTTER - out.top;
-    }
-    return out;
+    return widenBox(canvas, stage(), BOX, GUTTER);
   }
 
   function place() {

@@ -13,6 +13,7 @@ import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
 import { elementVisible, inRect, paintElement, stageScale, toVirtual } from './menu-screen.js';
 import { createReplayFeed } from './recordings-feed.js';
+import { widenBox } from './stage.js';
 import { hudPaths as plainHudPaths } from '../hud-pack.js';
 
 /** The feed's box in the menu's 800x600: under the tab strip, above the
@@ -65,23 +66,10 @@ export function createReplayScreen({
     return stageScale(canvas.clientWidth, canvas.clientHeight, layout?.virtual ?? [800, 600]);
   }
 
-  /** The feed's box on screen, CSS pixels. */
+  /** The feed's box on screen, CSS pixels: the menu's frame, grown into
+   *  whatever of the window the stage leaves (`widenBox`). */
   function feedBox() {
-    const r = canvas.getBoundingClientRect();
-    const s = stage();
-    const [x, y, w, h] = FEED_BOX;
-    const box = { left: r.left + s.ox + x * s.sx, top: r.top + s.oy + y * s.sy, width: w * s.sx, height: h * s.sy };
-    if (s.portrait && r.height - (s.oy + 600 * s.sy) > 1) {
-      // Letterboxed: the rest of the screen, under the strip and the music
-      // switch in the corner (loading-audio-ui.js), which sits lower than the
-      // strip on a narrow screen.
-      const mute = document.querySelector('.ld-mute-btn')?.getBoundingClientRect();
-      if (mute?.height) box.top = Math.max(box.top, mute.bottom + GUTTER);
-      box.left = r.left + GUTTER;
-      box.width = r.width - 2 * GUTTER;
-      box.height = r.bottom - GUTTER - box.top;
-    }
-    return box;
+    return widenBox(canvas, stage(), FEED_BOX, GUTTER);
   }
 
   let pending = false;
