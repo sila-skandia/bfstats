@@ -148,8 +148,8 @@ about.
   filmed in one take looked at the sky as he threw). A burst mostly inside
   one 1.5 s blast rides the round in and draws back as it lands.
 - **Creators' Shorts and ASMR** (2026-11-04): players share studio clips
-  through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
-  upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
+  through `POST /stats/shorts/share` (kind `creator`, their own sign-in, a
+  plain user's); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
   ASMR is one a week (owner, 2026-11-04): `--asmr-mix=week`, never one a
   round in a routine pass. **No slow motion, no edits** (2026-11-07: "for
   these shorts we don't want slo mo, it's like a tribute to the beauty of
@@ -309,7 +309,7 @@ about.
 - **Retention: unwatched Shorts go after a week** (2026-11-12: "for any
   short >= week old with 0-1 views we get rid of"; rolls too). The nightly
   job runs `scripts/shorts-prune.mjs` after its uploads (`POST
-  /stats/shorts/prune`, the upload key; `--dry-run` lists and changes
+  /stats/shorts/prune`, as the Shorts job's admin sign-in; `--dry-run` lists and changes
   nothing; `SHORTS_PRUNE=0` skips it). A player's studio share is never
   pruned. A pruned Short stays as a tombstone (`PrunedAt`, files gone, bytes
   0) so `/keys` still returns its kill and the runner never films it again.
@@ -357,8 +357,8 @@ Run on a machine with a GPU. One headless browser at a time: check
 
 ```
 node scripts/shorts-runner.mjs --recordings=6 --max=2 --gpu                 # film the newest, keep the files
-SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/shorts-runner.mjs --upload-filmed
-SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/shorts-runner.mjs --recordings=6 --gpu --upload
+node scripts/shorts-runner.mjs --upload-filmed                              # as the Shorts job's sign-in
+node scripts/shorts-runner.mjs --recordings=6 --gpu --upload
 node scripts/shorts-runner.mjs --recording=<slug> --max=1 --gpu             # one recording
 ```
 
@@ -443,15 +443,19 @@ that is the cloud-session path in `hetzner-cluster`). The owner has given a
 standing OK for kubectl, so do not stop to ask, and do not hand the owner a
 command to run.
 
-- **The upload key** is the secret `bfstats-shorts` (key `upload-key`) in
-  `bf42-stats`, mounted into the API as `Shorts__UploadKey` (optional in
-  `deploy/app/deployment.yaml`); the runner's copy is
-  `~/.config/bfstats/shorts-upload-key` (mode 600). Created 2026-11-03. If
-  the file is missing, read it back from the secret:
-  `kubectl --context hetzner -n bf42-stats get secret bfstats-shorts -o jsonpath='{.data.upload-key}' | base64 -d > ~/.config/bfstats/shorts-upload-key`.
-  Never print the key into the conversation. After creating or changing the
-  secret, restart the API so it reads it:
-  `kubectl --context hetzner -n bf42-stats rollout restart deploy/bf42-stats`.
+- **The Shorts job signs in like any client** (2026-11-27; the upload key,
+  `X-Shorts-Key` / `Shorts__UploadKey` / secret `bfstats-shorts`, is gone):
+  an app sign-in of the `bfstats-shorts` client, made once in a browser with
+  `node scripts/shorts-sign-in.mjs` (sign in on bfstats.io as an admin, press
+  Allow). It lives in `~/.config/bfstats/shorts-sign-in.json` (mode 600,
+  `SHORTS_SIGN_IN` for another), and every tool (runner, prune, colour,
+  covers, action roll, weekly recap) reads it through `scripts/shorts-auth.mjs`,
+  which refreshes it when its week-long token has under a day left. The token
+  carries the account's role: an Admin writes every game's Shorts, a BfvAdmin
+  only Battlefield Vietnam's. `--status` says who it is and until when;
+  `--sign-out` revokes it, as does Sign out in the account's Signed-in apps.
+  Never print the file into the conversation. A sign-in unused for 60 days
+  lapses (`RefreshToken__Days`): sign in again.
 - **If the public route refuses an upload** (Cloudflare, ingress), go round
   it: `kubectl --context hetzner -n bf42-stats port-forward svc/bf42-stats-service 9223:8080`
   and upload with `--to=http://localhost:9223`.
@@ -508,9 +512,12 @@ loaded while the session waited.
 
 ## Verifying locally
 
-Run the API on :9222 with a throwaway key and a scratch recordings folder
-(`Recordings__Path=<scratch> Shorts__UploadKey=local-test-key dotnet run`
-in `api/`), upload with `--to=http://localhost:9222`, and open the viewer's
+Run the API on :9222 with the dev sign-in and a scratch recordings folder
+(`Recordings__Path=<scratch> dotnet run` in `api/`, the Development
+environment), sign the job in against it once with
+`SHORTS_SIGN_IN=~/.config/bfstats/shorts-sign-in.local.json node scripts/shorts-sign-in.mjs --site=http://localhost:5173 --api=http://localhost:9222`
+(the UI's dev server for the Allow page), upload with the same
+`SHORTS_SIGN_IN` and `--to=http://localhost:9222`, and open the viewer's
 `play/index.html?tab=replay&api=http://localhost:9222`. Playwright's bundled
 Chromium has no H.264: drive `/usr/bin/google-chrome-stable` to play the
 videos.
@@ -585,8 +592,7 @@ videos.
   any live video still not H.264/AAC (features/replay-shorts/README.md, "A
   studio share iPhones cannot play"). To check one: `ffprobe` the
   `og:video` URL; it must say `h264` and `aac`.
-- **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
-  was made with `--from-file` from `openssl rand -hex 32`, whose newline went
-  into the secret. The API now trims the configured key; still write the
-  key file with `printf '%s'`. A changed secret only reaches the API when its
-  pod restarts (a deploy, or `rollout restart deploy/bf42-stats`).
+- **Every upload 401 or 403**: the Shorts job's sign-in is missing, lapsed
+  or signed out (the tool says so and names the fix: run
+  `node scripts/shorts-sign-in.mjs`), or the account that allowed it is not an
+  admin (403). `node scripts/shorts-sign-in.mjs --status` tells which.

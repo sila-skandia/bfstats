@@ -34,8 +34,8 @@ if [[ ! -e $CHECKOUT/ui/node_modules && -d $REPO/ui/node_modules ]]; then
   ln -s "$REPO/ui/node_modules" "$CHECKOUT/ui/node_modules"
 fi
 mkdir -p "$HOME/.cache/bfstats-shorts"
-[[ -s $HOME/.config/bfstats/shorts-upload-key ]] \
-  || echo "note: no upload key at ~/.config/bfstats/shorts-upload-key; the nightly will do nothing until there is one"
+[[ -s ${SHORTS_SIGN_IN:-$HOME/.config/bfstats/shorts-sign-in.json} ]] \
+  || echo "note: the Shorts job is not signed in; run node scripts/shorts-sign-in.mjs once (a browser, an admin account), or the nightly does nothing"
 
 if [[ $(uname) == Darwin ]]; then
   DEST=$HOME/Library/LaunchAgents/io.bfstats.shorts.plist

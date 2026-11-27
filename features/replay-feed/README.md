@@ -268,8 +268,8 @@ nobody at a browser. The cover job films one:
 - **A bad frame is thrown away** and the next moment tried: nearly black,
   nearly white, one flat colour, or a smooth gradient (open sky, a fog bank;
   the mean step between neighbouring pixels under 2.5).
-- **Upload**: `PUT /stats/recordings/<slug>/filmed-cover` with the Shorts
-  render job's key (`X-Shorts-Key`), the JPEG as the body. The API re-encodes
+- **Upload**: `PUT /stats/recordings/<slug>/filmed-cover` as an admin, the Shorts
+  render job's sign-in (scripts/shorts-sign-in.mjs), the JPEG as the body. The API re-encodes
   it as any cover. A recording that has a cover answers 409 and keeps it: a
   frame somebody picked is never written over, and F still replaces a filmed
   one.
@@ -286,7 +286,7 @@ level, some of them dim where the level is.
 
 ```bash
 node scripts/recording-covers.mjs --recordings=5 --gpu --channel=chrome           # film, keep the files
-SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/recording-covers.mjs --recordings=5 --gpu --channel=chrome --upload
+node scripts/recording-covers.mjs --recordings=5 --gpu --channel=chrome --upload
 node scripts/recording-covers.mjs --recording=<slug> --gpu --channel=chrome       # one, cover or not
 ```
 
@@ -351,7 +351,7 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 | `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
 | `PATCH`, `DELETE /{slug}` | rename, remove (uploader or admin) |
 | `PUT /{slug}/thumbnail` | the cover, re-encoded by ImageSharp as a JPEG no wider than 640 px, so what is served is an image this code made |
-| `PUT /{slug}/filmed-cover` | the cover of a recording that has none, from the cover job, with the Shorts render job's key (`X-Shorts-Key`); 409 for one that has a cover, 401 without the key |
+| `PUT /{slug}/filmed-cover` | the cover of a recording that has none, from the cover job, as an admin (the Shorts render job's sign-in); 401 signed out, 403 not an admin, 409 for one that has a cover, 401 without the key |
 | `POST /{slug}/views` | a view (202) |
 | `GET`, `POST /{slug}/comments`, `DELETE /{slug}/comments/{id}` | comments, each with its `reactions` (`[{ kind, count, mine }]`, below, "Likes and reactions"); `sort=time` is round order, `sort=top` the most reacted to first, then the newest. Deleting is for the author, the recording's uploader or an admin. |
 | `PUT`, `DELETE /{slug}/comments/{id}/reactions/{kind}` | like or react to a comment, or take it back; answers the comment's `reactions`. Any signed-in account, linked name or not. An unknown kind is a 400. |

@@ -107,8 +107,6 @@ let cached = null;
  * Throws a SignInError, which names the way to fix it, when there is no usable sign-in.
  */
 export async function shortsAuth() {
-  // TRANSITION (2026-11-27): the old upload key, until the nightly has signed in. Goes with the key.
-  if (!cached && !readSignIn() && process.env.SHORTS_UPLOAD_KEY) return { 'X-Shorts-Key': process.env.SHORTS_UPLOAD_KEY };
   if (!fresh(cached)) {
     const signIn = readSignIn();
     cached = fresh(signIn) ? signIn : await refresh();

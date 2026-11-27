@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using api.Authorization;
 using api.Recordings;
 using api.Recordings.Models;
 using Microsoft.AspNetCore.Http;
@@ -204,28 +206,33 @@ public sealed class RecordingsControllerTests : IDisposable
         Assert.StartsWith("Bocage · Conquest · 14:43 · MoonGamers.com", line, StringComparison.Ordinal);
     }
 
-    /// <summary>The cover job's frame goes in with the Shorts render job's key and nothing
-    /// else: no key, a wrong one, or no key configured at all is a 401 that never reaches
-    /// the recording.</summary>
+    /// <summary>The cover job's frame goes in as an admin, the Shorts job's app sign-in
+    /// (scripts/shorts-sign-in.mjs): signed out is a 401, a signed-in non-admin a 403, and the
+    /// retired upload key (2026-11-27) is no way in. None of those reaches the recording.</summary>
     [Theory]
-    [InlineData("the-key", "the-key", true)]
-    [InlineData("the-key", "another", false)]
-    [InlineData("the-key", "", false)]
-    [InlineData("", "", false)]
-    public async Task SetFilmedCover_TakesTheRenderJobsKeyOnly(string configured, string sent, bool allowed)
+    [InlineData(null, null, StatusCodes.Status401Unauthorized)]
+    [InlineData(null, "the-key", StatusCodes.Status401Unauthorized)]
+    [InlineData(AppRoles.User, null, StatusCodes.Status403Forbidden)]
+    [InlineData(AppRoles.BfvAdmin, null, StatusCodes.Status403Forbidden)]
+    [InlineData(AppRoles.Admin, null, StatusCodes.Status200OK)]
+    public async Task SetFilmedCover_TakesAnAdminOnly(string? role, string? key, int status)
     {
         recordings.SetFilmedThumbnailAsync(Slug, Arg.Any<Stream>(), Arg.Any<CancellationToken>()).Returns(Detail());
-        if (sent.Length > 0) controller.Request.Headers[api.Shorts.ShortsController.KeyHeader] = sent;
-        var shorts = Options.Create(new api.Shorts.ShortsOptions { UploadKey = configured });
+        if (key is not null) controller.Request.Headers["X-Shorts-Key"] = key;
+        if (role is not null)
+        {
+            controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "99"), new Claim(ClaimTypes.Role, role), new Claim("client", "bfstats-shorts")], "test"));
+        }
 
-        var result = (await controller.SetFilmedCover(Slug, shorts, CancellationToken.None)).Result;
+        var result = (await controller.SetFilmedCover(Slug, CancellationToken.None)).Result;
 
-        if (allowed)
+        if (status == StatusCodes.Status200OK)
         {
             Assert.IsType<OkObjectResult>(result);
             return;
         }
-        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Equal(status, Assert.IsType<ObjectResult>(result).StatusCode);
         await recordings.DidNotReceiveWithAnyArgs().SetFilmedThumbnailAsync(default!, default!, default);
     }
 
@@ -248,10 +255,10 @@ public sealed class RecordingsControllerTests : IDisposable
     {
         recordings.SetFilmedThumbnailAsync(Slug, Arg.Any<Stream>(), Arg.Any<CancellationToken>())
             .Returns<Task<RecordingDetailDto?>>(_ => throw new RecordingRejectedException("This recording already has a cover.", StatusCodes.Status409Conflict));
-        controller.Request.Headers[api.Shorts.ShortsController.KeyHeader] = "the-key";
+        controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "99"), new Claim(ClaimTypes.Role, AppRoles.Admin)], "test"));
 
-        var result = (await controller.SetFilmedCover(
-            Slug, Options.Create(new api.Shorts.ShortsOptions { UploadKey = "the-key" }), CancellationToken.None)).Result;
+        var result = (await controller.SetFilmedCover(Slug, CancellationToken.None)).Result;
 
         Assert.Equal(StatusCodes.Status409Conflict, Assert.IsType<ObjectResult>(result).StatusCode);
     }

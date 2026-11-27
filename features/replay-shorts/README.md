@@ -48,18 +48,48 @@ of the hit flash. Silent: the sound tap is real time only. On this PC's
 Intel GPU (`--gpu`): about 25 s to film a 10.5 s Short, 2.5-3 min to load a
 recording, once per recording.
 
-**Uploading.** `X-Shorts-Key` against `Shorts__UploadKey`, from the
-Kubernetes secret `bfstats-shorts` (key `upload-key`, optional in
-`deploy/app/deployment.yaml`); a signed-in admin can upload too. The same
+**Uploading.** As a signed-in admin: the render job is one through its app
+sign-in (below, "Signing in"). The same
 kill uploaded twice returns the first (keyed `slug:killTime(2dp):victim`).
 Files go on the recordings volume under `shorts/` and count against the
 recordings' quota.
 
 ```
 node scripts/shorts-runner.mjs --recordings=6 --max=2 --gpu            # film the newest, keep the files
-SHORTS_UPLOAD_KEY=... node scripts/shorts-runner.mjs --upload-filmed     # upload what was filmed
-SHORTS_UPLOAD_KEY=... node scripts/shorts-runner.mjs --gpu --upload      # both in one run
+node scripts/shorts-runner.mjs --upload-filmed                           # upload what was filmed
+node scripts/shorts-runner.mjs --gpu --upload                            # both in one run
 ```
+
+**Signing in (2026-11-27).** The owner: the render job should authenticate
+the way bfv.bfstats.io's Shorts do, through the API with roles and app
+tokens; with plain role-based access there is no reason to keep a key just
+for Shorts. So the upload key (`X-Shorts-Key` against `Shorts__UploadKey`,
+secret `bfstats-shorts`, used from 2026-11-03) is gone, and the job is an app
+sign-in client of its own, `bfstats-shorts` (`AppSignInRules.ShortsClient`):
+the relay's loopback hand-off (features/app-sign-in) under its own name, so it
+shows as "bfstats Shorts job" in the account's Signed-in apps and can be
+signed out there. Its access token is the normal one with the account's role,
+a week long, unlike bfv-site's, which is a plain user's for 15 minutes.
+
+- `node scripts/shorts-sign-in.mjs` once, in a browser: sign in on bfstats.io
+  as an admin, press Allow. It keeps the sign-in in
+  `~/.config/bfstats/shorts-sign-in.json` (mode 600; `SHORTS_SIGN_IN` names
+  another, for a local API) and checks the account may write with the
+  prune's dry run. `--status` says who and until when; `--sign-out` revokes.
+- `scripts/shorts-auth.mjs` is what every tool calls (runner, prune, colour,
+  covers, action roll, weekly recap): the token while it has a day left, else
+  a refresh. The refresh token rotates and the API revokes the whole sign-in
+  when a spent one comes back, so a refresh holds a lock beside the file and
+  reads it again inside it: tools started together refresh once. A tool that
+  will upload checks the sign-in before it films, so a lapsed one stops at
+  once with the fix named, not after an hour.
+- What the token may do is the account's role, read by the actions as for a
+  browser: an Admin uploads, replaces, deletes and prunes every game's Shorts
+  (`WriterAsync` answers no game: the prune sweeps all) and sets filmed covers;
+  a BfvAdmin only Battlefield Vietnam's (`GameWriterAsync`, the prune held to
+  `bfv`), and no covers. Signed out is 401, a signed-in non-writer 403.
+- A sign-in unused for 60 days lapses (`RefreshToken__Days`). The nightly
+  refreshes it about weekly, so it lasts while the nightly runs.
 
 Files are kept under `~/.cache/bfstats-shorts/<recording>/<kill>/`
 (`short.mp4`, `poster.jpg`, `meta.json`). `--to=<api>` uploads somewhere
@@ -1109,7 +1139,7 @@ so they ride the Shorts API as kind `roll`:
   is not on that path). Cloudflare passes at most 100 MB in one request, so a
   4K roll cannot be uploaded through `https://bfstats.io` in one request.
 - Chunked uploads, so it can (and a nightly job needs no kubectl):
-  `POST /stats/shorts/parts?upload=<id>&index=<n>` with `X-Shorts-Key`, a raw
+  `POST /stats/shorts/parts?upload=<id>&index=<n>` as an admin, a raw
   body of at most 90 MiB (`MaxPartBytes`), `id` a client-made `[a-z0-9]{16,32}`
   token and `n` 0-63. Each part lands in `.incoming/shorts-parts/<id>.<n>.part`
   (a subfolder: the recordings' sweep takes loose `.incoming/*.part` after two
@@ -1127,7 +1157,8 @@ they have 0-1 views >= week old". Retention runs from the nightly Shorts job,
 never by itself (the owner, 2026-11-12: "do the pruning via a re-usable job,
 it can sit in the short scheduled job"): nothing prunes on start-up or on a
 timer. The job calls `POST /stats/shorts/prune?dryRun=<bool>` with
-`X-Shorts-Key` (or as an admin; anonymous is 401, a signed-in non-admin 403),
+the Shorts job's admin sign-in (anonymous is 401, a signed-in non-admin 403;
+a BfvAdmin prunes Battlefield Vietnam's alone),
 which answers `{ dryRun, pruned: [{ slug, kind, ageDays, views }], partsSwept }`.
 Every Short whose `CreatedAt` is `RetentionDays` (7) or more ago with
 `RetentionMaxViews` (1) views or fewer loses its files (video, HD copy,

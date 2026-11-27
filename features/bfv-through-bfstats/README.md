@@ -197,6 +197,12 @@ staging or a local bfstats API (whose `Cors__SiteOrigins` must name that origin)
 
 ## Facts this rests on (checked 2026-11-27)
 
+- bfstats' own Shorts job writes the same way since 2026-11-27: an app
+  sign-in (client `bfstats-shorts`) whose token carries the account's role,
+  read by the same `WriterAsync` / `MayChangeAsync` as bfv's BfvAdmin writes.
+  The separate upload key (`Shorts__UploadKey`, secret `bfstats-shorts`) is
+  gone (features/replay-shorts, "Signing in").
+
 - One node (`bfstats-arm64`); bfv's disk is a hostPath PV, `ReadWriteOnce`,
   already mounted by both `bfv-files-0` and `bfv-site`.
 - bfv's upload sidecar: `python:3.13-alpine`, code from configmap, no key check

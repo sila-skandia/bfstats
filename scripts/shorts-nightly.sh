@@ -21,13 +21,7 @@ echo "=== $(date -Iseconds) start ==="
 # (scripts/shorts-sign-in.mjs, once, in a browser; features/replay-shorts,
 # "Signing in"). Check it first, refreshing it if it is due, so a lapsed
 # sign-in stops the night here rather than after an hour of filming.
-# TRANSITION (2026-11-27): the old upload key, until this machine has signed in.
-KEY_FILE=$HOME/.config/bfstats/shorts-upload-key
-if [[ ! -s $SIGN_IN && -s $KEY_FILE ]]; then
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE")
-  export SHORTS_UPLOAD_KEY
-  echo "no Shorts sign-in yet; using the old upload key"
-elif ! (cd "$REPO" && node scripts/shorts-sign-in.mjs --status); then
+if ! (cd "$REPO" && node scripts/shorts-sign-in.mjs --status); then
   echo "no usable Shorts sign-in at $SIGN_IN; run node scripts/shorts-sign-in.mjs once. Nothing done"
   exit 1
 fi

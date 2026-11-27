@@ -6,7 +6,7 @@
 // press Allow. The sign-in is kept in ~/.config/bfstats/shorts-sign-in.json
 // (SHORTS_SIGN_IN), which every Shorts tool reads (scripts/shorts-auth.mjs).
 //
-//   node scripts/shorts-sign-in.mjs [--site=https://bfstats.io] [--api=<site>] [--device=<name>] [--no-open]
+//   node scripts/shorts-sign-in.mjs [--site=https://bfstats.io] [--api=<site>] [--device=<name>] [--no-open] [--wait=<minutes>]
 //   node scripts/shorts-sign-in.mjs --status      who it is signed in as, and until when
 //   node scripts/shorts-sign-in.mjs --sign-out    revoke it and remove the file
 //
@@ -16,7 +16,6 @@ import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer } from 'node:http';
-import os from 'node:os';
 import { SHORTS_CLIENT, SIGN_IN_FILE, readSignIn, shortsAuth, signInFrom, writeSignIn } from './shorts-auth.mjs';
 
 const args = process.argv.slice(2);
@@ -26,7 +25,10 @@ const opt = (name, fallback) => {
 };
 const SITE = opt('site', 'https://bfstats.io').replace(/\/$/, '');
 const API = opt('api', SITE).replace(/\/$/, '');
-const DEVICE = opt('device', `${os.hostname().replace(/\.local$/, '')} (Shorts job)`);
+// Not the hostname: a Mac's is often its owner's name, and the Allow page and Signed-in apps show it.
+const DEVICE = opt('device', 'Shorts nightly');
+/** How long to wait for Allow; the one-time code itself lives two minutes once Allow is pressed. */
+const WAIT_MINUTES = Number(opt('wait', 10));
 
 if (args.includes('--status')) {
   const signIn = readSignIn();
@@ -34,7 +36,12 @@ if (args.includes('--status')) {
     console.log(`not signed in (${SIGN_IN_FILE})`);
     process.exit(1);
   }
-  await shortsAuth();
+  try {
+    await shortsAuth();
+  } catch (e) {
+    console.log(e.message);
+    process.exit(1);
+  }
   const now = readSignIn();
   console.log(`signed in to ${now.api} as ${now.user?.username} (account ${now.user?.id})`);
   console.log(`access token until ${now.expiresAt}, sign-in until ${now.refreshExpiresAt}`);
@@ -89,9 +96,9 @@ if (!args.includes('--no-open')) {
 }
 
 const timeout = setTimeout(() => {
-  console.error('no answer from the browser within 10 minutes; run it again');
+  console.error(`no answer from the browser within ${WAIT_MINUTES} minutes; run it again`);
   process.exit(1);
-}, 10 * 60_000);
+}, WAIT_MINUTES * 60_000);
 const back = await callback;
 clearTimeout(timeout);
 listener.close();

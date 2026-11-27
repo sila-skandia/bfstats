@@ -17,9 +17,10 @@ namespace api.Shorts;
 /// <summary>
 /// Replay Shorts (features/replay-shorts): short 9:16 clips of notable kills cut from the
 /// shared recordings. Reading is public and open to any origin, as the recordings' is.
-/// Uploading and taking one down is for the render job, which sends <c>X-Shorts-Key</c>, or a
-/// signed-in admin. No <c>[Authorize]</c> on those actions: the key way in has no JWT, and the
-/// action decides.
+/// Uploading and taking one down is for a signed-in admin: the render job is one, through its
+/// app sign-in (client <c>bfstats-shorts</c>, scripts/shorts-sign-in.mjs), whose token carries
+/// the account's role. No <c>[Authorize]</c> on those actions: a creator who shared a Short and a
+/// BfvAdmin may too, so the action decides, and answers 401 or 403 as it does.
 /// </summary>
 [ApiController]
 [Route("stats/shorts")]
@@ -28,11 +29,8 @@ public class ShortsController(
     ShortStorage storage,
     IShortViewCounter views,
     IConfiguration configuration,
-    IOptions<ShortsOptions> options,
     IOptions<RecordingsOptions> recordingOptions) : ControllerBase
 {
-    public const string KeyHeader = "X-Shorts-Key";
-
     /// <summary>The rate limit on a player's shares: 10 an hour per account.</summary>
     public const string ShareLimit = "shorts-share";
 
@@ -295,8 +293,8 @@ public class ShortsController(
         return Ok(await shorts.PruneUnwatchedAsync(dryRun, ct, onlyGame));
     }
 
-    /// <summary>Null when the request may change or take down the Short: the key, an admin, or
-    /// the creator who shared it.</summary>
+    /// <summary>Null when the request may change or take down the Short: an admin, the creator
+    /// who shared it, or a BfvAdmin for a Battlefield Vietnam Short.</summary>
     private async Task<ObjectResult?> MayChangeAsync(string slug, CancellationToken ct)
     {
         if (Refusal() is not { } refusal) return null;
@@ -307,15 +305,13 @@ public class ShortsController(
     }
 
     /// <summary>
-    /// Who may upload: the key or an admin, for any game (null game); else an account whose role
+    /// Who may upload or prune: an admin, for any game (null game); else an account whose role
     /// writes one game's Shorts (<see cref="AppRoles.BfvAdmin"/>, features/bfv-through-bfstats),
     /// held to that game. A bfv-site token is a plain user's, so the role is read from the account.
     /// </summary>
     private async Task<(ObjectResult? Refusal, string? OnlyGame)> WriterAsync(CancellationToken ct)
     {
         if (Refusal() is not { } refusal) return (null, null);
-        // A wrong key is a 401 whoever is signed in.
-        if (Request.Headers.ContainsKey(KeyHeader)) return (refusal, null);
         return UserId() is { } userId && await shorts.GameWriterAsync(userId, ct) is { } game ? (null, game) : (refusal, null);
     }
 
@@ -366,40 +362,17 @@ public class ShortsController(
         return PhysicalFile(path, contentType, enableRangeProcessing: true);
     }
 
-    /// <summary>
-    /// Null when the request may write: it carries the configured upload key, or comes from a
-    /// signed-in admin. A key that is sent and wrong is a 401 whoever is signed in; an empty
-    /// configured key turns that way in off.
-    /// </summary>
+    /// <summary>Null when the request comes from a signed-in admin; else the 401 (not signed in)
+    /// or 403 (signed in, not an admin) it answers, unless the caller lets it through another way.</summary>
     private ObjectResult? Refusal()
     {
-        if (Request.Headers.TryGetValue(KeyHeader, out var sent) && sent.ToString().Length > 0)
-        {
-            return KeyMatches(sent.ToString(), options.Value.UploadKey)
-                ? null
-                : StatusCode(StatusCodes.Status401Unauthorized, new { message = "The upload key is not right." });
-        }
         if (User.Identity?.IsAuthenticated != true)
         {
-            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "Sign in as an admin, or send the upload key." });
+            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "Sign in as an admin." });
         }
         return IsAdmin()
             ? null
             : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only an admin can do that." });
-    }
-
-    /// <summary>Whether <paramref name="sent"/> is the configured key. Whitespace round the
-    /// configured key is not part of it: a secret made with <c>--from-file</c> from
-    /// <c>openssl rand -hex 32</c> carries the file's newline, which no header can send
-    /// (2026-11-03, every upload refused).</summary>
-    internal static bool KeyMatches(string sent, string configured)
-    {
-        configured = configured?.Trim() ?? "";
-        sent = sent.Trim();
-        if (configured.Length == 0) return false;
-        var a = SHA256.HashData(Encoding.UTF8.GetBytes(sent));
-        var b = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
-        return CryptographicOperations.FixedTimeEquals(a, b);
     }
 
     private bool IsAdmin() =>

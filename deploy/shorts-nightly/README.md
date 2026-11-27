@@ -26,9 +26,11 @@ The unit files are templates: `__CHECKOUT__` and `__HOME__` are filled in by
 
 ## Install
 
-1. Put the upload key in `~/.config/bfstats/shorts-upload-key` (mode 600,
-   no trailing newline: `printf '%s' "$KEY" > ...`). It is the `upload-key`
-   of the `bfstats-shorts` secret in the `bf42-stats` namespace.
+1. Sign the Shorts job in, once: `node scripts/shorts-sign-in.mjs` opens
+   bfstats.io's Allow page; sign in there as an admin and press Allow. The
+   sign-in is kept in `~/.config/bfstats/shorts-sign-in.json` (mode 600) and
+   refreshed by the tools as it falls due; the nightly checks it first and
+   does nothing without it (features/replay-shorts, "Signing in").
 2. Have `ui/node_modules` installed in this checkout (`npm ci` in `ui/`);
    the nightly's worktree links to it.
 3. From this checkout:

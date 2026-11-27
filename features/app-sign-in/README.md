@@ -44,8 +44,10 @@ bodies and the `Authorization` header.
 
 Rules:
 
-- **`client`** is `bfstats-relay`, the one known client. Anything else is
-  a 400.
+- **`client`** is `bfstats-relay`, `bfv-site` (features/bfv-through-bfstats)
+  or `bfstats-shorts`, the Replay Shorts job (features/replay-shorts,
+  "Signing in"; the relay's loopback rule, a token with the account's role).
+  Anything else is a 400.
 - **`device`** is free text the app sends (its hostname), cut to 64
   characters and shown on the Allow page and in the sessions list.
 - **`redirectUri`** must be `http://127.0.0.1:<port>/callback` or

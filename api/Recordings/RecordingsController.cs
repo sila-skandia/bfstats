@@ -195,22 +195,23 @@ public class RecordingsController(
     /// <summary>Sets the cover of a recording that has none, from a frame the cover job
     /// filmed (scripts/recording-covers.mjs, the nightly's): most recordings come straight from
     /// a player's game with nobody at a browser to pick a frame, and a link to one previews
-    /// with its picture. The job sends the Shorts render job's key (<c>X-Shorts-Key</c>). A
+    /// with its picture. The job signs in as the Shorts render job does, an admin's app sign-in
+    /// (scripts/shorts-sign-in.mjs); anyone else is a 401 (signed out) or 403. A
     /// recording that has a cover keeps it (409). The body is the image whatever type it is
     /// sent as: sent as a form (curl's default for a body), MVC would read it as one before
     /// the action ran and fail on the bytes, a 500 (seen on the live API, 2026-11-23).</summary>
     [HttpPut("{slug:length(10)}/filmed-cover")]
     [RequestSizeLimit(RecordingThumbnails.MaxBytes + 1)]
     [DisableFormValueModelBinding]
-    public async Task<ActionResult<RecordingDetailDto>> SetFilmedCover(
-        string slug, [FromServices] IOptions<api.Shorts.ShortsOptions> shorts, CancellationToken ct)
+    public async Task<ActionResult<RecordingDetailDto>> SetFilmedCover(string slug, CancellationToken ct)
     {
-        var sent = Request.Headers[api.Shorts.ShortsController.KeyHeader].ToString();
-        var admin = User.Identity?.IsAuthenticated == true
-            && (User.IsInRole(api.Authorization.AppRoles.Admin) || api.Authorization.AppRoles.HasAdminEmail(User));
-        if (!admin && !api.Shorts.ShortsController.KeyMatches(sent, shorts.Value.UploadKey))
+        if (User.Identity?.IsAuthenticated != true)
         {
-            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "The upload key is not right." });
+            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "Sign in as an admin." });
+        }
+        if (!User.IsInRole(api.Authorization.AppRoles.Admin) && !api.Authorization.AppRoles.HasAdminEmail(User))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only an admin can do that." });
         }
         try
         {

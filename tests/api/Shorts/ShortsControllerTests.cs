@@ -29,7 +29,11 @@ namespace api.tests.Shorts;
 /// </summary>
 public sealed class ShortsControllerTests : IDisposable
 {
-    private const string UploadKey = "render-job-key";
+    /// <summary>The render job as the API sees it: an admin account's app sign-in
+    /// (client bfstats-shorts, scripts/shorts-sign-in.mjs), not the creator's account 7.</summary>
+    private static readonly ClaimsPrincipal RenderJob = new(new ClaimsIdentity(
+        [new Claim(ClaimTypes.NameIdentifier, "99"), new Claim(ClaimTypes.Role, AppRoles.Admin), new Claim("client", "bfstats-shorts")],
+        "test"));
     private const string RecordingSlug = "abcdefghjk";
 
     private static readonly byte[] Mp4 = [0, 0, 0, 0x18, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m', 1, 2, 3, 4];
@@ -56,7 +60,7 @@ public sealed class ShortsControllerTests : IDisposable
         Directory.CreateDirectory(bfvDirectory);
         storage = new ShortStorage(recordings,
             new RecordingStores(recordings, new RecordingStorage(bfvDirectory, long.MaxValue, 0, 0, guarded: true)));
-        service = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+        service = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions()),
             NullLogger<ShortService>.Instance);
         counter = new ShortViewCounter(
             new ServiceCollection().AddSingleton(db).BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
@@ -78,11 +82,9 @@ public sealed class ShortsControllerTests : IDisposable
         }
     }
 
-    private ShortsController Controller(string? key = null, ClaimsPrincipal? user = null, string configuredKey = UploadKey,
-        IShortService? with = null)
+    private ShortsController Controller(ClaimsPrincipal? user = null, IShortService? with = null)
     {
         var context = new DefaultHttpContext();
-        if (key is not null) context.Request.Headers[ShortsController.KeyHeader] = key;
         if (user is not null) context.User = user;
         var services = new ServiceCollection().AddLogging()
             .AddSingleton<IActionResultExecutor<PhysicalFileResult>, PhysicalFileResultExecutor>()
@@ -90,7 +92,6 @@ public sealed class ShortsControllerTests : IDisposable
         context.RequestServices = services;
         return new ShortsController(
             with ?? service, storage, counter, new ConfigurationBuilder().Build(),
-            MsOptions.Create(new ShortsOptions { UploadKey = configuredKey }),
             MsOptions.Create(new RecordingsOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = context },
@@ -153,7 +154,7 @@ public sealed class ShortsControllerTests : IDisposable
 
     private async Task<ShortDto> UploadAsync(object? meta = null, byte[]? videoHd = null)
     {
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, meta ?? Meta(), videoHd: videoHd);
         var result = await controller.Upload(default);
         var created = Assert.IsType<CreatedAtActionResult>(result.Result);
@@ -182,14 +183,6 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
     }
 
-    [Theory]
-    [InlineData("render-job-key", "render-job-key\n", true)]
-    [InlineData("render-job-key", "  render-job-key \r\n", true)]
-    [InlineData("render-job-key", "render-job-kez\n", false)]
-    [InlineData("render-job-key", "\n", false)]
-    public void Key_IgnoresWhitespaceRoundTheConfiguredKey(string sent, string configured, bool matches) =>
-        Assert.Equal(matches, ShortsController.KeyMatches(sent, configured));
-
     [Fact]
     public async Task Upload_AnOwnGoal_IsTaken()
     {
@@ -204,7 +197,7 @@ public sealed class ShortsControllerTests : IDisposable
         var first = await UploadAsync();
         var before = ShortFiles().Select(f => (f, File.GetLastWriteTimeUtc(f))).ToList();
 
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, Meta(title: "Another title"));
         var ok = Assert.IsType<OkObjectResult>((await controller.Upload(default)).Result);
         var again = Assert.IsType<ShortDto>(ok.Value);
@@ -216,14 +209,14 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
     }
 
+    /// <summary>Signed out is a 401, and the retired upload key (2026-11-27) is no way in.</summary>
     [Theory]
-    [InlineData("wrong-key", UploadKey, null)]
-    [InlineData(null, UploadKey, null)]
-    [InlineData(UploadKey, "", null)]
-    [InlineData("wrong-key", UploadKey, true)]
-    public async Task Upload_WithoutTheKeyOrAnAdmin_IsRefused(string? key, string configured, bool? admin)
+    [InlineData(null)]
+    [InlineData("render-job-key")]
+    public async Task Upload_SignedOut_IsRefused_KeyOrNot(string? key)
     {
-        var controller = Controller(key, admin is null ? null : User(admin.Value), configured);
+        var controller = Controller();
+        if (key is not null) controller.Request.Headers["X-Shorts-Key"] = key;
         await Body(controller, Meta());
 
         var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
@@ -240,7 +233,7 @@ public sealed class ShortsControllerTests : IDisposable
         await Body(user, Meta());
         Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>((await user.Upload(default)).Result).StatusCode);
 
-        var admin = Controller(user: User(admin: true), configuredKey: "");
+        var admin = Controller(user: User(admin: true));
         await Body(admin, Meta());
         Assert.IsType<CreatedAtActionResult>((await admin.Upload(default)).Result);
     }
@@ -248,12 +241,12 @@ public sealed class ShortsControllerTests : IDisposable
     [Fact]
     public async Task Upload_NotAnMp4_OrNotAJpeg_IsRefused()
     {
-        var notMp4 = Controller(UploadKey);
+        var notMp4 = Controller(RenderJob);
         await Body(notMp4, Meta(), video: Encoding.ASCII.GetBytes("<html>not a video</html>"));
         var refused = Assert.IsType<ObjectResult>((await notMp4.Upload(default)).Result);
         Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
 
-        var notJpeg = Controller(UploadKey);
+        var notJpeg = Controller(RenderJob);
         await Body(notJpeg, Meta(), poster: [0x89, (byte)'P', (byte)'N', (byte)'G']);
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>((await notJpeg.Upload(default)).Result).StatusCode);
 
@@ -278,7 +271,7 @@ public sealed class ShortsControllerTests : IDisposable
             "length" => new { recordingSlug = RecordingSlug, killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 500.0 },
             _ => new { recordingSlug = "short", killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 10.0 },
         };
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, meta);
 
         var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
@@ -527,7 +520,7 @@ public sealed class ShortsControllerTests : IDisposable
             Assert.IsType<ObjectResult>(await Controller(user: User(false)).Delete(dto.Slug, default)).StatusCode);
         Assert.Equal(1, await db.ReplayShorts.CountAsync());
 
-        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(dto.Slug, default));
+        Assert.IsType<NoContentResult>(await Controller(RenderJob).Delete(dto.Slug, default));
         Assert.Equal(0, await db.ReplayShorts.CountAsync());
         Assert.Equal(0, await db.ReplayShortPlayers.CountAsync());
         Assert.Empty(ShortFiles());
@@ -572,7 +565,7 @@ public sealed class ShortsControllerTests : IDisposable
 
         // The render job's own, by the key; none at all is a 404.
         var job = await UploadAsync();
-        Assert.IsType<OkObjectResult>((await PosterBody(Controller(UploadKey), better).SetPoster(job.Slug, default)).Result);
+        Assert.IsType<OkObjectResult>((await PosterBody(Controller(RenderJob), better).SetPoster(job.Slug, default)).Result);
         Assert.IsType<NotFoundResult>((await PosterBody(Controller(user: User(true)), better).SetPoster("zzzzzzzzzz", default)).Result);
     }
 
@@ -600,10 +593,10 @@ public sealed class ShortsControllerTests : IDisposable
         await db.SaveChangesAsync();
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures");
         var transcoder = new QueueTranscoder();
-        var converting = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+        var converting = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions()),
             NullLogger<ShortService>.Instance, transcoder: transcoder);
         ShortsController Using(ClaimsPrincipal user) => new(converting, storage, counter, new ConfigurationBuilder().Build(),
-            MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }), MsOptions.Create(new RecordingsOptions()))
+            MsOptions.Create(new RecordingsOptions()))
         {
             ControllerContext = Controller(user: user).ControllerContext,
         };
@@ -689,13 +682,13 @@ public sealed class ShortsControllerTests : IDisposable
     public async Task Share_FlattensTheVideo_TheRenderJobsUploadIsLeft_AndFlattenRewritesOneLive()
     {
         var flattener = new StampFlattener();
-        var flattening = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+        var flattening = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions()),
             NullLogger<ShortService>.Instance, flattener);
-        ShortsController Using(string? key = null, ClaimsPrincipal? user = null)
+        ShortsController Using(ClaimsPrincipal? user = null)
         {
-            var c = Controller(key, user);
+            var c = Controller(user);
             return new ShortsController(flattening, storage, counter, new ConfigurationBuilder().Build(),
-                MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }), MsOptions.Create(new RecordingsOptions()))
+                MsOptions.Create(new RecordingsOptions()))
             {
                 ControllerContext = c.ControllerContext,
             };
@@ -705,7 +698,7 @@ public sealed class ShortsControllerTests : IDisposable
         db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
 
-        var job = Using(UploadKey);
+        var job = Using(RenderJob);
         await Body(job, Meta());
         var uploaded = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await job.Upload(default)).Result).Value);
         Assert.Empty(flattener.Seen);
@@ -721,7 +714,7 @@ public sealed class ShortsControllerTests : IDisposable
         // One already live, flattened: a new link. Nobody signed in may not.
         Assert.Equal(StatusCodes.Status401Unauthorized,
             Assert.IsType<ObjectResult>((await Using().Flatten(uploaded.Slug, default)).Result).StatusCode);
-        var flat = Value(await Using(UploadKey).Flatten(uploaded.Slug, default));
+        var flat = Value(await Using(RenderJob).Flatten(uploaded.Slug, default));
         Assert.Equal($"/stats/shorts/{uploaded.Slug}.mp4?v={Mp4.Length + 4}", flat.VideoUrl);
     }
 
@@ -1000,7 +993,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.True(recap.Landscape);
 
         // A Short of one kill is still held to two minutes.
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, new { recordingSlug = RecordingSlug, killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 150.0 });
         var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
         Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
@@ -1009,7 +1002,7 @@ public sealed class ShortsControllerTests : IDisposable
     [Fact]
     public async Task Upload_AnHdCopyNotAnMp4_IsRefused()
     {
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, Meta(kind: ShortKinds.Roll), videoHd: Jpeg);
         var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
         Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
@@ -1020,11 +1013,11 @@ public sealed class ShortsControllerTests : IDisposable
     [Fact]
     public async Task Upload_ARollMayBeLarger_ThanAnotherKind()
     {
-        var limits = new ShortsOptions { UploadKey = UploadKey, MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64 };
+        var limits = new ShortsOptions { MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64 };
         var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
         async Task<int?> Send(object meta, int video, int? hd = null)
         {
-            var controller = Controller(UploadKey, with: small);
+            var controller = Controller(RenderJob, with: small);
             await Body(controller, meta, Mp4Of(video), videoHd: hd is { } h ? Mp4Of(h) : null);
             var result = (await controller.Upload(default)).Result;
             return result is ObjectResult o ? o.StatusCode : null;
@@ -1048,7 +1041,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(before + Mp4.Length + 50 + Jpeg.Length, await VolumeUsage.StoredBytesAsync(db, default));
         Assert.True(File.Exists(storage.HdVideoPath(dto.Slug)));
 
-        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(dto.Slug, default));
+        Assert.IsType<NoContentResult>(await Controller(RenderJob).Delete(dto.Slug, default));
         Assert.False(File.Exists(storage.HdVideoPath(dto.Slug)));
         Assert.Empty(ShortFiles());
     }
@@ -1056,7 +1049,7 @@ public sealed class ShortsControllerTests : IDisposable
     [Fact]
     public async Task SetLinkVideo_GivesTheShareLinkASmallLandscapeCopy_TheVolumeCountsIt_DeleteTakesIt()
     {
-        var limits = new ShortsOptions { UploadKey = UploadKey, MaxLinkVideoBytes = 64 };
+        var limits = new ShortsOptions { MaxLinkVideoBytes = 64 };
         var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
         var roll = await UploadAsync(Meta(kind: ShortKinds.Roll, title: "Action roll: Gazala"), Mp4Of(50));
         Assert.Null(roll.LinkVideoUrl);
@@ -1066,19 +1059,19 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(StatusCodes.Status401Unauthorized,
             Assert.IsType<ObjectResult>((await PosterBody(Controller(with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
         Assert.Equal(StatusCodes.Status400BadRequest,
-            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey, with: small), Jpeg).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(RenderJob, with: small), Jpeg).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
         Assert.Equal(StatusCodes.Status413PayloadTooLarge,
-            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey, with: small), Mp4Of(100)).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(RenderJob, with: small), Mp4Of(100)).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
         Assert.False(File.Exists(storage.LinkVideoPath(roll.Slug)));
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
 
         var before = await VolumeUsage.StoredBytesAsync(db, default);
-        var dto = Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default));
+        var dto = Value(await PosterBody(Controller(RenderJob, with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default));
         Assert.Equal($"/stats/shorts/{roll.Slug}.link.mp4?v=40", dto.LinkVideoUrl);
         Assert.Equal(before + 40, await VolumeUsage.StoredBytesAsync(db, default));
         Assert.IsType<PhysicalFileResult>(await Controller().LinkVideo(roll.Slug));
         // Sent again, it replaces the last.
-        Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default));
+        Value(await PosterBody(Controller(RenderJob, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default));
         Assert.Equal(30, new FileInfo(storage.LinkVideoPath(roll.Slug)).Length);
 
         // The share link names the small copy, 16:9, and the poster as the 1920x1080 it is.
@@ -1090,10 +1083,10 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Contains("<meta property=\"og:image:height\" content=\"1080\">", html);
         Assert.Contains($"<meta name=\"twitter:player:stream\" content=\"https://play.bfstats.io/stats/shorts/{roll.Slug}.link.mp4?v=30\">", html);
 
-        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(roll.Slug, default));
+        Assert.IsType<NoContentResult>(await Controller(RenderJob).Delete(roll.Slug, default));
         Assert.False(File.Exists(storage.LinkVideoPath(roll.Slug)));
         Assert.Empty(ShortFiles());
-        Assert.IsType<NotFoundResult>((await PosterBody(Controller(UploadKey, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default)).Result);
+        Assert.IsType<NotFoundResult>((await PosterBody(Controller(RenderJob, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default)).Result);
     }
 
     [Fact]
@@ -1105,15 +1098,15 @@ public sealed class ShortsControllerTests : IDisposable
         // Nobody signed in, a copy it does not know, not an MP4, no such Short: refused, nothing kept.
         Assert.Equal(StatusCodes.Status401Unauthorized,
             Assert.IsType<ObjectResult>((await PosterBody(Controller(), Mp4Of(70)).ReplaceVideo(dto.Slug, null, null, default)).Result).StatusCode);
-        Assert.IsType<BadRequestObjectResult>((await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo(dto.Slug, "4k", null, default)).Result);
+        Assert.IsType<BadRequestObjectResult>((await PosterBody(Controller(RenderJob), Mp4Of(70)).ReplaceVideo(dto.Slug, "4k", null, default)).Result);
         Assert.Equal(StatusCodes.Status400BadRequest,
-            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey), Jpeg).ReplaceVideo(dto.Slug, "main", null, default)).Result).StatusCode);
-        Assert.IsType<NotFoundResult>((await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo("zzzzzzzzzz", null, null, default)).Result);
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(RenderJob), Jpeg).ReplaceVideo(dto.Slug, "main", null, default)).Result).StatusCode);
+        Assert.IsType<NotFoundResult>((await PosterBody(Controller(RenderJob), Mp4Of(70)).ReplaceVideo("zzzzzzzzzz", null, null, default)).Result);
         Assert.Equal(before, await VolumeUsage.StoredBytesAsync(db, default));
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
 
         // The Short's own video, from the body: a new file, a new ?v=, the volume counts the growth.
-        var main = Value(await PosterBody(Controller(UploadKey), Mp4Of(70)).ReplaceVideo(dto.Slug, null, null, default));
+        var main = Value(await PosterBody(Controller(RenderJob), Mp4Of(70)).ReplaceVideo(dto.Slug, null, null, default));
         Assert.Equal($"/stats/shorts/{dto.Slug}.mp4?v=70", main.VideoUrl);
         Assert.Equal(70, new FileInfo(storage.VideoPath(dto.Slug)).Length);
         Assert.Equal(before + 70 - Mp4.Length, await VolumeUsage.StoredBytesAsync(db, default));
@@ -1124,13 +1117,13 @@ public sealed class ShortsControllerTests : IDisposable
         const string upload = "replacehdparts0001";
         Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 1, hd[40..]));
         Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 0, hd[..40]));
-        var withHd = Value(await PosterBody(Controller(UploadKey), []).ReplaceVideo(dto.Slug, "hd", upload, default));
+        var withHd = Value(await PosterBody(Controller(RenderJob), []).ReplaceVideo(dto.Slug, "hd", upload, default));
         Assert.Equal($"/stats/shorts/{dto.Slug}.hd.mp4?v=90", withHd.HdVideoUrl);
         Assert.Equal(hd, await File.ReadAllBytesAsync(storage.HdVideoPath(dto.Slug)));
         Assert.Empty(storage.Parts(upload));
 
         // The link copy too, the same as SetLinkVideo.
-        var link = Value(await PosterBody(Controller(UploadKey), Mp4Of(30)).ReplaceVideo(dto.Slug, "link", null, default));
+        var link = Value(await PosterBody(Controller(RenderJob), Mp4Of(30)).ReplaceVideo(dto.Slug, "link", null, default));
         Assert.Equal($"/stats/shorts/{dto.Slug}.link.mp4?v=30", link.LinkVideoUrl);
     }
 
@@ -1158,7 +1151,7 @@ public sealed class ShortsControllerTests : IDisposable
         var before = await VolumeUsage.StoredBytesAsync(db, default);
 
         // A dry run lists what it would take, and changes nothing.
-        var dry = Value<ShortPruneDto>(await Controller(UploadKey).Prune(dryRun: true, default));
+        var dry = Value<ShortPruneDto>(await Controller(RenderJob).Prune(dryRun: true, default));
         Assert.True(dry.DryRun);
         Assert.Equal([(unseen.Slug, ShortKinds.Roll, 7.0, 0), (once.Slug, ShortKinds.AirToAir, 7.0, 1)],
             dry.Pruned.Select(p => (p.Slug, p.Kind, p.AgeDays, p.Views)).ToList());
@@ -1168,7 +1161,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Single(storage.Parts("staleupload000002"));
         Assert.Equal(before, await VolumeUsage.StoredBytesAsync(db, default));
 
-        var run = Value<ShortPruneDto>(await Controller(UploadKey).Prune(dryRun: false, default));
+        var run = Value<ShortPruneDto>(await Controller(RenderJob).Prune(dryRun: false, default));
         Assert.False(run.DryRun);
         Assert.Equal(dry.Pruned, run.Pruned);
         Assert.Equal(1, run.PartsSwept);
@@ -1197,14 +1190,14 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(3, Value<ShortPlayersDto>(await Controller().Players(30, default)).Items.Single(p => p.Name == "Rut").Shorts);
 
         // The render job sending the kill again writes nothing.
-        var again = Controller(UploadKey);
+        var again = Controller(RenderJob);
         await Body(again, Meta(killTime: 2));
         Assert.IsType<OkObjectResult>((await again.Upload(default)).Result);
         Assert.False(File.Exists(storage.VideoPath(once.Slug)));
         Assert.Equal(5, await db.ReplayShorts.CountAsync());
 
         // An explicit delete still takes the row.
-        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(once.Slug, default));
+        Assert.IsType<NoContentResult>(await Controller(RenderJob).Delete(once.Slug, default));
         Assert.Equal(4, await db.ReplayShorts.CountAsync());
 
         Assert.False(File.Exists(storage.VideoPath(unseen.Slug)));
@@ -1216,24 +1209,33 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task Prune_WithoutTheKeyOrAnAdmin_IsRefused_AsTheUploadIs()
+    public async Task Prune_WithoutAnAdmin_IsRefused_AsTheUploadIs()
     {
         await UploadAsync();
         clock.Now += Duration.FromDays(8);
 
         Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>((await Controller().Prune(false, default)).Result).StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized,
-            Assert.IsType<ObjectResult>((await Controller("wrong-key").Prune(false, default)).Result).StatusCode);
+            Assert.IsType<ObjectResult>((await KeyOnly().Prune(false, default)).Result).StatusCode);
         Assert.Equal(StatusCodes.Status403Forbidden,
             Assert.IsType<ObjectResult>((await Controller(user: User(false)).Prune(false, default)).Result).StatusCode);
         Assert.Equal(0, await db.ReplayShorts.CountAsync(s => s.PrunedAt != null));
 
         Assert.Single(Value<ShortPruneDto>(await Controller(user: User(true)).Prune(true, default)).Pruned);
+        // The render job's app sign-in prunes every game's, as any admin does.
+        Assert.Single(Value<ShortPruneDto>(await Controller(RenderJob).Prune(true, default)).Pruned);
+
+        ShortsController KeyOnly()
+        {
+            var c = Controller();
+            c.Request.Headers["X-Shorts-Key"] = "render-job-key";
+            return c;
+        }
     }
 
     private async Task<int?> SendPart(string upload, int index, byte[] bytes)
     {
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         controller.HttpContext.Request.ContentType = "application/octet-stream";
         controller.HttpContext.Request.ContentLength = bytes.Length;
         controller.HttpContext.Request.Body = new MemoryStream(bytes);
@@ -1259,7 +1261,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(StatusCodes.Status400BadRequest, await SendPart(upload, -1, hd));
         Assert.Equal(StatusCodes.Status401Unauthorized, (await Controller().Part(upload, 0, default)).Result is ObjectResult o ? o.StatusCode : 0);
 
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, Meta(killTime: 40, kind: ShortKinds.Roll), videoUpload: upload, videoHdUpload: hdUpload);
         var dto = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await controller.Upload(default)).Result).Value);
 
@@ -1280,13 +1282,13 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 0, Mp4Of(100)));
         Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 2, new byte[100]));
 
-        var controller = Controller(UploadKey);
+        var controller = Controller(RenderJob);
         await Body(controller, Meta(kind: ShortKinds.Roll), videoUpload: upload);
         var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
         Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
         Assert.Contains("missing part 1", refused.Value!.ToString());
 
-        var none = Controller(UploadKey);
+        var none = Controller(RenderJob);
         await Body(none, Meta(kind: ShortKinds.Roll), videoUpload: "neversentupload01");
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>((await none.Upload(default)).Result).StatusCode);
 
@@ -1298,11 +1300,11 @@ public sealed class ShortsControllerTests : IDisposable
     [Fact]
     public async Task Upload_InParts_IsHeldToTheKindsLimit()
     {
-        var limits = new ShortsOptions { UploadKey = UploadKey, MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64, MaxPartBytes = 50 };
+        var limits = new ShortsOptions { MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64, MaxPartBytes = 50 };
         var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
         async Task<int?> Part(string upload, int index, byte[] bytes)
         {
-            var c = Controller(UploadKey, with: small);
+            var c = Controller(RenderJob, with: small);
             c.HttpContext.Request.ContentLength = bytes.Length;
             c.HttpContext.Request.Body = new MemoryStream(bytes);
             return (await c.Part(upload, index, default)).Result is ObjectResult o ? o.StatusCode : null;
@@ -1310,7 +1312,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Part("toobigapart000001", 0, Mp4Of(51)));
         Assert.Equal(StatusCodes.Status200OK, await Part("notarollupload001", 0, Mp4Of(40)));
 
-        var controller = Controller(UploadKey, with: small);
+        var controller = Controller(RenderJob, with: small);
         await Body(controller, Meta(), videoUpload: "notarollupload001");
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, Assert.IsType<ObjectResult>((await controller.Upload(default)).Result).StatusCode);
     }
