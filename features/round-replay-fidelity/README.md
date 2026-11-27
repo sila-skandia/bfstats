@@ -484,6 +484,14 @@ file first, then against what the page drew (headless, live and local).
 | Empty tanks hum | Every hull's engine is off unless driven | The T34 driven when the round reset at 3148 s kept its engine note for the rest of the round. `engineAt` OR-ed the running flag over every engine id the root ever had, and the old engine's last row was "running" | `engineAt` takes only the engines of the object holding the root id (the newest first-written set, within the life) |
 | The camera switches to the killer | | `followKiller` handed a hand-picked player on to his killer (the 2026-10-06 request) | Removed: a player followed by hand stays followed through his death; the Auto camera still goes on to the killer, and is the opt-in for it (round-replay-ux, "The killer") |
 
+`audit_replay_states.mjs` over 3150..4400 s fails five lower states on both
+the live code and this change alike (`Lb_Stand` 527 of 728 live, 499 local;
+`Lb_CrouchToStand` 93 and 78 of 145; the rest within the same noise between
+runs). Every miss is under 0.2 s (median 0.05 s): one-tick `Lb_Stand` blips
+between strafes and the crouch-spam transitions of two players dodging, which
+the state's morph blends over rather than snaps to. Every episode of 0.2 s or
+more was drawn, reloads 36 of 36. Not a dropped state; left as it is.
+
 ## Open
 
 - ~~**Server files mark hulls and soldiers as kits.** `parseRecording` marks a
