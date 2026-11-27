@@ -11,6 +11,7 @@ import { useAuth } from '@/composables/useAuth'
 import { AppSignInError, appSignInService } from '@/services/appSignInService'
 import { allowUrl, denyUrl, parseAppSignIn } from '@/utils/appSignIn'
 import { decodePlayerName } from '@/utils/playerName'
+import MmBfvBand from '@/components/v4/MmBfvBand.vue'
 import '@/styles/modern-minimal.css'
 
 const route = useRoute()
@@ -24,6 +25,9 @@ const busy = ref(false)
 const error = ref<string | null>(null)
 /** Set once the browser is on its way back to the app. */
 const leaving = ref<'allowed' | 'denied' | null>(null)
+
+/** bfv.bfstats.io asking (features/bfv-through-bfstats): its banner and colours. */
+const fromBfv = computed(() => request.value?.client === 'bfv-site')
 
 const accountName = computed(() => (user.value?.name ? decodePlayerName(user.value.name) : 'your account'))
 
@@ -72,8 +76,9 @@ function deny() {
 </script>
 
 <template>
-  <div class="mm mm-appsign">
+  <div class="mm mm-appsign" :class="{ 'mm-site-bfv': fromBfv }">
     <main class="mm-appsign__panel" data-testid="app-sign-in">
+      <MmBfvBand v-if="fromBfv" note="BattleView Vietnam uses your bfstats.io account to share your replays. Allow it, and you go straight back." />
       <template v-if="!parsed.ok">
         <div class="mm-eyebrow mm-eyebrow--strong">App sign-in</div>
         <h1 class="mm-appsign__title">This sign-in link is not valid</h1>
