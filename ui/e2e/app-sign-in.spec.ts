@@ -250,4 +250,45 @@ test.describe('App sign-in through the browser', () => {
     expect(asBfv.status()).toBe(200);
     expect((await asBfv.json()).isAdmin).toBe(false);
   });
+
+  // The Replay Shorts job (features/replay-shorts, "Signing in"): the relay's loopback
+  // hand-off under its own name, and a token that carries the account's role, so the
+  // render job writes Shorts, prunes included, as the admin who allowed it.
+  test('the Shorts job signs in to its loopback and writes Shorts as the admin', async ({ page }) => {
+    await loginAsAdmin(page);
+    const { challenge, verifier } = pkce();
+    const state = randomBytes(16).toString('base64url');
+    const shorts = { client: 'bfstats-shorts' };
+
+    await page.goto(allowPageUrl(requestParams('render-box', challenge, state, { ...shorts, redirect_uri: 'https://bfv.bfstats.io/auth/callback' })));
+    await expect(page.getByTestId('app-sign-in-error')).toBeVisible();
+    await expect(page.getByTestId('app-sign-in-allow')).toHaveCount(0);
+
+    await page.goto(allowPageUrl(requestParams('render-box', challenge, state, shorts)));
+    await expect(page.getByRole('heading', { name: /Allow bfstats Shorts job on .* to use your account\?/ })).toBeVisible();
+    await expect(page.getByText('Upload, replace, prune and take down Replay Shorts as you')).toBeVisible();
+    const back = stubLoopback(page);
+    await page.getByTestId('app-sign-in-allow').click();
+    const code = (await back).searchParams.get('code')!;
+
+    const exchanged = await page.request.post(`${API}/token`, { data: { code, codeVerifier: verifier, redirectUri: REDIRECT } });
+    expect(exchanged.status()).toBe(200);
+    const tokens = await exchanged.json();
+    const claims = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1], 'base64url').toString());
+    expect(claims.client).toBe('bfstats-shorts');
+    expect(claims.role).toBe('Admin');
+
+    const job = { Authorization: `Bearer ${tokens.accessToken}` };
+    const prune = await page.request.post('/stats/shorts/prune?dryRun=true', { headers: job });
+    expect(prune.status()).toBe(200);
+    expect((await prune.json()).dryRun).toBe(true);
+    const anonymous = await page.request.post('/stats/shorts/prune?dryRun=true', { headers: { Authorization: '' } });
+    expect(anonymous.status()).toBe(401);
+
+    // The refresh the job runs when its token is due, then signing it out.
+    const refreshed = await page.request.post(`${API}/refresh`, { data: { refreshToken: tokens.refreshToken } });
+    expect(refreshed.status()).toBe(200);
+    const revoked = await page.request.post(`${API}/revoke`, { data: { refreshToken: (await refreshed.json()).refreshToken } });
+    expect(revoked.status()).toBe(204);
+  });
 });

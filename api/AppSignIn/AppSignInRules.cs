@@ -21,12 +21,20 @@ public static partial class AppSignInRules
     /// </summary>
     public const string BfvSiteClient = "bfv-site";
 
+    /// <summary>
+    /// The Replay Shorts render job and its tools (features/replay-shorts, "Signing in"): scripts
+    /// on the owner's computer that upload, change, prune and colour Shorts and film covers. It
+    /// signs in through the same loopback hand-off as the relay, and its token carries the
+    /// account's own role, so it writes as the admin (or BfvAdmin) who allowed it.
+    /// </summary>
+    public const string ShortsClient = "bfstats-shorts";
+
     /// <summary>bfv-site's one address on the web: the only one it is sent back to, but for
     /// a bfv page served from the visitor's own computer while it is being worked on.</summary>
     public const string BfvSiteRedirectUri = "https://bfv.bfstats.io/auth/callback";
 
     public static readonly IReadOnlySet<string> KnownClients =
-        new HashSet<string>(StringComparer.Ordinal) { RelayClient, BfvSiteClient };
+        new HashSet<string>(StringComparer.Ordinal) { RelayClient, BfvSiteClient, ShortsClient };
 
     public const int MaxDeviceLength = 64;
     public const string UnnamedDevice = "Unnamed device";
@@ -62,11 +70,11 @@ public static partial class AppSignInRules
     /// <summary>The relay's rule: its loopback listener.</summary>
     public static bool IsValidRedirectUri(string? redirectUri) => Loopback(RedirectUriPattern(), redirectUri);
 
-    /// <summary>Where <paramref name="client"/> may be sent back to: the relay's loopback
-    /// listener, or bfv.bfstats.io's callback (or a local bfv page's), exactly.</summary>
+    /// <summary>Where <paramref name="client"/> may be sent back to: the relay's or the Shorts
+    /// job's loopback listener, or bfv.bfstats.io's callback (or a local bfv page's), exactly.</summary>
     public static bool IsValidRedirectUri(string? client, string? redirectUri) => client switch
     {
-        RelayClient => IsValidRedirectUri(redirectUri),
+        RelayClient or ShortsClient => IsValidRedirectUri(redirectUri),
         BfvSiteClient => string.Equals(redirectUri, BfvSiteRedirectUri, StringComparison.Ordinal)
             || Loopback(LocalSiteRedirectUriPattern(), redirectUri),
         _ => false,

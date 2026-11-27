@@ -10,9 +10,10 @@
 //        [--play=https://play.bfstats.io] [--api=https://play.bfstats.io]
 //
 // Without --upload it writes <out>/<slug>.jpg and stops. With it, each JPEG is
-// PUT to ${api}/stats/recordings/<slug>/filmed-cover with the key from
-// SHORTS_UPLOAD_KEY: 200 is kept, 409 (it has a cover by now) is logged and
-// passed over, 401 (a bad key) stops the run.
+// PUT to ${api}/stats/recordings/<slug>/filmed-cover as the admin the Shorts
+// job signed in as (scripts/shorts-sign-in.mjs): 200 is kept, 409 (it has a
+// cover by now) is logged and passed over, 401 or 403 (the sign-in refused)
+// stops the run.
 //
 // The page is the live play site, left to play in real time: the animation loop
 // and the clock are the page's own. The moment is a kill by the player who made
@@ -33,6 +34,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { requireShortsAuth, shortsAuth } from './shorts-auth.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
@@ -46,7 +48,6 @@ const NEWEST = Number(opt('recordings', 10));
 /** --recording=<slug>, repeatable: those recordings, cover or not. */
 const ONE = args.filter(a => a.startsWith('--recording=')).map(a => a.slice(12));
 const UPLOAD = args.includes('--upload');
-const KEY = process.env.SHORTS_UPLOAD_KEY ?? '';
 
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
@@ -269,21 +270,20 @@ async function film(page, moment) {
 const badFrame = f => (f.mean < MIN_MEAN ? 'nearly black' : f.mean > MAX_MEAN ? 'nearly white'
   : f.spread < MIN_SPREAD ? 'one flat colour' : f.detail < MIN_DETAIL ? 'a smooth gradient with no detail' : '');
 
-/** Uploads a cover. Resolves to 'sent', 'has-cover'; throws on a bad key or other failure. */
+/** Uploads a cover. Resolves to 'sent', 'has-cover'; throws on a refused sign-in or other failure. */
 async function upload(slug, jpeg) {
   const res = await fetchRetry(`${API}/stats/recordings/${slug}/filmed-cover`, {
-    method: 'PUT', headers: { 'X-Shorts-Key': KEY, 'Content-Type': 'image/jpeg' }, body: jpeg,
+    method: 'PUT', headers: { ...(await shortsAuth()), 'Content-Type': 'image/jpeg' }, body: jpeg,
   });
   if (res.status === 200) return 'sent';
   if (res.status === 409) return 'has-cover';
-  if (res.status === 401) throw Object.assign(new Error('the upload key was refused (401)'), { fatal: true });
+  if (res.status === 401 || res.status === 403) {
+    throw Object.assign(new Error(`the Shorts sign-in was refused (${res.status})`), { fatal: true });
+  }
   throw new Error(`the upload answered ${res.status}`);
 }
 
-if (UPLOAD && !KEY) {
-  console.error('--upload needs SHORTS_UPLOAD_KEY');
-  process.exit(1);
-}
+if (UPLOAD) await requireShortsAuth('--upload');
 
 const GPU_ARGS = process.platform === 'darwin'
   ? ['--use-angle=metal', '--ignore-gpu-blocklist']

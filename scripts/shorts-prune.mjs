@@ -4,19 +4,18 @@
 // its kill is never filmed again. Run by the nightly Shorts job
 // (scripts/shorts-nightly.sh) after its uploads; never on its own timer.
 //
-//   SHORTS_UPLOAD_KEY=... node scripts/shorts-prune.mjs [--dry-run] [--to=https://bfstats.io]
+//   node scripts/shorts-prune.mjs [--dry-run] [--to=https://bfstats.io]
 //
 // --dry-run lists what would go and changes nothing.
+import { requireShortsAuth } from './shorts-auth.mjs';
+
 const args = process.argv.slice(2);
 const opt = (n, d) => args.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
 const TO = opt('to', 'https://bfstats.io');
 const DRY = args.includes('--dry-run');
-const KEY = process.env.SHORTS_UPLOAD_KEY ?? '';
-if (!KEY) {
-  console.error('shorts-prune needs SHORTS_UPLOAD_KEY');
-  process.exit(1);
-}
-const res = await fetch(`${TO}/stats/shorts/prune?dryRun=${DRY}`, { method: 'POST', headers: { 'X-Shorts-Key': KEY } });
+// An Admin account's sign-in prunes every game's Shorts; a BfvAdmin's only Battlefield Vietnam's.
+const auth = await requireShortsAuth('shorts-prune');
+const res = await fetch(`${TO}/stats/shorts/prune?dryRun=${DRY}`, { method: 'POST', headers: auth });
 const body = await res.text();
 if (!res.ok) {
   console.error(`prune ${res.status}: ${body.slice(0, 300)}`);

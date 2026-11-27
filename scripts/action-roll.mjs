@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { requireShortsAuth, shortsAuth } from './shorts-auth.mjs';
 import { tvFilter } from './video-range.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,6 +68,8 @@ const STEP_TIMEOUT = 60 * 1000;
 const LOAD_TIMEOUT = 8 * 60 * 1000;
 const UPLOAD_TAKE = opt('upload-take', null);
 const LINK_TAKE = opt('link-take', null);
+// A missing sign-in stops the run now, not after the filming.
+if (args.includes('--upload')) await requireShortsAuth('--upload');
 if (!SLUG && !UPLOAD_TAKE && !LINK_TAKE) throw new Error('--recording=<slug> is required');
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -1279,10 +1282,10 @@ function linkCopy(dir) {
 }
 
 /** The link copy to a Short already up (PUT /stats/shorts/<slug>/link-video). */
-async function sendLinkCopy(dir, slug, to, key) {
+async function sendLinkCopy(dir, slug, to) {
   const file = linkCopy(dir);
   const res = await fetch(`${to}/stats/shorts/${slug}/link-video`, {
-    method: 'PUT', body: fs.readFileSync(file), headers: { 'X-Shorts-Key': key, 'Content-Type': 'video/mp4' },
+    method: 'PUT', body: fs.readFileSync(file), headers: { ...(await shortsAuth()), 'Content-Type': 'video/mp4' },
   });
   const body = await res.text();
   if (!res.ok) throw new Error(`link video ${res.status}: ${body.slice(0, 300)}`);
@@ -1291,16 +1294,15 @@ async function sendLinkCopy(dir, slug, to, key) {
 
 /**
  * A filmed take to the strip (api/Shorts, kind "roll"): the 4K and the HD
- * from its folder with its poster and meta.json. SHORTS_UPLOAD_KEY as the
- * Shorts runner; --to=<api> for another API. --upload films and sends;
+ * from its folder with its poster and meta.json, as the account the Shorts
+ * job signed in as (scripts/shorts-sign-in.mjs); --to=<api> for another API. --upload films and sends;
  * --upload-take=<folder> sends a take filmed before.
  */
 async function uploadTake(dir) {
   const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
   const mp4 = path.join(dir, 'roll-2160p.mp4');
   const poster = path.join(dir, 'poster.jpg');
-  const key = process.env.SHORTS_UPLOAD_KEY ?? '';
-  if (!key) throw new Error('--upload needs SHORTS_UPLOAD_KEY');
+  await requireShortsAuth('--upload');
   const to = opt('to', API);
   // Through Cloudflare a request carries at most 100 MB, and a 4K roll is
   // 300-450: each video goes up in parts first (POST /stats/shorts/parts),
@@ -1312,7 +1314,7 @@ async function uploadTake(dir) {
     for (let i = 0, n = 0; i < bytes.length; i += PART, n++) {
       for (let tryNo = 0; ; tryNo++) {
         const r = await fetch(`${to}/stats/shorts/parts?upload=${id}&index=${n}`, {
-          method: 'POST', body: bytes.subarray(i, i + PART), headers: { 'X-Shorts-Key': key, 'Content-Type': 'application/octet-stream' },
+          method: 'POST', body: bytes.subarray(i, i + PART), headers: { ...(await shortsAuth()), 'Content-Type': 'application/octet-stream' },
         }).catch(e => ({ ok: false, status: 0, text: async () => e.message }));
         if (r.ok) break;
         if (tryNo >= 3) throw new Error(`part ${n} of ${path.basename(file)}: ${r.status} ${(await r.text()).slice(0, 200)}`);
@@ -1328,12 +1330,12 @@ async function uploadTake(dir) {
   form.append('videoUpload', await sendParts(mp4));
   if (fs.existsSync(hd) && hd !== mp4) form.append('videoHdUpload', await sendParts(hd));
   form.append('poster', new Blob([fs.readFileSync(poster)], { type: 'image/jpeg' }), 'poster.jpg');
-  const res = await fetch(`${to}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': key } });
+  const res = await fetch(`${to}/stats/shorts`, { method: 'POST', body: form, headers: await shortsAuth() });
   const body = await res.text();
   if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
   const made = JSON.parse(body);
   fs.writeFileSync(path.join(dir, 'uploaded.json'), JSON.stringify(made, null, 2));
-  await sendLinkCopy(dir, made.slug, to, key);
+  await sendLinkCopy(dir, made.slug, to);
   log(`uploaded ${made.slug}: ${API}/replay/s/${made.slug}`);
 }
 if (UPLOAD_TAKE) {
@@ -1342,10 +1344,9 @@ if (UPLOAD_TAKE) {
 }
 // --link-take=<folder>: the link copy to a roll already up (its uploaded.json).
 if (LINK_TAKE) {
-  const key = process.env.SHORTS_UPLOAD_KEY ?? '';
-  if (!key) throw new Error('--link-take needs SHORTS_UPLOAD_KEY');
+  await requireShortsAuth('--link-take');
   const { slug } = JSON.parse(fs.readFileSync(path.join(LINK_TAKE, 'uploaded.json'), 'utf8'));
-  await sendLinkCopy(LINK_TAKE, slug, opt('to', API), key);
+  await sendLinkCopy(LINK_TAKE, slug, opt('to', API));
   process.exit(0);
 }
 const rec = await json(`${API}/stats/recordings/${SLUG}`);

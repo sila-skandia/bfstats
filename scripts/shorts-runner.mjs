@@ -13,7 +13,7 @@
 // --out (a folder holding meta.json, short.mp4 and poster.jpg).
 //
 // Without --upload it films and keeps the files only. With it, the key comes
-// from SHORTS_UPLOAD_KEY (the API's Shorts__UploadKey).
+// as the account scripts/shorts-sign-in.mjs signed in (scripts/shorts-auth.mjs).
 //
 // How a Short is filmed: the page is the live play site with `&shots` (its
 // test hooks). The creator's one-click short (`creator.recordShort`) with the
@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { requireShortsAuth, shortsAuth } from './shorts-auth.mjs';
 import { tvFilter } from './video-range.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,7 +162,6 @@ const REAL_TIME = args.includes('--real-time');
 /** Local viewer files served in place of the live ones (--override=<path>,
  *  more than once): to film with a viewer change before it is deployed. */
 const OVERRIDES = many('override');
-const KEY = process.env.SHORTS_UPLOAD_KEY ?? '';
 const W = 1080, H = 1920, FPS = 30;
 const MAX_FRAMES = 60 * FPS;
 const LOAD_TIMEOUT = 8 * 60 * 1000;
@@ -223,10 +223,7 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
   });
 }
 
-if (UPLOAD && !KEY) {
-  console.error('--upload needs SHORTS_UPLOAD_KEY');
-  process.exit(2);
-}
+if (UPLOAD) await requireShortsAuth('--upload');
 
 /** fetch, tried again on a network failure (not on an HTTP error): four times
  *  over about half a minute. A blip once failed every recording left in a
@@ -4073,7 +4070,7 @@ async function addSound(page, done) {
 }
 
 async function remove(slug) {
-  const res = await fetchRetry(`${TO}/stats/shorts/${slug}`, { method: 'DELETE', headers: { 'X-Shorts-Key': KEY } });
+  const res = await fetchRetry(`${TO}/stats/shorts/${slug}`, { method: 'DELETE', headers: await shortsAuth() });
   if (!res.ok && res.status !== 404) throw new Error(`delete ${slug}: ${res.status}`);
   log(`  replaced ${slug}`);
 }
@@ -4101,7 +4098,7 @@ async function upload(meta, made) {
   form.append('meta', JSON.stringify(meta));
   form.append('video', new Blob([fs.readFileSync(made.mp4)], { type: 'video/mp4' }), 'short.mp4');
   form.append('poster', new Blob([fs.readFileSync(made.poster)], { type: 'image/jpeg' }), 'poster.jpg');
-  const res = await fetchRetry(`${TO}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': KEY } });
+  const res = await fetchRetry(`${TO}/stats/shorts`, { method: 'POST', body: form, headers: await shortsAuth() });
   const body = await res.text();
   if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
   return JSON.parse(body);

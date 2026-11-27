@@ -29,6 +29,21 @@ export const APP_CLIENTS: Record<string, AppClient> = {
     isValidRedirectUri,
     wrongRedirect: 'The address this would send you back to is not the app on this computer.',
   },
+  // The Replay Shorts render job and its tools on the owner's computer
+  // (features/replay-shorts, "Signing in"). Its token carries the account's own
+  // role: an admin who allows it lets it do what an admin can.
+  'bfstats-shorts': {
+    name: 'bfstats Shorts job',
+    onDevice: true,
+    grants: [
+      'Upload, replace, prune and take down Replay Shorts as you',
+      'Set the covers of shared recordings',
+      'Anything else your account can do, admin rights included',
+    ],
+    allowWhen: 'Allow only if you just ran the Shorts sign-in (scripts/shorts-sign-in.mjs) on this computer.',
+    isValidRedirectUri,
+    wrongRedirect: 'The address this would send you back to is not the Shorts job on this computer.',
+  },
   // bfv.bfstats.io, Battlefield Vietnam's site, hosted for someone else
   // (features/bfv-through-bfstats). Its tokens are short-lived and a plain user's.
   'bfv-site': {

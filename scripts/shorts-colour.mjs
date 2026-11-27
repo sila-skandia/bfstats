@@ -11,7 +11,7 @@
 // not play on any iPhone). The API refuses those shares now; this puts right
 // the ones that came in before, and any page still cached from before.
 //
-//   SHORTS_UPLOAD_KEY=... node scripts/shorts-colour.mjs [--dry-run] [--only=<slug>,...] [--to=https://bfstats.io]
+//   node scripts/shorts-colour.mjs [--dry-run] [--only=<slug>,...] [--to=https://bfstats.io]
 //
 // Idempotent: a video already at TV range is left alone. Work files go to
 // ~/.cache/bfstats-shorts/colour/ and are deleted once the swap is confirmed.
@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { requireShortsAuth, shortsAuth } from './shorts-auth.mjs';
 import { tvFilter } from './video-range.mjs';
 
 const args = process.argv.slice(2);
@@ -26,11 +27,7 @@ const opt = (n, d) => args.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 
 const TO = opt('to', 'https://bfstats.io');
 const DRY = args.includes('--dry-run');
 const ONLY = opt('only', '').split(',').filter(Boolean);
-const KEY = process.env.SHORTS_UPLOAD_KEY ?? '';
-if (!KEY && !DRY) {
-  console.error('shorts-colour needs SHORTS_UPLOAD_KEY');
-  process.exit(1);
-}
+if (!DRY) await requireShortsAuth('shorts-colour');
 const WORK = path.join(os.homedir(), '.cache', 'bfstats-shorts', 'colour');
 const MiB = 1024 * 1024;
 /** Under the edge's 100 MB a request: bigger goes in parts, as a roll's upload does. */
@@ -113,7 +110,7 @@ function encode(from, to, p, limit) {
 
 async function put(slug, copy, file) {
   const size = fs.statSync(file).size;
-  const headers = { 'X-Shorts-Key': KEY, 'Content-Type': 'application/octet-stream' };
+  const headers = { ...(await shortsAuth()), 'Content-Type': 'application/octet-stream' };
   let query = `copy=${copy}`;
   let body = fs.readFileSync(file);
   if (size > ONE_REQUEST) {

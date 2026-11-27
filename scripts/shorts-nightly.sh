@@ -11,14 +11,24 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$HOME/.cache/bfstats-shorts
-KEY_FILE=$HOME/.config/bfstats/shorts-upload-key
+SIGN_IN=${SHORTS_SIGN_IN:-$HOME/.config/bfstats/shorts-sign-in.json}
 LOG=$OUT/nightly.log
 mkdir -p "$OUT"
 exec >> "$LOG" 2>&1
 echo "=== $(date -Iseconds) start ==="
 
-if [[ ! -s $KEY_FILE ]]; then
-  echo "no upload key at $KEY_FILE; nothing done"
+# Every tool below writes as the account the Shorts job signed in as
+# (scripts/shorts-sign-in.mjs, once, in a browser; features/replay-shorts,
+# "Signing in"). Check it first, refreshing it if it is due, so a lapsed
+# sign-in stops the night here rather than after an hour of filming.
+# TRANSITION (2026-11-27): the old upload key, until this machine has signed in.
+KEY_FILE=$HOME/.config/bfstats/shorts-upload-key
+if [[ ! -s $SIGN_IN && -s $KEY_FILE ]]; then
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE")
+  export SHORTS_UPLOAD_KEY
+  echo "no Shorts sign-in yet; using the old upload key"
+elif ! (cd "$REPO" && node scripts/shorts-sign-in.mjs --status); then
+  echo "no usable Shorts sign-in at $SIGN_IN; run node scripts/shorts-sign-in.mjs once. Nothing done"
   exit 1
 fi
 
@@ -37,8 +47,7 @@ cd "$REPO"
 # A Mac has no Playwright Chromium: drive the installed Google Chrome.
 EXTRA=()
 [[ $(uname) == Darwin ]] && EXTRA=(--channel=chrome)
-SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
-  node scripts/shorts-runner.mjs --recordings=10 --max=3 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
+node scripts/shorts-runner.mjs --recordings=10 --max=3 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
   | { grep --line-buffered -v '^replay: ' || true; } || echo "the nightly pass failed (exit $?)"
 
 # Covers (features/replay-feed, "Covers nobody picked"): most recordings come
@@ -47,8 +56,7 @@ SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
 # none; one that has a cover is never touched. RECORDING_COVERS=0 skips it.
 if [[ ${RECORDING_COVERS:-1} == 1 ]]; then
   echo "--- covers ---"
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
-    node scripts/recording-covers.mjs --recordings=12 --gpu --upload ${EXTRA[@]+"${EXTRA[@]}"} \
+  node scripts/recording-covers.mjs --recordings=12 --gpu --upload ${EXTRA[@]+"${EXTRA[@]}"} \
     | { grep --line-buffered -v '^replay: ' || true; } || echo "the covers pass failed (exit $?)"
 fi
 
@@ -64,8 +72,7 @@ STAMP=$OUT/asmr-$WEEK.done
 if [[ ${ASMR_WEEKLY:-0} == 1 && ! -e $STAMP ]]; then
   echo "--- the week's ASMR ($WEEK) ---"
   ASMR_LOG=$OUT/asmr-$WEEK.log
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
-    node scripts/shorts-runner.mjs --asmr-mix=week --recordings=10 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
+  node scripts/shorts-runner.mjs --asmr-mix=week --recordings=10 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
     2>&1 | { grep --line-buffered -v '^replay: ' || true; } | tee "$ASMR_LOG" || true
   if grep -q 'uploaded .*Battlefield ASMR' "$ASMR_LOG"; then touch "$STAMP"; fi
 fi
@@ -84,8 +91,7 @@ if [[ ${RECAP_WEEKLY:-1} == 1 && ! -e $RECAP_STAMP ]]; then
   RECAP_LOG=$OUT/recap-$WEEK.log
   RECAP_EXTRA=()
   [[ $(uname) == Darwin ]] && RECAP_EXTRA=(--channel=chrome)
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
-    node scripts/roll-weekly.mjs --recap ${RECAP_EXTRA[@]+"${RECAP_EXTRA[@]}"} 2>&1 | tee "$RECAP_LOG" || true
+  node scripts/roll-weekly.mjs --recap ${RECAP_EXTRA[@]+"${RECAP_EXTRA[@]}"} 2>&1 | tee "$RECAP_LOG" || true
   if grep -q "the week's recaps: [1-9]" "$RECAP_LOG"; then touch "$RECAP_STAMP"; fi
   # A week's take is ~700 MB on disk; the API has the uploaded copies.
   find "$HOME/.cache/bfstats-recap" -maxdepth 2 -path '*/weekly-*' -name '*.mp4' -mtime +14 -delete 2>/dev/null || true
@@ -100,8 +106,7 @@ if [[ ${ROLL_WEEKLY:-0} == 1 && ! -e $ROLL_STAMP ]]; then
   ROLL_LOG=$OUT/roll-$WEEK.log
   ROLL_EXTRA=()
   [[ $(uname) == Darwin ]] && ROLL_EXTRA=(--channel=chrome)
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
-    node scripts/roll-weekly.mjs ${ROLL_EXTRA[@]+"${ROLL_EXTRA[@]}"} 2>&1 | tee "$ROLL_LOG" || true
+  node scripts/roll-weekly.mjs ${ROLL_EXTRA[@]+"${ROLL_EXTRA[@]}"} 2>&1 | tee "$ROLL_LOG" || true
   if grep -q "the week's rolls: [1-9]" "$ROLL_LOG"; then touch "$ROLL_STAMP"; fi
   find "$HOME/.cache/bfstats-roll" -maxdepth 2 -path '*/weekly-*' -name '*.mp4' -mtime +14 -delete 2>/dev/null || true
 fi
@@ -113,7 +118,7 @@ fi
 # SHORTS_PRUNE=0 skips it.
 if [[ ${SHORTS_PRUNE:-1} == 1 ]]; then
   echo "--- retention ---"
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") node scripts/shorts-prune.mjs || echo "the prune failed (exit $?)"
+  node scripts/shorts-prune.mjs || echo "the prune failed (exit $?)"
 fi
 
 # Colour range (2026-11-18): every video goes out at TV range, which Reddit's
@@ -122,7 +127,7 @@ fi
 # SHORTS_COLOUR=0 skips it.
 if [[ ${SHORTS_COLOUR:-1} == 1 ]]; then
   echo "--- colour range ---"
-  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") node scripts/shorts-colour.mjs || echo "the colour pass failed (exit $?)"
+  node scripts/shorts-colour.mjs || echo "the colour pass failed (exit $?)"
 fi
 
 # Keep two weeks of filmed videos on disk; the API has the uploaded copies.

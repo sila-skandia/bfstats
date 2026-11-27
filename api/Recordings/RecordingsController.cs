@@ -206,7 +206,9 @@ public class RecordingsController(
         string slug, [FromServices] IOptions<api.Shorts.ShortsOptions> shorts, CancellationToken ct)
     {
         var sent = Request.Headers[api.Shorts.ShortsController.KeyHeader].ToString();
-        if (!api.Shorts.ShortsController.KeyMatches(sent, shorts.Value.UploadKey))
+        var admin = User.Identity?.IsAuthenticated == true
+            && (User.IsInRole(api.Authorization.AppRoles.Admin) || api.Authorization.AppRoles.HasAdminEmail(User));
+        if (!admin && !api.Shorts.ShortsController.KeyMatches(sent, shorts.Value.UploadKey))
         {
             return StatusCode(StatusCodes.Status401Unauthorized, new { message = "The upload key is not right." });
         }

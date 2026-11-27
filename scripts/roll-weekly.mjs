@@ -10,7 +10,7 @@
 // 4K and HD, sound) and uploads it with its link copy. A take that fails
 // moves on to the next round, three at most.
 //
-//   SHORTS_UPLOAD_KEY=... node scripts/roll-weekly.mjs [--recap] [--dry-run] [--count=1]
+//   node scripts/roll-weekly.mjs [--recap] [--dry-run] [--count=1]
 //       [--days=7] [--channel=chrome] [--api=https://bfstats.io]
 //
 // --recap films the week's match recap instead (features/match-recap; the
@@ -21,6 +21,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { requireShortsAuth } from './shorts-auth.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -84,7 +85,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   log(`${ranked.length} rounds of ${DAYS} days long enough; ${fresh.length} without a ${WHAT} looked at`);
   for (const r of fresh) log(`  ${r.slug} ${r.title} (${r.playerCount} players, ${Math.round(r.durationSeconds / 60)} min)`);
   if (DRY) process.exit(0);
-  if (!process.env.SHORTS_UPLOAD_KEY) throw new Error('needs SHORTS_UPLOAD_KEY');
+  await requireShortsAuth('roll-weekly');
 
   const week = new Date().toISOString().slice(0, 10);
   let made = 0;
