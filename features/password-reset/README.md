@@ -30,6 +30,26 @@ when it has no email, the owner is told on Discord and resets it by hand.
 - **Limits.** Ten forgot or reset calls an hour per IP (429 beyond), one email
   per account per two minutes, one Discord notice per account per hour (Redis).
 
+## The hash key
+
+`EmailHashService` keys its HMAC with `Auth:EmailHashKey`, which production
+does not set, so it falls back to a key derived from the JWT signing key
+(`bf42-stats-secrets`, `jwt-private-key`). **Rotating the JWT key, or setting
+`Auth:EmailHashKey` now, makes every stored email hash unmatchable**: every
+reset would become a Discord notice. If either must change, re-hashing is not
+possible (the addresses are not stored), so plan for that. Checked 2026-11-27:
+the JWT secret was last written 2026-02-10, before the first hashed-email
+account (2026-10-03), so every stored hash matches today's key.
+
+## Reading the log
+
+Every request leaves one line from `PasswordResetService`: "link sent",
+"cannot be emailed (NoEmailOnAccount | EmailDidNotMatch); asking the owner",
+"... the owner was already asked within the hour, no new notice", or "asked
+again inside the cooldown; no email sent". An unknown username leaves none.
+Delivery adds `Cloudflare Email sent '...' (<message id>)`, or `Cloudflare Email
+refused` with Cloudflare's error code.
+
 ## The email
 
 `api/Auth/PasswordResetEmail.cs`. The logo (`ui/public/email/logo.png`, a PNG

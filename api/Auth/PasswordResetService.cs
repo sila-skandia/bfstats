@@ -150,7 +150,14 @@ public class PasswordResetService(
     private async Task AskOwnerAsync(User user, PasswordResetHelpReason reason, CancellationToken cancellationToken)
     {
         var key = $"pwreset_help:{user.Id}";
-        if (await cache.GetAsync<CooldownMarker>(key, cancellationToken) is not null) return;
+        if (await cache.GetAsync<CooldownMarker>(key, cancellationToken) is not null)
+        {
+            // Said plainly, so a requester who tries again and hears nothing is explained in the log.
+            logger.LogInformation(
+                "Password reset for user {UserId} cannot be emailed ({Reason}); the owner was already asked within the hour, no new notice",
+                user.Id, reason);
+            return;
+        }
         await cache.SetAsync(key, new CooldownMarker(), HelpCooldown, cancellationToken);
 
         logger.LogInformation("Password reset for user {UserId} cannot be emailed ({Reason}); asking the owner", user.Id, reason);

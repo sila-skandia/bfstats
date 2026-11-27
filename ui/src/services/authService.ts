@@ -180,7 +180,7 @@ class AuthService {
     return response.json();
   }
 
-  /** Forgotten password: uniform response either way — never tells the caller if the pair matched. */
+  /** Forgotten password: uniform response either way — never tells the caller if the pair matched. Throws when the request was not taken (429, outage). */
   async forgotPassword(username: string, email: string): Promise<string> {
     const response = await fetch('/stats/auth/forgot-password', {
       method: 'POST',
@@ -188,6 +188,8 @@ class AuthService {
       body: JSON.stringify({ username, email }),
     });
     const data = await response.json().catch(() => ({}));
+    // Only a 200 means the request was taken; a rate limit or an outage is an error, not a confirmation.
+    if (!response.ok) throw new Error(data.message || 'Could not send the request. Try again later.');
     return data.message || 'If the username and email match an account, a reset link is on its way.';
   }
 

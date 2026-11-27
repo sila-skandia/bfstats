@@ -16,7 +16,27 @@ test.describe('Password reset', () => {
     await page.getByLabel('Username').fill('nobody-by-this-name');
     await page.getByLabel('Email').fill('nobody@example.com');
     await page.getByRole('button', { name: 'Send reset link' }).click();
-    await expect(page.getByText('If the username and email match an account')).toBeVisible();
+    const confirm = page.getByTestId('forgot-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('If the username and email match an account');
+    // Boxed in the success colours, so it reads as done.
+    const box = await confirm.evaluate(el => {
+      const style = getComputedStyle(el);
+      return { background: style.backgroundColor, border: style.borderLeftColor };
+    });
+    expect(box.background).toBe('rgb(43, 58, 26)'); // --mm-success-bg
+    expect(box.border).toBe('rgb(125, 163, 76)'); // --mm-success
+  });
+
+  test('a refused request is an error, not a confirmation', async ({ page }) => {
+    await page.route('**/stats/auth/forgot-password', route =>
+      route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ message: 'Too many reset requests. Try again later.' }) }));
+    await page.goto('/auth/login');
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+    await page.getByLabel('Username').fill('someone');
+    await page.getByRole('button', { name: 'Send reset link' }).click();
+    await expect(page.getByText('Too many reset requests. Try again later.')).toBeVisible();
+    await expect(page.getByTestId('forgot-confirm')).toHaveCount(0);
   });
 
   test('a bad link is refused and offers a new one', async ({ page }) => {

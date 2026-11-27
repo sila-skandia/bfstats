@@ -8,6 +8,7 @@ import { authService } from '@/services/authService'
 import { peekReturnUrl, rememberReturnUrl, safeReturnUrl, signUpViaFor, takeReturnUrl } from '@/services/authReturn'
 import MmBfvBand from '@/components/v4/MmBfvBand.vue'
 import '@/styles/modern-minimal.css'
+import 'primeicons/primeicons.css'
 
 const router = useRouter()
 const route = useRoute()
@@ -188,10 +189,11 @@ const submit = async () => {
 const submitForgot = async () => {
   busy.value = true
   forgotMessage.value = null
+  error.value = null
   try {
     forgotMessage.value = await authService.forgotPassword(username.value.trim(), forgotEmail.value.trim())
-  } catch {
-    forgotMessage.value = 'If the username and email match an account, a reset link is on its way.'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Could not send the request. Try again later.'
   } finally {
     busy.value = false
   }
@@ -239,8 +241,9 @@ const signInWithDiscord = () => {
 
       <!-- The emailed link: choose a new password -->
       <div v-if="isReset && resetDone" class="mm-signin__form" data-testid="reset-done">
-        <p class="mm-signin__note">
-          Your password is changed, and every device that was signed in has been signed out.
+        <p class="mm-signin__confirm" role="status">
+          <i class="pi pi-check-circle mm-signin__confirm-icon" aria-hidden="true" />
+          <span>Your password is changed, and every device that was signed in has been signed out.</span>
         </p>
         <div class="mm-signin__actions">
           <RouterLink to="/auth/login" class="mm-btn mm-btn--accent mm-signin__submit">Sign in</RouterLink>
@@ -299,12 +302,16 @@ const signInWithDiscord = () => {
           <span class="mm-signin__field-label">Email</span>
           <input v-model="forgotEmail" type="email" class="mm-signin__input" autocomplete="email" />
         </label>
-        <p v-if="forgotMessage" class="mm-signin__note">{{ forgotMessage }}</p>
+        <p v-if="forgotMessage" class="mm-signin__confirm" role="status" data-testid="forgot-confirm">
+          <i class="pi pi-check-circle mm-signin__confirm-icon" aria-hidden="true" />
+          <span>{{ forgotMessage }}</span>
+        </p>
+        <p v-if="error" class="mm-signin__error">{{ error }}</p>
         <div class="mm-signin__actions">
           <button type="submit" class="mm-btn mm-btn--accent" :disabled="busy">
             {{ busy ? 'Sending…' : 'Send reset link' }}
           </button>
-          <button type="button" class="mm-signin__link" @click="forgotMode = false">Back to sign in</button>
+          <button type="button" class="mm-signin__link" @click="forgotMode = false; forgotMessage = null; error = null">Back to sign in</button>
         </div>
       </form>
 
@@ -650,5 +657,38 @@ const signInWithDiscord = () => {
   font-size: 12.5px;
   color: var(--mm-danger);
   margin: 0;
+}
+
+/* A request that was taken: green, boxed, so it reads as done rather than as more instructions. */
+.mm-signin__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--mm-success-bg);
+  border: 1px solid var(--mm-success);
+  border-left-width: 3px;
+  color: var(--mm-ink);
+  font-family: var(--mm-font-body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: mm-signin-confirm-in 220ms ease-out;
+}
+
+.mm-signin__confirm-icon {
+  color: var(--mm-success);
+  font-size: 15px;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+
+@keyframes mm-signin-confirm-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-signin__confirm { animation: none; }
 }
 </style>
