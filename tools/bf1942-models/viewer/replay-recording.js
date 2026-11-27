@@ -3236,6 +3236,69 @@ export function eyeLiftAt(rec, nid, t) {
 const DIE_LEAD = 0.2;
 const DIE_LAG = 0.6;
 
+/** A rise to his feet this close before the die state is the death's own,
+ *  not his stance: seconds. */
+const LATE_RISE = 0.25;
+
+/** The getting-up transitions, by the stance each rises out of. */
+const RISES = /^Lb_(Crouch|Lie)To(Stand|Crouch)$/;
+
+/**
+ * The stance a soldier died in, as the recording drew him before his die
+ * state: `'stand' | 'crouch' | 'prone'`, or null with no body record. A rise
+ * the server's machine began within `LATE_RISE` of the die state does not
+ * count: the stance it rose out of does. The server drops a dying man's
+ * crouch and prone a tick or two before `handleDamage` picks the death
+ * (q8uwcxrjcg: 761 crouched until `Lb_CrouchToStand` 0.07 s before its
+ * `Lb_DieChestStand`, 689 likewise into `Lb_DieHead`), so on the page a
+ * crouching man stood up and died standing (the 2026-11-27 report).
+ */
+export function deathStance(rec, nid, diedAt) {
+  const late = lateRise(rec, nid, diedAt);
+  if (!late) return null;
+  if (late.from) return late.from;
+  const flags = rec.animStates?.[late.entry.lower]?.flags ?? 0;
+  return flags & ANIM_FLAGS.LYING ? 'prone' : flags & ANIM_FLAGS.CROUCHING ? 'crouch' : 'stand';
+}
+
+/**
+ * When the server's late rise before a death began (`deathStance`): the
+ * time to draw his body as it was just before, so a crouched man is not seen
+ * standing up for the tick or two before he falls. Null where his death
+ * follows no late rise.
+ */
+export function lateRiseAt(rec, nid, diedAt) {
+  const late = lateRise(rec, nid, diedAt);
+  return late?.from ? late.start : null;
+}
+
+/** The record before a death's die state, and the late rise it is in:
+ *  `{ entry, from, start }` (`from` the stance it rose out of and `start`
+ *  where it began, null for no late rise), or null with no record. */
+function lateRise(rec, nid, diedAt) {
+  const list = rec.stances?.get(nid);
+  if (!list?.length || !Number.isFinite(diedAt)) return null;
+  const name = entry => rec.animStates?.[entry.lower]?.name ?? '';
+  let dieAt = diedAt;
+  for (const entry of list) {
+    if (entry.t < diedAt - DIE_LEAD) continue;
+    if (entry.t > diedAt + DIE_LAG) break;
+    if (/^Lb_Die/.test(name(entry))) { dieAt = entry.t; break; }
+  }
+  let i = latestIndex(list, dieAt - 1e-4);
+  if (i < 0) return null;
+  while (i > 0 && /^Lb_Die/.test(name(list[i]))) i--;
+  const rise = RISES.exec(name(list[i]));
+  if (rise) {
+    let start = i;
+    while (start > 0 && list[start - 1].lower === list[i].lower) start--;
+    if (list[start].t >= dieAt - LATE_RISE) {
+      return { entry: list[i], from: rise[1] === 'Lie' ? 'prone' : 'crouch', start: list[start].t };
+    }
+  }
+  return { entry: list[i], from: null, start: null };
+}
+
 /**
  * The die state a soldier's body entered at his death (v4 `st`), the one the
  * engine chose (`BFSoldier::handleDamage`, soldier-death.js): the first lower
@@ -3298,14 +3361,25 @@ export function recordedFlight(rec, nid, diedAt) {
 
 /** A hull's recorded engines at `t` (v4 `g`), folded into one:
  *  `{ revs, running, disabled }` (the loudest engine's revs), or null. */
-export function engineAt(rec, nid, t) {
+export function engineAt(rec, nid, t, from = -Infinity, to = Infinity) {
   const engines = rec.engines?.get(nid);
   if (!engines?.size) return null;
+  // Only the engines of the object that holds the root id at `t`. A root id
+  // a respawn or a round's reset reuses brings new engine ids, and the old
+  // ones write no last row: the T34 a driver sat in when Berlin reset
+  // (q8uwcxrjcg, 3148 s) left its engine on "running" for ever, and the
+  // empty tank droned for the rest of the round. An object's engines are
+  // first written together in the sample it is first seen, so the newest
+  // start at or before `t` is that object's.
+  const lists = [...engines.values()].filter(list => list.length
+    && list[list.length - 1].t >= from && list[0].t < to && list[0].t <= t);
+  const born = Math.max(-Infinity, ...lists.map(list => list[0].t));
   let revs = 0;
   let running = false;
   let disabled = false;
   let any = false;
-  for (const list of engines.values()) {
+  for (const list of lists) {
+    if (list[0].t < born - ENGINE_GENERATION) continue;
     const e = latestAt(list, t);
     if (!e) continue;
     any = true;
@@ -3315,6 +3389,10 @@ export function engineAt(rec, nid, t) {
   }
   return any ? { revs, running, disabled } : null;
 }
+
+/** How far apart an object's engines may be first written and still be one
+ *  object's (`engineAt`): the same sample, give or take a tick. */
+const ENGINE_GENERATION = 0.5;
 
 /** How far ahead a recorded engine's next record may be and still be eased
  *  into, seconds. The recorder writes a record when a value changes, so a

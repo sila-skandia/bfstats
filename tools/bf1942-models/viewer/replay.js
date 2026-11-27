@@ -49,7 +49,7 @@ import { ReplayUi, SHOT_LINES_KEY, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
-import { ReplayCamera, hullRadius, killerToFollow } from './replay-camera.js';
+import { ReplayCamera, hullRadius } from './replay-camera.js';
 import { buildChapters, killsOf, recordingPlayers, scoreTableOf } from './replay-chapters.js';
 import { scoreTable } from './round-state.js';
 import { ReplayDebrief } from './replay-debrief.js';
@@ -303,21 +303,10 @@ class ReplayPlayer {
     this.camera.followChanged();
   }
 
-  /** The followed player's death cam has held its beat: the camera goes on
-   *  to the man who killed him (`killerToFollow`), as the Auto camera does
-   *  (the 2026-10-06 request). Only while the round plays through that
-   *  moment, and never under the Auto camera, which does it itself, a
-   *  highlight's reel, a creator's rig or the free camera. */
-  followKiller(prevT, t) {
-    if (!this.playing || this.ui.scrubbing || this.followPid === null) return;
-    if (this.camera.mode === 'free' || this.camera.rig || this.highlights?.auto || this.highlights?.reel) return;
-    // The fight cam watches the fight, not the man the card is on.
-    if (this.highlights?.fight) return;
-    const killer = killerToFollow(this.rec, this.followPid, prevT, t, this.kills);
-    if (killer === null) return;
-    this.ui.follow(killer);
-    this.ui.flash(`Killer: ${nameAt(this.rec, killer, t)}`, 1600);
-  }
+  // A player followed by hand stays followed through his death: the death
+  // cam holds on him until he is back (the 2026-11-27 report: "I don't want
+  // it to switch unless I tell it to"). Going on to the killer is the Auto
+  // camera's (replay-director.js), which is the opt-in.
 
   /** How fast the game's message log runs against the page's clock: the
    *  replay's speed while it plays, still while it is paused or dragged. */
@@ -1139,7 +1128,6 @@ class ReplayPlayer {
     // camera was aimed at before the replay ran, and the followed player
     // vanished at some angles of the orbit. The Auto camera's director and
     // the highlight reel choose whom it is on first.
-    guard.run('following the killer', () => this.followKiller(prevT, t));
     this.withHighlights(h => h.lead(t, dt));
     this.withCreator(c => c.lead(t, dt));
     // The markers' list and the gunner's selector before the camera, which

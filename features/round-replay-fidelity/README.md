@@ -468,6 +468,22 @@ drawn until their first death, nothing between death and respawn, the
 recorded soldier winning once there is one, a side's soldier for a player
 never seen on foot, nobody invented for a player on foot).
 
+## Players' report on Berlin (q8uwcxrjcg, 2026-11-27)
+
+Five reports from players who watched
+`map.html?mod=bf1942&map=berlin&replay=/stats/recordings/q8uwcxrjcg.ndjson`
+(a server recording, two players, 32 deaths). Each was checked against the
+file first, then against what the page drew (headless, live and local).
+
+| Report | The data | The page | Fixed by |
+|---|---|---|---|
+| Deaths "show a standing soldier dying" | 30 of 32 deaths carry the engine's own die state. Crouched or prone men's states flip to `Lb_CrouchToStand` 0.07 s before a standing die state (761 at 4104.29: `Lb_Crouch`, `Ub_HitChestCrouch`, `Lb_CrouchToStand`, `Lb_DieChestStand`; 689 likewise into `Lb_DieHead`) | Played exactly that: he stood up and fell from his feet | `deathStance`, `lateRiseAt` (replay-recording.js): a rise begun within 0.25 s of the die state is not his stance. The body holds the stance it rose out of, and a standing death plays crouched (`dieChestCrouch`, `dieBackCrouch`) or lying (`dieLie`), replay-bodies.js `familyOfDeath`. Over five other recordings it moves 0 to 4 deaths each, all crouched men |
+| MP40/MP18 reloads incomplete | Third-person state `Ub_StandReloadMp40` 1.93 s; the magazine refills 4.27 s after it began (536 at 3195.06, its `am` at 3199.33) | First person followed the third-person state and cut `1PReloadMp40` (4.55 s; Mp18 4.35 s) at 1.93 s, into a run. Third person was right: `3PReloadMp40.baf`, 1.92 s | replay-viewmodel.js `holdReloads`: the arms run their own reload clip; body states inside it take the arms when it ends, a raise or the weapon put away at once. Every magazine weapon's 1P reload outlasts its 3P state (Thompson 4.76 s, Garand 5.0, BAR 4.0, Colt 4.0, Panzershreck 5.56), so it was all of them, not just the two named |
+| A round timer | `clock` events every 10 s and `simStart` carry the server's `worldTime` (`roundClock`) | Shown only as 10 px grey `ROUND m:ss` in the bar, and hidden under 830 px | `.rp-clock` (replay-ui.js) over the view, top left: `ROUND m:ss`, or `TIME LEFT` where the server set a time limit. Retail's ticket bar has no clock (its middle box is empty art), so it is the replay's chrome, not the HUD's |
+| Rearm "like a chain-link fence" | `SpecialGameEvent 0` refills, right | The refill played `barbwire1.mp3`: Berlin's two `stebarbwire_m1_static` one-shots stand within 6 m of an ammo box, and the depot-give detector (page-audio.js `isDepotGive`) took any one-point `_static` emitter there for the depot's loop, so it also silenced the wire | A one-shot (`loop: false`, `randomPlay`) is never the depot's give; `playRefillSound` borrows a depot's sample only when it is `Ammorefill` |
+| Empty tanks hum | Every hull's engine is off unless driven | The T34 driven when the round reset at 3148 s kept its engine note for the rest of the round. `engineAt` OR-ed the running flag over every engine id the root ever had, and the old engine's last row was "running" | `engineAt` takes only the engines of the object holding the root id (the newest first-written set, within the life) |
+| The camera switches to the killer | | `followKiller` handed a hand-picked player on to his killer (the 2026-10-06 request) | Removed: a player followed by hand stays followed through his death; the Auto camera still goes on to the killer, and is the opt-in for it (round-replay-ux, "The killer") |
+
 ## Open
 
 - ~~**Server files mark hulls and soldiers as kits.** `parseRecording` marks a

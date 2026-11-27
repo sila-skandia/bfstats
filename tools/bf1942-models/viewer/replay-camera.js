@@ -3,7 +3,7 @@
 //
 //   orbit  locked on him, or the hull he rides, or once he dies the death
 //          cam over where he fell (`deathAt`) until he is back or the
-//          camera goes on to his killer (replay.js `followKiller`);
+//          Auto camera goes on to his killer (replay-director.js);
 //          dragged, wheeled and keyed around him, never away from him.
 //          Wheeled in all the way, it goes through his eyes.
 //   pov    through his eyes: on foot his recorded body turned by his torso

@@ -409,7 +409,9 @@ export function createPageAudio(page) {
   async function playRefillSound(position) {
     if (page.AUDIO_OFF || !placeable(position) || masterVolume() <= 0) return;
     ensureListener();
-    const buffer = pageAudio.supplyGive?.buffer
+    // The script's own wave; a level's depot give is borrowed only when it is
+    // that wave.
+    const buffer = (/ammorefill/i.test(pageAudio.supplyGive?.file || '') ? pageAudio.supplyGive.buffer : null)
       ?? await soundBuffer(page.currentDir, '../_shared/sounds/Ammorefill.mp3');
     const ctx = pageAudio.audioListener?.context;
     if (!buffer || !ctx || ctx.state !== 'running') return;
@@ -510,6 +512,12 @@ export function createPageAudio(page) {
     const depotAt = supplyDepotPositions();
     const isDepotGive = area => {
       if (!/_static$/i.test(area.name || '') || area.points?.length !== 1) return false;
+      // A one-shot on a static is an event, never the depot's loop: Berlin
+      // stands two barbed-wire statics within 6 m of its ammo boxes, and their
+      // scrape (`barbwire1.mp3`) became every rearm's "confirmation" (the
+      // 2026-11-27 report: "more like a chain-link fence"), and the wire
+      // itself went silent.
+      if (area.loop === false || area.randomPlay?.length) return false;
       if (!depotAt.length) return /ammorefill/i.test(area.file || '');
       const [x, , z] = area.points[0];
       return depotAt.some(d => (d.x - x) ** 2 + (d.z - z) ** 2 < 36);
@@ -523,7 +531,7 @@ export function createPageAudio(page) {
     if (giveFile) {
       const buffer = await getBuffer(giveFile);
       if (gen !== pageAudio.soundsGeneration) return;
-      if (buffer) pageAudio.supplyGive = { buffer, until: 0 };
+      if (buffer) pageAudio.supplyGive = { buffer, file: giveFile, until: 0 };
     }
 
     // The one-shot static scripts (barbed wire's scrape): events, played by

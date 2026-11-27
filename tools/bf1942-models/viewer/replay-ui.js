@@ -254,6 +254,16 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-time b { font-weight: 600; color: var(--rp-ink); }
 .rp-time span { color: var(--rp-muted); }
 .rp-round { color: var(--rp-muted); font: 700 10px var(--rp-font); letter-spacing: .12em; white-space: nowrap; }
+/* The round's clock over the view, top left, clear of the retail HUD's
+   tickets and minimap (top right) and the fronts' tabs (top centre). It stays
+   up while the chrome idles away: it is read like the HUD, not used. */
+.rp-clock { position: absolute; left: 12px; top: 10px; display: flex; align-items: baseline; gap: 8px; padding: 6px 12px;
+  background: var(--rp-plate-deep); border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 6px 22px rgba(0, 0, 0, .4);
+  pointer-events: none; }
+.rp-clock[hidden] { display: none; }
+.rp-clock span { color: var(--rp-muted); font: 700 10px var(--rp-font); letter-spacing: .12em; }
+.rp-clock b { color: var(--rp-ink); font: 600 16px var(--rp-mono); font-variant-numeric: tabular-nums; }
+.rp-root.map-open .rp-clock { display: none; }
 .rp-speed { position: relative; }
 /* The menus open over the timeline, above its marks' own stacking. */
 .rp-speed-menu { position: absolute; z-index: 5; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
@@ -736,8 +746,17 @@ export class ReplayUi {
     this.stickEl = el('div', 'rp-stick');
     this.stickKnob = el('i');
     this.stickEl.append(this.stickKnob);
+    // The round's clock over the view, where it can be read without the bar
+    // (the 2026-11-27 request: "a round timer would be useful"): the server's
+    // own clock (`roundClock`), counting down to the time limit where the
+    // server set one. Retail's ticket bar draws none, so it is ours, beside it.
+    this.clock = el('div', 'rp-clock');
+    this.clock.hidden = true;
+    this.clockLabel = el('span');
+    this.clockText = el('b');
+    this.clock.append(this.clockLabel, this.clockText);
     this.root.append(this.input, this.tags, this.stickEl, this.card, this.bar, this.log, this.board, this.help,
-      this.timeline.tip, this.mini, this.notice);
+      this.timeline.tip, this.mini, this.notice, this.clock);
     this.stage.append(this.root);
 
     // A finger on the chrome keeps it up; one on the view decides for itself
@@ -1992,6 +2011,19 @@ export class ReplayUi {
 
   // --- per frame ---------------------------------------------------------------------
 
+  /** The clock over the view: the time left where the round has a limit,
+   *  else how long it has run. */
+  updateClock(clock, limit) {
+    const shown = clock !== null && Number.isFinite(clock);
+    if (this.clock.hidden !== !shown) this.clock.hidden = !shown;
+    if (!shown) return;
+    const left = limit > 0;
+    const label = left ? 'TIME LEFT' : 'ROUND';
+    const text = fmtClock(left ? Math.max(0, limit - clock) : clock);
+    if (this.clockLabel.textContent !== label) this.clockLabel.textContent = label;
+    if (this.clockText.textContent !== text) this.clockText.textContent = text;
+  }
+
   update(t, dt = 0.016) {
     const player = this.player;
     const rec = player.rec;
@@ -2010,6 +2042,7 @@ export class ReplayUi {
     const clock = roundClock(rec, t);
     const round = clock === null ? '' : `ROUND ${fmtClock(clock)}`;
     if (this.roundText.textContent !== round) this.roundText.textContent = round;
+    quietly('the round clock', () => this.updateClock(clock, rec.timeLimit));
     // Each part of the chrome on its own (`quietly`): the name tags that
     // cannot be placed leave the clock, the card and the board working.
     quietly('the timeline', () => this.timeline.update(t));

@@ -269,4 +269,28 @@ results.morph = [[0.7, 0.05], [0.7, 0.1], [0.7, 0.3], [0.5, 0.3], [4, 0.05], [10
   results.viewmodel.disposed = { rigs: view.rigs.size, shown: view.shown };
 }
 
+// --- a reload held for the arms' own clip ---------------------------------------
+// The body's `Ub_StandReloadMp40` is the 3P clip, 1.92 s; the arms' is
+// `1PReloadMp40`, 4.55 s (q8uwcxrjcg, the 2026-11-27 report). A run the body
+// takes inside the clip takes the arms once it ends; a raise cuts it at once.
+{
+  const one = extra => recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'anim', t: 0, states }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1727, netId: 50, tmpl: 'GermanSoldier', pos: [0, 1, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 3, name: 'medic', team: 1, ai: 0, vehNetId: 50 }),
+    line({ k: 'e', t: 1, e: 'control', pid: 3, netId: 50 }),
+    line({ k: 'o', t: 1, id: 50, gid: 1, tmpl: 'GermanSoldier', tid: 1727, team: 1, maxhp: 30 }),
+    line({ k: 's', t: 1, o: [[50, 0, 2, 0, 0, 0, 0, 1]] }),
+    st(1, 0, 5), st(2, 0, 6), st(3, 0, 8), st(4.93, 1, 9), st(6, 0, 6), ...extra,
+    line({ k: 'end', t: 12 }),
+  ].join('\n'));
+  const baseOf = r => vm.armsTrack(r, r.lives.find(l => l.nid === 50), 'MP40', { ...rigOf(mp40), data: { roundOfFire: 9 } })
+    .base.map(b => [r3(b.start), b.hidden ? 'hidden' : b.family]);
+  results.reloadHeld = {
+    ran: baseOf(one([])),
+    raised: baseOf(one([st(5.5, 0, 14, 4)])),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));

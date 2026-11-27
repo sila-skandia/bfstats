@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  aimAt, bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, lowerHeldByLod, nameAt, primaryWeaponFor, recordedDeath,
+  aimAt, bodyAt, controlledAt, deathStance, hpAt, lateRiseAt, isReplicated, kitAt, latestIndex, lifeAt, lowerHeldByLod, nameAt, primaryWeaponFor, recordedDeath,
   recordedFlight, rootOf, shooterViewLag, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
@@ -64,6 +64,30 @@ const DIE_FAMILY = new Map([
   ['Lb_ExplosionLandBack', explosionDeath('Lb_ExplosionLandBack')],
   [PARA_CLIPS.deadLanded.lower, 'parachuteDeadLanded'],
 ]);
+
+/** The standing deaths, and what each is crouched (`deathFamily`'s pairs). */
+const CROUCHED_DEATH = Object.freeze({
+  dieChestStand: 'dieChestCrouch', dieBackStand: 'dieBackCrouch', dieHead: 'dieChestCrouch', dieSlow: 'dieChestCrouch',
+});
+
+/**
+ * The death a body plays: where a blast or a canopy landed him, else the die
+ * state the recording has, put in the stance he was drawn in before it
+ * (`deathStance`). The server's machine stands a dying crouched or prone man
+ * up a tick before it picks his death, and the page played him rising and
+ * falling from his feet; a standing death is played crouched, or lying,
+ * when he was. Undefined where the recording names no death.
+ */
+function familyOfDeath(rec, life, flight) {
+  const landed = DIE_FAMILY.get(flight?.landing);
+  if (landed) return landed;
+  const family = DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+  if (!family || !(family in CROUCHED_DEATH)) return family;
+  const stance = deathStance(rec, life.nid, life.diedAt);
+  if (stance === 'crouch') return CROUCHED_DEATH[family];
+  if (stance === 'prone') return 'dieLie';
+  return family;
+}
 
 /**
  * A hit he lives through. `BFSoldier::handleDamage` (lnxded `0x08270980`),
@@ -725,8 +749,8 @@ export class ReplaySoldiers {
       _euler.setFromQuaternion(_q, 'YXZ');
       Object.assign(spec, { x: pose.p[0], y: pose.p[1], z: pose.p[2], yaw: _euler.y });
       const flight = this.flightOf(life);
-      spec.family = DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
-      spec.stance = bodyAt(rec, life.nid, life.diedAt - SEAT_LOOKBACK)?.stance ?? 'stand';
+      spec.family = familyOfDeath(rec, life, flight);
+      spec.stance = deathStance(rec, life.nid, life.diedAt) ?? bodyAt(rec, life.nid, life.diedAt - SEAT_LOOKBACK)?.stance ?? 'stand';
     }
     const scene = this.bodies.layCorpse(spec);
     if (scene) this.lying.set(life, { scene, pid, seated: Boolean(seat) });
@@ -814,7 +838,13 @@ export class ReplaySoldiers {
     // A v4 recording carries his body's own animation states: the stance
     // is the lower state's flags, the fire the upper state, and the item
     // in his hands the one the server says he holds.
-    const body = bodyAt(rec, life.nid, t);
+    // The rise the server's machine puts a dying crouched or prone man in a
+    // tick before his death is drawn as what he held before it
+    // (`deathStance`): he falls from where he was, not from his feet.
+    const rise = Number.isFinite(life.diedAt) && t < life.diedAt && t > life.diedAt - 1
+      ? lateRiseAt(rec, life.nid, life.diedAt) : null;
+    const bodyT = rise !== null && t >= rise ? rise - 1e-4 : t;
+    const body = bodyAt(rec, life.nid, bodyT);
     actor.stance = body?.stance ?? 'stand';
     s.stance = actor.stance;
     // His recorded aim, `{ pitch, twist }` eased on the clock, which the
@@ -837,7 +867,7 @@ export class ReplaySoldiers {
     // How long he has been in each, so a body that loads after a state began
     // (the knife's body, after its 0.33 s draw has started) goes in where the
     // recording stands rather than from the top or not at all.
-    const since = body ? stateEntries(rec, life.nid, t) : null;
+    const since = body ? stateEntries(rec, life.nid, bodyT) : null;
     actor.recordedLowerAt = since ? Math.max(0, t - since.lower) : 0;
     actor.recordedUpperAt = since ? Math.max(0, t - since.upper) : 0;
     // A weapon change while the timeline is dragged waits for the drag to
@@ -929,7 +959,7 @@ export class ReplaySoldiers {
         // own choice otherwise, and in a seat (`Ub_DieInVehicle`, the seat
         // body he was drawn in slumping where it sits).
         const family = deathSeat ? undefined
-          : DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+          : familyOfDeath(rec, life, flight);
         // Every body lies until `lyingBodies` takes it away: its destroy, or
         // the corpse clock where the file has none (`bodyEndOf`).
         // A body with no rig loaded yet leaves none, and `corpseOf` then

@@ -86,6 +86,15 @@ class ReplayViewmodelTests(unittest.TestCase):
             [22, "deploy"], [22.5, "idle"], [23.05, "crouchWalk"],
         ])
 
+    def test_a_reload_runs_its_own_first_person_clip(self) -> None:
+        held = self.results["reloadHeld"]
+        # The body's reload is 1.93 s, the arms' 4.55 s: the run the body
+        # took at 4.93 s and the aim it took at 6 s wait for the magazine:
+        # the aim takes the arms at 7.55 s.
+        self.assertEqual(held["ran"], [[1, "deploy"], [2, "idle"], [3, "reload"], [7.545, "idle"]])
+        # A grenade raised at 5.5 s takes the arms at once.
+        self.assertEqual(held["raised"], [[1, "deploy"], [2, "idle"], [3, "reload"], [5.5, "deploy"], [6, "idle"]])
+
     def test_his_rounds_are_the_fire(self) -> None:
         fires = self.results["track"]["fires"]
         self.assertEqual(fires, [

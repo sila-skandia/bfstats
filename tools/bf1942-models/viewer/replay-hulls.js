@@ -439,7 +439,7 @@ export class ReplayHull {
     // his exit or its damage), else while someone holds the root seat: its
     // note plays and its propeller turns only then.
     const live = replicated && !wrecked;
-    this.engine = this.drive ? engineAt(player.rec, life.nid, t) : null;
+    this.engine = this.drive ? engineAt(player.rec, life.nid, t, life.created, life.destroyed) : null;
     // Each engine's own revs, for the note (`Aircraft.presentEngines`).
     this.engines = this.drive && this.kind === 'air'
       ? enginesAt(player.rec, life.nid, t, life.created, life.destroyed) : null;

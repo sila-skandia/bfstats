@@ -281,6 +281,8 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
     }
   }
 
+  holdReloads(base, clip);
+
   // His rounds of it, as the clicks that fired them.
   // The round leaves `delayTicks` after the tick that took the click
   // (fire-timer.js; 0.4 s: 12 ticks, as the lab server recorded).
@@ -358,6 +360,37 @@ function countVariants(has, family) {
   let n = 0;
   while (has(`${family}${n + 1}`)) n += 1;
   return Math.max(1, n);
+}
+
+/** The arms' reloads, which run their own clip whatever the body does. */
+const RELOAD_FAMILIES = new Set(['reload', 'proneReload']);
+/** What may cut a reload short: the weapon put away or changed. */
+const ENDS_RELOAD = /deploy|reload|bolt/i;
+
+/**
+ * Each reload in `base` held for its own first-person clip. The body's
+ * reload state is the third-person one, `3PReload<W>`, and the arms' is
+ * `1PReload<W>`: the Mp40's are 1.92 s and 4.55 s, the Mp18's 1.92 s and
+ * 4.35 s, and the magazine fills 4.27 s after the state began (q8uwcxrjcg,
+ * 536 at 3195.06 to its `am` refill at 3199.33). Following the body, the
+ * arms let go of the magazine under half way through and ran on with an
+ * empty gun (the 2026-11-27 report: "reload animations are incomplete for
+ * the MP40/18"). The body's states inside the clip (a run, an aim) take the
+ * arms once it ends; a raise or the weapon put away still takes them at once.
+ */
+function holdReloads(base, clip) {
+  for (let i = 0; i < base.length; i++) {
+    const b = base[i];
+    if (b.hidden || !RELOAD_FAMILIES.has(b.family)) continue;
+    const end = b.start + (clip(b.family)?.duration ?? 0);
+    let j = i + 1;
+    while (j < base.length && base[j].start < end && !base[j].hidden && !ENDS_RELOAD.test(base[j].family ?? '')) j++;
+    if (j === i + 1) continue;
+    const resumes = base[j - 1];
+    const cut = j < base.length && base[j].start < end;
+    if (cut) base.splice(i + 1, j - i - 1);
+    else base.splice(i + 1, j - i - 1, { ...resumes, start: end });
+  }
 }
 
 /**

@@ -3343,4 +3343,32 @@ const read = scene => {
   };
 }
 
+// --- engines and deaths across a reset (q8uwcxrjcg, the 2026-11-27 report) --------
+{
+  const L = o => JSON.stringify(o);
+  const anim = [[1, 'Lb_Crouch', 0x20], [2, 'Lb_CrouchToStand', 0], [3, 'Lb_DieChestStand', 0], [4, 'Ub_Crouch', 0],
+    [5, 'Lb_Stand', 0], [6, 'Lb_Lie', 0x40], [7, 'Lb_DieLie', 0x40]];
+  const rec = recording.parseRecording([
+    L({ k: 'h', v: 5, start: '', hz: 30 }),
+    L({ k: 'anim', t: 0, states: anim }),
+    // A T34 driven at 1 s, its engine's last row "running"; the round resets
+    // at 3 s and the same root comes back with a new engine that never runs.
+    L({ k: 'o', t: 0, id: 531, gid: 1, tmpl: 'T34', tid: 9 }),
+    L({ k: 'g', t: 0, o: [[531, 0, 0, 0, 1, 19]] }),
+    L({ k: 'g', t: 1, o: [[531, 0.8, 0, 1, 1, 19]] }),
+    L({ k: 'g', t: 3, o: [[531, 0, 0, 0, 1, 109]] }),
+    // Soldier 700 crouched until 0.07 s before his standing death; 701
+    // stood up 1 s before his; 702 lay and died lying.
+    L({ k: 'st', t: 4, o: [[700, 1, 4, 0, 0, 3, 0], [701, 1, 4, 0, 0, 3, 0], [702, 6, 4, 0, 0, 3, 0]] }),
+    L({ k: 'st', t: 4.5, o: [[701, 5, 4, 0, 0, 3, 0]] }),
+    L({ k: 'st', t: 5.43, o: [[700, 2, 4, 0, 0, 3, 0]] }),
+    L({ k: 'st', t: 5.5, o: [[700, 3, 4, 0, 0, 3, 0], [701, 3, 4, 0, 0, 3, 0], [702, 7, 4, 0, 0, 3, 0]] }),
+    L({ k: 'end', t: 8 }),
+  ].join('\n'));
+  results.reset = {
+    engine: [recording.engineAt(rec, 531, 2), recording.engineAt(rec, 531, 4)],
+    stance: [700, 701, 702].map(nid => recording.deathStance(rec, nid, 5.5)),
+  };
+}
+
 console.log(JSON.stringify(results));

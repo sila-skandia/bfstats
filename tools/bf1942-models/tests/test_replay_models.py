@@ -342,6 +342,7 @@ class ReplayRecordingTests(unittest.TestCase):
         # The engine: the PhysicsEngine's revs, running and not.
         self.assertEqual(v5["engine"][0], {"revs": 0.8, "running": True, "disabled": False})
         self.assertEqual(v5["engine"][1], {"revs": 0.1, "running": False, "disabled": False})
+
         # A turret's rotation against its hull, by the part's template name,
         # with where it sits on the hull in the viewer's frame (z negated).
         self.assertEqual(v5["joint"], {"name": "ShermanTower", "q": [0, 0.7071, 0, 0.7071],
@@ -352,6 +353,18 @@ class ReplayRecordingTests(unittest.TestCase):
         self.assertEqual((crouched["stance"], crouched["firing"], crouched["item"]), ("crouch", True, 2))
         self.assertEqual(crouched["pitch"], -12.5)
         self.assertEqual((lying["stance"], lying["firing"], lying["item"]), ("prone", False, 3))
+
+    def test_an_engine_from_before_a_reset_does_not_run_the_new_hull(self) -> None:
+        # The T34 driven before Berlin reset (q8uwcxrjcg, 3148 s) left its
+        # engine's last row "running"; the empty hull after it droned on.
+        before, after = self.results["reset"]["engine"]
+        self.assertTrue(before["running"])
+        self.assertEqual(after, {"revs": 0, "running": False, "disabled": False})
+
+    def test_a_death_keeps_the_stance_a_late_rise_left(self) -> None:
+        # 700 crouched until `Lb_CrouchToStand` 0.07 s before his standing
+        # death: crouched. 701 stood a second before his: standing. 702 lay.
+        self.assertEqual(self.results["reset"]["stance"], ["crouch", "stand", "prone"])
 
 
 class ReplayKinematicsTests(unittest.TestCase):

@@ -436,15 +436,12 @@ there is none, put a death cam over where he died, as solo play does.
   orbit's own tilt and zoom come back after it, behind whoever it is on. First
   person shows the death cam too: the recording player's own camera flies to
   wherever his spawn screen points once he dies.
-- **The killer** (`killerToFollow`, replay.js `followKiller`): once the death
-  cam has held 2.8 s, the Auto camera's own beat (`DEATH_HOLD`), the camera
-  follows his killer and flashes `Killer: <name>`, in whatever mode it was:
-  the orbit, or first person. It only happens while the round plays through
-  that moment, never on a seek past it. It never overrides the Auto camera
-  (which already does this), a highlight's reel, a creator's rig or the free
-  camera. With no killer (his own hand, a fall), or a killer who is dead or
-  gone by then, the death cam holds until he is back. The rule follows
-  whoever is followed, so it carries on down the chain.
+- **The killer**: a player followed by hand stays followed through his
+  death; the death cam holds on him until he is back. Only the Auto camera
+  goes on to his killer once its death beat (`DEATH_HOLD`, 2.8 s) has run.
+  (From 2026-10-06 to 2026-11-27 a hand-picked player was handed on to his
+  killer too, `killerToFollow`; players reported it as the camera switching
+  without being told to, so Auto is the opt-in for it.)
 - **The wheel**: in the orbit on a man or his seat, one more step in once the
   zoom is at its closest (1.5 m off a soldier) goes through his eyes, and
   `First person` flashes. Wheeling out comes back, as before. On a death
