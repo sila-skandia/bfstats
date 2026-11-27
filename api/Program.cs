@@ -577,7 +577,19 @@ try
     builder.Services.AddScoped<api.AppSignIn.IAppSignInService, api.AppSignIn.AppSignInService>();
     builder.Services.AddSingleton<IPasswordHashService, PasswordHashService>();
     builder.Services.AddSingleton<IEmailHashService, EmailHashService>();
-    builder.Services.AddSingleton<IEmailSender, NoOpEmailSender>();
+    // Password reset email (features/password-reset): Cloudflare Email Service when its
+    // account id and token are set, otherwise log-and-drop so dev needs no credentials.
+    builder.Services.Configure<CloudflareEmailOptions>(builder.Configuration.GetSection(CloudflareEmailOptions.Section));
+    builder.Services.AddHttpClient(CloudflareEmailSender.HttpClientName, client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(15);
+        client.DefaultRequestHeaders.Add("User-Agent", "bf1942-stats/1.0");
+    });
+    if (builder.Configuration.GetSection(CloudflareEmailOptions.Section).Get<CloudflareEmailOptions>()?.IsConfigured == true)
+        builder.Services.AddSingleton<IEmailSender, CloudflareEmailSender>();
+    else
+        builder.Services.AddSingleton<IEmailSender, NoOpEmailSender>();
+    builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
     {
@@ -874,6 +886,8 @@ try
     // Register Discord webhook service for AI quality alerts
     builder.Services.Configure<api.DiscordNotifications.DiscordAIQualityOptions>(
         builder.Configuration.GetSection("DiscordAIQuality"));
+    builder.Services.Configure<api.DiscordNotifications.DiscordPasswordResetOptions>(
+        builder.Configuration.GetSection("DiscordPasswordReset"));
     builder.Services.AddHttpClient("DiscordWebhook", client =>
     {
         client.Timeout = TimeSpan.FromSeconds(10);

@@ -19,6 +19,7 @@ Replace the example values with your real credentials:
 | `discord-client-id` | Discord OAuth application Client ID (Discord Developer Portal) |
 | `discord-client-secret` | Discord OAuth application Client Secret |
 | `ai-quality-webhook` | Discord webhook URL for AI quality alerts when confidence is low or kernel methods are insufficient (optional; omit or leave empty to disable) |
+| `password-reset-webhook` | Discord webhook URL for forgotten-password requests the site cannot email: the account has no email, or the typed one does not match (optional; `features/password-reset`) |
 
 ## Patch after creation
 

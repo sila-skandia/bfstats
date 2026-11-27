@@ -1,27 +1,33 @@
+using api.Auth.Models;
 using Microsoft.Extensions.Logging;
 
 namespace api.Auth;
 
 /// <summary>
-/// Outbound email seam. There is no SMTP relay on the deployment node today,
-/// so the default implementation logs and drops: the forgotten-password
-/// endpoint already answers with a uniform 200 and no delivery promise,
-/// which keeps the UX honest. When an SMTP relay lands, replace this class —
-/// everything else calls the interface.
+/// Outbound email seam. Production sends through Cloudflare Email Service
+/// (<see cref="CloudflareEmailSender"/>); without its account id and token the
+/// API falls back to <see cref="NoOpEmailSender"/>, which logs and drops, so a
+/// dev machine never needs credentials.
 /// </summary>
 public interface IEmailSender
 {
-    Task SendAsync(string toAddress, string subject, string body, CancellationToken cancellationToken = default);
+    /// <summary>Sends one message; throws <see cref="EmailDeliveryException"/> when the provider refuses it.</summary>
+    Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default);
+}
+
+public class EmailDeliveryException : Exception
+{
+    public EmailDeliveryException() { }
+    public EmailDeliveryException(string message) : base(message) { }
+    public EmailDeliveryException(string message, Exception innerException) : base(message, innerException) { }
 }
 
 public class NoOpEmailSender(ILogger<NoOpEmailSender> logger) : IEmailSender
 {
-    public Task SendAsync(string toAddress, string subject, string body, CancellationToken cancellationToken = default)
+    public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
-        // No address contents here — the caller logs ids, we log that a
-        // message was dropped, which is all an operator can act on until a
-        // relay exists.
-        logger.LogInformation("Email delivery unavailable (no SMTP configured); dropped message '{Subject}'", subject);
+        // Never the address or the body: the body carries a live reset link.
+        logger.LogInformation("Email delivery not configured (CloudflareEmail:AccountId/ApiToken); dropped message '{Subject}'", message.Subject);
         return Task.CompletedTask;
     }
 }

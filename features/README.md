@@ -352,6 +352,7 @@ folder answers.
 - [blog](blog/README.md): `/blog`, markdown posts drawn like `/battleview`; the `/blog-post` skill formats a draft into one
 - [oauth-implementation](oauth-implementation/OAUTH_IMPLEMENTATION_GUIDE.md): OAuth 2.0 Clean Implementation Guide
 - [username-password-auth](username-password-auth/README.md): First-party username + password sign-in next to Discord
+- [password-reset](password-reset/README.md): forgotten passwords: a one-time link through Cloudflare Email Service, or a Discord notice to the owner when the account has no email
 - [bfv-through-bfstats](bfv-through-bfstats/README.md): bfv.bfstats.io signs in, uploads and gets Shorts through bfstats; a recording's game read from its header picks its checks and its disk
 - [discord-oauth-backend-setup](discord-oauth-backend-setup/DISCORD_OAUTH_BACKEND_SETUP.md): Discord OAuth Backend Setup Guide
 - [discord-oauth-quick-start](discord-oauth-quick-start/DISCORD_OAUTH_QUICK_START.md): Discord OAuth - Quick Start

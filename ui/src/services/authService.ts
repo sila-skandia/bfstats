@@ -188,7 +188,20 @@ class AuthService {
       body: JSON.stringify({ username, email }),
     });
     const data = await response.json().catch(() => ({}));
-    return data.message || 'If the username and email match an account, reset instructions have been sent.';
+    return data.message || 'If the username and email match an account, a reset link is on its way.';
+  }
+
+  /** Spends an emailed reset link (features/password-reset). Throws with the server's reason. */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const response = await fetch('/stats/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || 'Could not reset the password');
+    }
   }
 
   async handleDiscordCallback(code: string): Promise<void> {

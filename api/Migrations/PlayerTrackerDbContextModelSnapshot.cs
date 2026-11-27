@@ -110,6 +110,41 @@ namespace api.Migrations
                     b.ToTable("AppAuthorizationCodes");
                 });
 
+            modelBuilder.Entity("api.Auth.Models.PasswordResetToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExpiresAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PasswordResetTokens");
+                });
+
             modelBuilder.Entity("api.Data.Entities.AdminAuditLog", b =>
                 {
                     b.Property<long>("Id")
@@ -2905,6 +2940,17 @@ namespace api.Migrations
                 });
 
             modelBuilder.Entity("api.AppSignIn.Models.AppAuthorizationCode", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("api.Auth.Models.PasswordResetToken", b =>
                 {
                     b.HasOne("api.PlayerTracking.User", "User")
                         .WithMany()

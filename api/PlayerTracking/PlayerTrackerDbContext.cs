@@ -91,6 +91,8 @@ public class PlayerTrackerDbContext : DbContext
     // BF1942 profiles stored on the account (features/game-profiles)
     public DbSet<GameProfile> GameProfiles { get; set; }
     public DbSet<api.AppSignIn.Models.AppAuthorizationCode> AppAuthorizationCodes { get; set; }
+    // One-time password reset links (features/password-reset)
+    public DbSet<api.Auth.Models.PasswordResetToken> PasswordResetTokens { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1431,6 +1433,23 @@ public class PlayerTrackerDbContext : DbContext
             code.HasOne(c => c.User)
                 .WithMany()
                 .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<api.Auth.Models.PasswordResetToken>(token =>
+        {
+            token.HasKey(t => t.Id);
+            token.HasIndex(t => t.TokenHash).IsUnique();
+            token.HasIndex(t => t.UserId);
+            token.Property(t => t.TokenHash).HasMaxLength(64);
+            token.Property(t => t.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            token.Property(t => t.ExpiresAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            token.Property(t => t.UsedAt).HasConversion(
+                v => v.HasValue ? FormatInstant(v.Value) : null,
+                v => v != null ? ParseInstant(v) : null);
+            token.HasOne(t => t.User)
+                .WithMany()
+                .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

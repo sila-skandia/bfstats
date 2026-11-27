@@ -27,6 +27,10 @@ public static class E2eDatabaseSeed
     public const string ServerGuid = "e2e-server-1";
     public const string AdminEmail = "admin@bfstats.io";
 
+    /// <summary>A password account with a live reset link, re-armed on every boot (e2e/password-reset.spec.ts).</summary>
+    public const string ResetUsername = "e2e-reset";
+    public const string ResetToken = "e2e-reset-token-0123456789abcdefghijklmnopqrstuv";
+
     public static async Task ApplyAsync(PlayerTrackerDbContext db, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
@@ -196,6 +200,47 @@ public static class E2eDatabaseSeed
             admin.Role = AppRoles.Admin;
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+
+        await SeedPasswordResetAsync(db, cancellationToken);
+    }
+
+    private static async Task SeedPasswordResetAsync(PlayerTrackerDbContext db, CancellationToken cancellationToken)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == ResetUsername, cancellationToken);
+        if (user is null)
+        {
+            user = new User
+            {
+                Email = "no-email-e2e-reset@users.bfstats.io",
+                Username = ResetUsername,
+                AuthProvider = "password",
+                CreatedAt = DateTime.UtcNow.AddDays(-1),
+                LastLoggedIn = DateTime.UtcNow.AddDays(-1),
+                IsActive = true,
+            };
+            db.Users.Add(user);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var hash = api.Auth.PasswordResetService.HashToken(ResetToken);
+        var now = SystemClock.Instance.GetCurrentInstant();
+        var link = await db.PasswordResetTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, cancellationToken);
+        if (link is null)
+        {
+            db.PasswordResetTokens.Add(new api.Auth.Models.PasswordResetToken
+            {
+                TokenHash = hash,
+                UserId = user.Id,
+                CreatedAt = now,
+                ExpiresAt = now + Duration.FromDays(365),
+            });
+        }
+        else
+        {
+            link.UsedAt = null;
+            link.ExpiresAt = now + Duration.FromDays(365);
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 }

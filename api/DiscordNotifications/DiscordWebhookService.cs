@@ -9,9 +9,54 @@ namespace api.DiscordNotifications;
 public class DiscordWebhookService(
     IHttpClientFactory httpClientFactory,
     IOptions<DiscordAIQualityOptions> aiQualityOptions,
+    IOptions<DiscordPasswordResetOptions> passwordResetOptions,
     ILogger<DiscordWebhookService> logger) : IDiscordWebhookService
 {
     private readonly DiscordAIQualityOptions _aiQualityOptions = aiQualityOptions.Value;
+    private readonly DiscordPasswordResetOptions _passwordResetOptions = passwordResetOptions.Value;
+
+    public async Task SendPasswordResetHelpAsync(PasswordResetHelpRequest request)
+    {
+        if (string.IsNullOrEmpty(_passwordResetOptions.WebhookUrl))
+        {
+            logger.LogDebug("Discord password reset webhook URL not configured, skipping notice");
+            return;
+        }
+
+        var why = request.Reason switch
+        {
+            PasswordResetHelpReason.NoEmailOnAccount => "The account has no email, so no reset link could be sent.",
+            _ => "The email typed is not the one on the account, so no reset link was sent.",
+        };
+        var embed = new
+        {
+            title = "Password reset needs a hand",
+            description =
+                $"**Account:** {Escape(request.Username)} (user id {request.UserId})\n{why}\n\n" +
+                $"Find them on Discord, then regenerate a password from Admin, Access: {_passwordResetOptions.AdminUrl}",
+            color = 0x847d4c,
+            timestamp = DateTime.UtcNow.ToString("o"),
+        };
+
+        try
+        {
+            var client = httpClientFactory.CreateClient("DiscordWebhook");
+            // No pings: a username is user-chosen text.
+            var payload = new { embeds = new[] { embed }, allowed_mentions = new { parse = Array.Empty<string>() } };
+            var response = await client.PostAsJsonAsync(_passwordResetOptions.WebhookUrl, payload);
+            if (!response.IsSuccessStatusCode)
+                logger.LogWarning("Discord password reset webhook returned {StatusCode}", response.StatusCode);
+            else
+                logger.LogInformation("Sent password reset help notice for user {UserId}", request.UserId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to send Discord password reset notice");
+        }
+    }
+
+    /// <summary>Usernames are [A-Za-z0-9_.-]; escape the two that are Markdown.</summary>
+    private static string Escape(string text) => text.Replace("_", "\\_").Replace("*", "\\*");
 
     public async Task SendAIQualityAlertAsync(AIQualityAlert alert)
     {

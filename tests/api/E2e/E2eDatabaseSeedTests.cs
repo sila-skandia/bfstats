@@ -54,7 +54,26 @@ public sealed class E2eDatabaseSeedTests : IDisposable
         Assert.Equal(E2eDatabaseSeed.PlayerNames.Length, await dbContext.Players.CountAsync());
         Assert.Equal(1, await dbContext.Servers.CountAsync());
         Assert.Equal(E2eDatabaseSeed.PlayerNames.Length, await dbContext.PlayerServerStats.CountAsync());
-        Assert.Equal(1, await dbContext.Users.CountAsync());
+        // The admin, and the password account e2e/password-reset.spec.ts resets.
+        Assert.Equal(2, await dbContext.Users.CountAsync());
+        var link = await dbContext.PasswordResetTokens.SingleAsync();
+        Assert.Null(link.UsedAt);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_rearms_a_spent_reset_link()
+    {
+        await E2eDatabaseSeed.ApplyAsync(dbContext);
+        var link = await dbContext.PasswordResetTokens.SingleAsync();
+        link.UsedAt = NodaTime.SystemClock.Instance.GetCurrentInstant();
+        await dbContext.SaveChangesAsync();
+
+        await E2eDatabaseSeed.ApplyAsync(dbContext);
+
+        dbContext.ChangeTracker.Clear();
+        var rearmed = await dbContext.PasswordResetTokens.SingleAsync();
+        Assert.Null(rearmed.UsedAt);
+        Assert.Equal(api.Auth.PasswordResetService.HashToken(E2eDatabaseSeed.ResetToken), rearmed.TokenHash);
     }
 
     public void Dispose()

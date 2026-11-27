@@ -22,7 +22,7 @@ public class AuthController(
     IAccountService accountService,
     IPasswordHashService passwordHashService,
     IEmailHashService emailHashService,
-    IEmailSender emailSender,
+    IPasswordResetService passwordResetService,
     ICacheService cacheService,
     IConfiguration configuration) : ControllerBase
 {
@@ -219,42 +219,58 @@ public class AuthController(
         return Ok(new { available = !taken });
     }
 
+    private const string ForgotPasswordAnswer =
+        "If the username and email match an account, a reset link is on its way. No email on the account? The site owner has been told and will help you on Discord.";
+
     /// <summary>
-    /// Forgotten password. Uniform 200 whether or not the pair matched — the
-    /// response never confirms an account exists. Delivery currently goes to
-    /// NoOpEmailSender: there is no SMTP relay on the node, so the lookup and
-    /// send plumbing is real but nothing leaves the server yet.
+    /// Forgotten password (features/password-reset). Uniform 200 whether or not the
+    /// pair matched: the response never confirms an account exists. A match emails a
+    /// one-time link; an account that cannot get one is passed to the owner on Discord.
     /// </summary>
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
+        var ip = GetClientIpAddress();
+        if (!await CheckForgotPasswordRateLimitAsync(ip))
+            return StatusCode(429, new { message = "Too many reset requests. Try again later." });
+
         try
         {
-            var user = await context.Users.FirstOrDefaultAsync(u =>
-                u.Username != null && u.Username.ToLower() == request.Username.Trim().ToLower());
-
-            if (user != null
-                && user.AuthProvider == "password"
-                && emailHashService.IsHashedEmail(user.Email)
-                && emailHashService.Matches(request.Email, user.Email))
-            {
-                // No email contents in the log — same rule as the Discord path.
-                logger.LogInformation("Forgotten-password request matched account; sending reset instructions");
-                await emailSender.SendAsync(
-                    request.Email,
-                    "bfstats.io password reset",
-                    "A password reset was requested for your bfstats.io account.",
-                    HttpContext.RequestAborted);
-            }
-
-            return Ok(new { message = "If the username and email match an account, reset instructions have been sent." });
+            await passwordResetService.RequestAsync(request.Username, request.Email, HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Forgot-password error");
             // Uniform response even on failure: no signal, no enumeration.
-            return Ok(new { message = "If the username and email match an account, reset instructions have been sent." });
+            logger.LogError(ex, "Forgot-password error");
         }
+        return Ok(new { message = ForgotPasswordAnswer });
+    }
+
+    /// <summary>Spends an emailed reset link: new password, every session signed out.</summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        if (!await CheckForgotPasswordRateLimitAsync(GetClientIpAddress()))
+            return StatusCode(429, new { message = "Too many attempts. Try again later." });
+
+        var outcome = await passwordResetService.ResetAsync(request.Token, request.NewPassword, HttpContext.RequestAborted);
+        return outcome switch
+        {
+            PasswordResetOutcome.Reset => NoContent(),
+            PasswordResetOutcome.WeakPassword => BadRequest(new { message = $"New password must be at least {PasswordResetService.MinPasswordLength} characters" }),
+            _ => BadRequest(new { message = "This reset link has expired or was already used. Ask for a new one." }),
+        };
+    }
+
+    /// <summary>Ten forgot or reset calls an hour per address: each can cost an email or a Discord notice.</summary>
+    private async Task<bool> CheckForgotPasswordRateLimitAsync(string? ipAddress)
+    {
+        if (string.IsNullOrEmpty(ipAddress)) return true;
+        var key = $"pwreset_ip:{ipAddress}";
+        var data = await cacheService.GetAsync<RateLimitData>(key);
+        if ((data?.Attempts ?? 0) >= 10) return false;
+        await cacheService.SetAsync(key, new RateLimitData { Attempts = (data?.Attempts ?? 0) + 1 }, TimeSpan.FromHours(1));
+        return true;
     }
 
     [HttpPost("password")]

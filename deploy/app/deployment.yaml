@@ -200,6 +200,28 @@ spec:
                   name: discord-secrets
                   key: ai-quality-webhook
                   optional: true
+            # Password reset (features/password-reset). Forgotten-password requests that
+            # cannot be emailed (no email on the account, or the wrong one typed) go to
+            # this Discord channel. Optional: unset, the notice is skipped.
+            - name: DiscordPasswordReset__WebhookUrl
+              valueFrom:
+                secretKeyRef:
+                  name: discord-secrets
+                  key: password-reset-webhook
+                  optional: true
+            # Reset links go out through Cloudflare Email Service's REST API. The account
+            # id is an identifier, not a secret. The token (Email Sending: Edit) is in the
+            # cloudflare-email secret; without it the API logs and drops the email.
+            - name: CloudflareEmail__AccountId
+              value: "eec964a0ad385fef75646d4b6b7d2f51"
+            - name: CloudflareEmail__From
+              value: "noreply@bfstats.io"
+            - name: CloudflareEmail__ApiToken
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-email
+                  key: api-token
+                  optional: true
             # Replay Shorts (features/replay-shorts): the render job's upload key. Optional,
             # so the pod starts without the secret; unset, only an admin can upload.
             - name: Shorts__UploadKey

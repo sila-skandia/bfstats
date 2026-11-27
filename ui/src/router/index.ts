@@ -308,6 +308,16 @@ const routes: RouteRecordRaw[] = [
       }
     },
     {
+      // The emailed password reset link (features/password-reset).
+      path: '/auth/reset-password',
+      name: 'auth-reset-password',
+      component: AuthSignInV4,
+      meta: {
+        title: 'Reset password · bfstats.io',
+        description: 'Choose a new bfstats.io password.'
+      }
+    },
+    {
       path: '/auth/register',
       name: 'auth-register',
       component: AuthSignInV4,

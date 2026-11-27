@@ -43,6 +43,13 @@ const forgotMode = ref(false)
 const forgotEmail = ref('')
 const forgotMessage = ref<string | null>(null)
 
+// The emailed reset link lands here: /auth/reset-password?token=... (features/password-reset).
+const isReset = computed(() => route.path === '/auth/reset-password')
+const resetToken = computed(() => (typeof route.query.token === 'string' ? route.query.token : ''))
+const newPassword = ref('')
+const confirmNewPassword = ref('')
+const resetDone = ref(false)
+
 // Live username availability. Advisory only: the field never blocks on it,
 // register is the authority. Debounced so typing does not hammer the API.
 const usernameStatus = ref<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
@@ -184,10 +191,35 @@ const submitForgot = async () => {
   try {
     forgotMessage.value = await authService.forgotPassword(username.value.trim(), forgotEmail.value.trim())
   } catch {
-    forgotMessage.value = 'If the username and email match an account, reset instructions have been sent.'
+    forgotMessage.value = 'If the username and email match an account, a reset link is on its way.'
   } finally {
     busy.value = false
   }
+}
+
+const submitReset = async () => {
+  error.value = null
+  if (newPassword.value !== confirmNewPassword.value) {
+    error.value = 'Passwords do not match'
+    return
+  }
+  busy.value = true
+  try {
+    await authService.resetPassword(resetToken.value, newPassword.value)
+    resetDone.value = true
+    newPassword.value = ''
+    confirmNewPassword.value = ''
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Could not reset the password'
+  } finally {
+    busy.value = false
+  }
+}
+
+const askForNewLink = () => {
+  error.value = null
+  forgotMode.value = true
+  router.push('/auth/login')
 }
 
 const signInWithDiscord = () => {
@@ -202,14 +234,62 @@ const signInWithDiscord = () => {
     <div class="mm-signin__panel">
       <MmBfvBand v-if="fromBfv" />
       <div class="mm-eyebrow mm-eyebrow--strong">
-        {{ isRegister ? 'Create account' : 'Sign in' }}
+        {{ isReset ? 'Reset password' : isRegister ? 'Create account' : 'Sign in' }}
       </div>
 
-      <!-- Forgotten-password flow swaps the panel content -->
-      <form v-if="forgotMode" class="mm-signin__form" @submit.prevent="submitForgot">
+      <!-- The emailed link: choose a new password -->
+      <div v-if="isReset && resetDone" class="mm-signin__form" data-testid="reset-done">
         <p class="mm-signin__note">
-          Enter the username and the email you registered with. If they match,
-          reset instructions are sent to that address.
+          Your password is changed, and every device that was signed in has been signed out.
+        </p>
+        <div class="mm-signin__actions">
+          <RouterLink to="/auth/login" class="mm-btn mm-btn--accent mm-signin__submit">Sign in</RouterLink>
+        </div>
+      </div>
+      <div v-else-if="isReset && !resetToken" class="mm-signin__form">
+        <p class="mm-signin__error">This reset link is incomplete. Open the link from the email again, or ask for a new one.</p>
+        <div class="mm-signin__actions">
+          <button type="button" class="mm-signin__link" @click="askForNewLink">Ask for a new link</button>
+        </div>
+      </div>
+      <form v-else-if="isReset" class="mm-signin__form" @submit.prevent="submitReset">
+        <label class="mm-signin__field">
+          <span class="mm-signin__field-label">New password</span>
+          <input
+            v-model="newPassword"
+            type="password"
+            class="mm-signin__input"
+            autocomplete="new-password"
+            required
+            minlength="8"
+          />
+        </label>
+        <label class="mm-signin__field">
+          <span class="mm-signin__field-label">Confirm new password</span>
+          <input
+            v-model="confirmNewPassword"
+            type="password"
+            class="mm-signin__input"
+            autocomplete="new-password"
+            required
+            minlength="8"
+          />
+        </label>
+        <p v-if="error" class="mm-signin__error">{{ error }}</p>
+        <div class="mm-signin__actions">
+          <button type="submit" class="mm-btn mm-btn--accent mm-signin__submit" :disabled="busy">
+            {{ busy ? 'Saving…' : 'Set new password' }}
+          </button>
+          <button type="button" class="mm-signin__link" @click="askForNewLink">Ask for a new link</button>
+        </div>
+      </form>
+
+      <!-- Forgotten-password flow swaps the panel content -->
+      <form v-else-if="forgotMode" class="mm-signin__form" @submit.prevent="submitForgot">
+        <p class="mm-signin__note">
+          Enter your username and the email you signed up with. If they match, a
+          reset link is sent to that address. Signed up without an email? Send it
+          anyway: the site owner is told and will help you on Discord.
         </p>
         <label class="mm-signin__field">
           <span class="mm-signin__field-label">Username</span>
@@ -217,12 +297,12 @@ const signInWithDiscord = () => {
         </label>
         <label class="mm-signin__field">
           <span class="mm-signin__field-label">Email</span>
-          <input v-model="forgotEmail" type="email" class="mm-signin__input" autocomplete="email" required />
+          <input v-model="forgotEmail" type="email" class="mm-signin__input" autocomplete="email" />
         </label>
         <p v-if="forgotMessage" class="mm-signin__note">{{ forgotMessage }}</p>
         <div class="mm-signin__actions">
           <button type="submit" class="mm-btn mm-btn--accent" :disabled="busy">
-            {{ busy ? 'Sending…' : 'Send reset instructions' }}
+            {{ busy ? 'Sending…' : 'Send reset link' }}
           </button>
           <button type="button" class="mm-signin__link" @click="forgotMode = false">Back to sign in</button>
         </div>

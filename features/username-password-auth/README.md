@@ -35,9 +35,8 @@ refresh-token cookies and roles are unchanged, so nothing downstream moves.
     optional player name linked straight into `UserPlayerNames` (a name with
     no tracked player yet is fine, because the alias table allows that on purpose).
   - `POST stats/auth/forgot-password`. Username plus email, HMAC lookup on the
-    stored hash, uniform 200 always (no enumeration). Delivery goes through
-    `IEmailSender`; the current `NoOpEmailSender` logs and drops because there
-    is no SMTP relay on the node.
+    stored hash, uniform 200 always (no enumeration). A match emails a one-time
+    reset link through Cloudflare Email Service (`features/password-reset`).
   - `POST stats/auth/password` (authorised). Changes the password; Discord-only
     accounts get a 400.
 - **Display.** Login response, profile and account export blank out the
@@ -56,9 +55,8 @@ refresh-token cookies and roles are unchanged, so nothing downstream moves.
 
 ## Follow-ups
 
-- SMTP relay + real `IEmailSender` implementation; a one-time reset token
-  table is the natural next step once delivery exists (today the forgot
-  endpoint can only prove nothing left the server).
+- Done: password reset by email, and a Discord notice for accounts without
+  one. See `features/password-reset`.
 - Player-name autocomplete on the register form (free text now; backend
   accepts any name and links it).
 - Registering with an email that already belongs to a Discord account is
