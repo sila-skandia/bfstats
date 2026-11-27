@@ -212,11 +212,19 @@ delete pod for agent home-server-mgr/...` in the controller log), retried about
 once a second per build, and **every other job's agents back up behind them**.
 On 2026-11-27, home-server-manager builds 70 to 78 did that from 12:30. bfstats
 build 1859 hung at Build API with no agent, and 1861 got its parallel branches'
-agents one at a time, each only after the previous pod was deleted. Aborting the
-stuck builds stops the 403s but leaves stale requests in the queue. **Manage
-Jenkins > Restart Safely** (`/safeRestart`) clears them. Do not use `kubectl
-rollout restart` for that: the controller Deployment is RollingUpdate on one
+agents one at a time, each only after the previous pod was deleted. Fixing the
+RBAC and aborting the stuck builds stops the 403s, but the Kubernetes plugin's
+in-memory count of provisioned agents stays full of the failed ones: no new
+agent starts at all, and every build queues. Only a controller restart clears it.
+
+Use the plain **Restart** (`/restart`), not **Restart Safely**: the safe restart
+waits for running builds, and these builds are running while they wait for
+agents that will never come, so it never starts (tried 2026-11-27). Pipeline
+builds resume after the restart and ask for agents again. Do not use `kubectl
+rollout restart` either: the controller Deployment is RollingUpdate on one
 `jenkins_home` volume, so the new controller would start beside the old one.
+After the 2026-11-27 restart, agents overlapped again within two minutes and
+home-server-manager #92 built in `home-server-mgr`.
 
 To check a namespace before pointing a job at it:
 
