@@ -4352,10 +4352,10 @@ replayController = createReplayController({
   // A replayed soldier's magazine change: his weapon's Reload slot, at him
   // (SND-17), as the page's own bots play it (replay-bodies.js `place`).
   playWorldReload: (weapon, x, y, z, owner) => pageAudio.playWorldReload(weapon, x, y, z, owner),
-  // The followed soldier's own hand sounds, heard as the player hears his
-  // (replay-bodies.js `ownEars`): his magazine change's Reload slot, and his
-  // medic bag's or wrench's Fire Loop, whose scripts stop at a metre, so no
-  // camera outside his head heard either. Played on the hand weapon's bus.
+  // The followed soldier's own hand sounds in his first person, heard as the
+  // player hears his (replay-bodies.js `earsPid`): his magazine change's
+  // Reload slot, and his medic bag's or wrench's Fire Loop, whose scripts
+  // stop at a metre. Played on the hand weapon's bus.
   ownHandSound: createReplayOwnHandSound(soldierKit),
   footstepTick: (actor, dt, own) => pageAudio.botFootstepTick(actor, dt, own),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),

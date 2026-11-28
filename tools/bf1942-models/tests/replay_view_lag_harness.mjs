@@ -42,6 +42,7 @@ function placed({ mode = 'pov', follow = 0, ping = 34, boardAt = null, rig = nul
     actorFor: () => ({}),
     place: (actor, pid, nid, t) => { out[pid] = +(T - t).toFixed(4); return false; },
     viewerPid: ReplaySoldiers.prototype.viewerPid,
+    earsPid: ReplaySoldiers.prototype.earsPid,
     onFoot: ReplaySoldiers.prototype.onFoot,
   };
   ReplaySoldiers.prototype.update.call(self, T, 1 / 30, new Map());

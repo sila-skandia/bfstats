@@ -426,6 +426,15 @@ export class ReplaySoldiers {
     actor.reloading = false;
   }
 
+  /** Whose ears the listener is: the followed man's in his first person
+   *  only, where his reload, his pack and his steps are his own sounds
+   *  (replay-own-sound.js). From a chase or orbit camera they are heard where
+   *  the camera is, as any other soldier's, distance ramps and all: a reload,
+   *  which stops at a metre, is not heard from 6.5 m behind him. */
+  earsPid() {
+    return this.player.camera?.mode === 'pov' ? this.viewerPid() : null;
+  }
+
   /** Whose client the camera shows the fight as: the followed player, while
    *  the camera is on him (his eyes, or chasing or orbiting him); none in the
    *  free camera or on a camera rig. */
@@ -457,6 +466,7 @@ export class ReplaySoldiers {
     // land on. Drawn at the server's time a strafing target ran a stride
     // ahead of every hit.
     const viewer = this.viewerPid();
+    const ears = this.earsPid();
     const lag = viewer === null ? 0 : shooterViewLag(rec, viewer, t);
     for (const pid of rec.playerNids?.keys() ?? []) {
       // Under a focus (the dogfight school's two pilots), no one else.
@@ -506,7 +516,7 @@ export class ReplaySoldiers {
       // Nobody steps in the air: a thrown man or a parachutist moves fast
       // with nothing under his boots.
       if (actor.vehicle || actor.state.dead || actor.state.soldier.held.airborne) continue;
-      const own = actor.pid === viewer;
+      const own = actor.pid === ears;
       if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt, own));
       else this.player.ctx.footstepTick?.(actor, dt, own);
     }
@@ -527,7 +537,7 @@ export class ReplaySoldiers {
     if (!hand) return;
     const at = this.ownPack;
     const live = this.player.playing && !this.dragging && at
-      && at.pid === this.viewerPid() && t >= at.t && t - at.t <= PACK_LOOP_HOLD;
+      && at.pid === this.earsPid() && t >= at.t && t - at.t <= PACK_LOOP_HOLD;
     const want = live ? at.weapon : null;
     if (want !== this.ownPackWant) {
       this.ownPackWant = want;
@@ -947,7 +957,7 @@ export class ReplaySoldiers {
     }
     // The followed man working his pack (`ownPackLoop`).
     const packName = actor.weaponAi?.name;
-    if (body?.firing && !dead && !seated && PACK_LOOP.test(packName ?? '') && pid === this.viewerPid()) {
+    if (body?.firing && !dead && !seated && PACK_LOOP.test(packName ?? '') && pid === this.earsPid()) {
       this.ownPack = { pid, weapon: packName, t };
     }
     // A fire the recording has no round for -- a grenade thrown, a rifle shot
@@ -981,7 +991,7 @@ export class ReplaySoldiers {
           // Every vanilla reload load stops at a metre: the followed man's is
           // heard as his own, everyone else's at him (replay-own-sound.js).
           const hand = this.player.ctx.ownHandSound;
-          if (hand && pid === this.viewerPid()) hand.reload(weapon);
+          if (hand && pid === this.earsPid()) hand.reload(weapon);
           else this.player.ctx.playWorldReload?.(weapon, s.x, s.y + 1.4, s.z, actor);
         }
       }

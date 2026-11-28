@@ -4,11 +4,13 @@
 // The Reload slot of every vanilla weapon stops at a metre (all 239 loads,
 // ledger SND-17), and so do `MedPack.ssc` and `RepairPack.ssc`, the medic
 // bag's tear and the wrench's clank: stereo Fire Loops with a `Volume <-
-// Distance` ramp of 1 to 1 m. Played at the soldier (`world-fire.js`), the
-// replay's chase camera 6.5 m behind him heard none of them, and the pack's
-// loop had no path at all. The player hears his own on the hand weapon's bus
-// (`hand-fire-sound.js`), and a replay that puts the viewer in a soldier's
-// eyes or on his shoulder plays his the same way.
+// Distance` ramp of 1 to 1 m. Played at the soldier (`world-fire.js`), a
+// replay in his first person heard them only by the listener standing within
+// a metre of his chest, and the pack's loop had no path at all. The player
+// hears his own on the hand weapon's bus (`hand-fire-sound.js`), and a replay
+// in a soldier's eyes plays his the same way (replay-bodies.js `earsPid`).
+// From a chase camera they stay at him in the world, and from 6.5 m are not
+// heard, as the game's own distance ramps say.
 //
 // `kit` is the page's soldier kit: `fetchHandFireSound(name)` (a weapon's
 // decoded report and edges, or null) and `setReplayFireLoop(fire)`. Imports

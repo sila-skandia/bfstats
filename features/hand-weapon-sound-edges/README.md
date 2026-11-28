@@ -297,18 +297,22 @@ headless Chromium, `WorldFire.play` counted): a minute of the round played a
 `Mp40#reload`, where it played none before. Guard: the prime's assertion in
 `tests/test_replay_auto_fire_sound.mjs`.
 
-### The followed soldier's reload is his own (2026-11-28)
+### The followed soldier's reload is his own, in his eyes (2026-11-28)
 
-Still reported inaudible on `q8uwcxrjcg` at 53:13 after the change above. The
-page did play it (`Mp40#reload` at 3195.03), at him, but the replay's chase
-camera sits 6.5 m behind him and every vanilla reload load stops at a metre.
-In the game the man reloading hears it as his own. So the followed soldier's
-(`replay-bodies.js` `viewerPid`: his eyes or his chase camera) now plays on
-the hand weapon's bus, through `hand-fire-sound.js`'s own `playReload`
-(`viewer/replay-own-sound.js`); everyone else's stays at him in the world.
-His footsteps go the same way (`page-audio.js` `botFootstepTick(..., own)`,
-`position` null, as the player's): from the chase camera the inverse roll-off
-took ~16 dB off them and the scripts' distance ramps dropped about half
-their layers (3-8 sample starts per 2 s against 15-24 in his eyes), which a
-fight beside him buried. Checked headless: the reload's 13 loads start on the
-hand bus at 3195.03 and 3238.36; 151 of 178 steps in 3190-3240 are his own.
+Still reported inaudible on `q8uwcxrjcg` at 53:13 after the change above, in
+first person. The page did play it (`Mp40#reload` at 3195.03), at him in the
+world, and every vanilla reload load stops at a metre. In the game the man
+reloading hears it as his own. So in the followed soldier's first person
+(`replay-bodies.js` `earsPid`: the followed man while the camera is `pov`) his
+reload plays on the hand weapon's bus, through `hand-fire-sound.js`'s own
+`playReload` (`viewer/replay-own-sound.js`), and his footsteps are the
+listener's own body (`page-audio.js` `botFootstepTick(..., own)`, `position`
+null), as the player's are.
+
+From the chase or orbit camera nothing changes: his sounds are a bystander's,
+heard at the camera with the scripts' distance ramps, so a reload from 6.5 m
+is not heard. That is the owner's call (2026-11-28): the camera is where the
+listener is, and a first pass that gave the chase camera his ears too was
+taken back. Checked headless, 3190-3240 s: in `pov` the reload's 13 loads
+start on the hand bus at 3195.03 and 3238.36 and 139 of 181 steps are his
+own; in `orbit` none are, and all 179 steps play in the world.

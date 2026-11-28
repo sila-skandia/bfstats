@@ -400,13 +400,14 @@ bars but made no sound, where the game tears cloth and clanks metal.
 hears it. The replay had no path for a pack's fire at all (it records no
 round), and a bystander's would be silent anyway.
 
-Now the followed soldier's is played as his own (`viewer/replay-own-sound.js`,
-`hand-fire-sound.js` `setReplayFireLoop`): on the hand weapon's bus while his
+Now, in the followed soldier's first person, his is played as his own
+(`viewer/replay-own-sound.js`, `hand-fire-sound.js` `setReplayFireLoop`): on
+the hand weapon's bus while his
 torso is in the pack's fire state, held 0.3 s across the one- or two-frame
 `Ub_StandAim` / `Ub_Fire` his recorded state passes through between pulls,
 and let run out on release. Nobody else's plays, as in the game. Silent while
-paused or dragged. "Followed" is `replay-bodies.js` `viewerPid`: his eyes or
-his chase camera, not the free camera or a creator's rig.
+paused or dragged. "In his first person" is `replay-bodies.js` `earsPid`;
+from the chase camera the pack is a bystander's and, a metre's script, silent.
 
 Checked on the page (headless Chromium, `AudioBufferSourceNode.start`
 counted by caller): on `q8uwcxrjcg` from 3190 s the loop starts at 3224.6,

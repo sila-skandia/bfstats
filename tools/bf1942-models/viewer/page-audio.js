@@ -966,12 +966,10 @@ export function createPageAudio(page) {
    * like the player; a replayed soldier names the engine's own lower-body
    * state (`recordedLower`), which is the trigger's source in the game.
    *
-   * `own`: the replay's followed soldier, whose ears the listener is (his
-   * eyes or his chase camera). His steps are the listener's own body, as the
-   * player's are (`position` null): heard where he stands, not from a chase
-   * camera 6.5 m behind him, where the inverse roll-off took 16 dB off them
-   * and the scripts' own `Volume <- Distance` ramps dropped half the layers,
-   * and a firefight beside him buried what was left.
+   * `own`: the replay's followed soldier seen through his own eyes
+   * (replay-bodies.js `earsPid`). His steps are then the listener's own body,
+   * as the player's are (`position` null). From a chase camera they are a
+   * bystander's, heard at the camera.
    */
   function botFootstepTick(bot, dt, own = false) {
     if (page.AUDIO_OFF) return;
