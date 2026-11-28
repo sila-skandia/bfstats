@@ -1,9 +1,11 @@
 # Hand-weapon part placement
 
 **Status:** fixed in the exporter (`bf42/pose.py` `hand_weapon_part`,
-`bf42/assemble.py`), the weapon models of all eleven trees re-extracted, and
-the baked poses and level pickups patched in place (`patch_weapon_parts.py`).
-The rollout record is at the end.
+`bf42/assemble.py`), and live in all eleven trees: weapon models re-extracted
+or patched, 3,651 baked poses and 547 levels patched in place
+(`patch_weapon_parts.py`). The rollout record is at the end.
+
+![FHSWEurope British soldier with the SG44 rifle-grenade, the baked pose before (left: hands empty, the rifle reversed behind his arm) and after](sg44-before-after.png)
 
 ## The report (2026-11-28)
 
@@ -56,6 +58,9 @@ Johnson's (+0.089 m) and the FG42's (`Gewehr42`, +0.069 m) stood on one side
 and the MP18's (-0.110 m) on the other. After, all three are on the same side
 (-0.124, -0.133, -0.145 m), the left, where the real guns carry them.
 
+On the live page after the rollout the blade is at (0.0915, 0.0205, 0.0766)
+in the hand's frame, the engine's place, the handle in the fist.
+
 The live page before the fix (`5txd9vj8ap`, 42 s, the studio probe): the blade
 0.121 m from the hand bone at (-0.0256, -0.0034, 0.1183) in the hand's frame,
 which is the old weld exactly; the engine's place is (0.0915, 0.0205, 0.0766),
@@ -94,3 +99,31 @@ SW knife models agree to 1e-7, an FHSWEurope `SG44Grenade` pose to 2e-7.
 The exporter marks a part it placed by the rule (`extras.handWeaponPart`), and
 the patcher marks what it moves, so a second run changes nothing. First-person
 rigs are skipped.
+
+## Rollout (2026-11-28)
+
+The owner, asked whether it was really a bug in the other mods: "if it's a
+bug it's a bug", so every tree. The picture at the top settled it for FHSW:
+its rifles hang their whole body off GUNBODY, 0.23 m from the main bone, and
+the baked poses held them reversed behind the arm with empty hands.
+
+Every live file was patched or re-extracted against what is live, staged in
+`~/.cache/weapon-parts-stage` and published with `publish-mesh-delta.py
+--root <stage> --hash`; the local trees here are partial and their manifests
+had drifted from the live ones, so nothing was published from them.
+
+| Layer | How | Count |
+|---|---|---|
+| Weapon models, vanilla, XPack1, XPack2, FH, GCMOD | re-extracted (`extract_models.py`), optimised, stored, rows merged into the live manifest | 15 + 18 + 21 + 60 + 15 weapons |
+| Weapon models, EoD, DC, DC Final, bf1918, FHSW, FHSWEurope | the live glbs patched (a re-extract would have added or dropped per-level variants the live rows do not list) | 27 + 28 + 77 + 72 + 207 + 215 glbs |
+| Baked poses | the live `.pose.glb` patched, by store blob where the tree's index maps it | 3,651 poses (bf1942 112, XPack1 154, XPack2 184, EoD 9, DC 3, DC Final 28, GCMOD 8, FH 130, bf1918 382, FHSW 1,268, FHSWEurope 1,383) |
+| Level bakes | the live `scene.glb` patched (its kit pickups), `.gz` and `.br` rewritten | 547 levels, 124,289 parts (bf1942 7, XPack2 4, FH 9, DC 18, DC Final 21, EoD 49 of 50, bf1918 92, FHSW 120, FHSWEurope 227); XPack1 and GCMOD place no such kit |
+
+Which weapons: those whose parts move 5 mm or more. A level was taken when its
+`scene.json` places or spawns such a weapon or a kit that carries one; the
+patcher then moves every hand-weapon part in it, the sub-5 mm ones too. A
+level with only sub-5 mm parts keeps them until its next bake.
+
+The re-extracted models carry committed exporter work that had not been
+published: `fireArms.ammoType`, `barrelsDeclared` and `addRootSpeed`, which
+the page's HUD already reads.
