@@ -8,6 +8,7 @@
 // vehicle registry on every read (features/vehicle-instance-refactor).
 // Lifted out of map.html (Part 2).
 
+import { PACK_STATE } from './rocket-pack.js';
 import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { hitFromDirAlpha, hitFromDirOctant } from './hud.js';
@@ -871,8 +872,21 @@ export function createLocalPlayer(page) {
           // The wearer owns the pack's patch: every burst is a trigger of
           // the one before's (ledger SND-33), not a round for any free slot.
           page.playWorldShot?.(flier.pack.spec.template, flier.x, flier.y + 1.2, flier.z, flier);
+          localPlayer.packBurstAt = performance.now();
         }
       }
+    }
+    // Between bursts the pack hums (patch 1, `page-audio.js` `packHum`): on
+    // and passive, out of a seat and alive; a blocked or burning pack does not.
+    const template = flier?.pack?.spec?.template;
+    const passive = template && !localPlayer.occupancy && flier.pack.state === PACK_STATE.PASSIVE
+      && !(localPlayer.soldierArmor && !(localPlayer.soldierArmor.hitPoints > 0));
+    if (passive || localPlayer.packHumming) {
+      const at = localPlayer.packBurstAt;
+      page.packHum?.('local', passive ? template : null,
+        passive ? { x: flier.x, y: flier.y + 1.2, z: flier.z } : null,
+        at === undefined ? Infinity : (performance.now() - at) / 1000);
+      localPlayer.packHumming = Boolean(passive);
     }
   };
 

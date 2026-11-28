@@ -215,6 +215,23 @@ def fire_sample(patches) -> tuple[SoundSample | None, str]:
     return None, "every patch is silence"
 
 
+def firing_samples(kind: str | None, patches) -> list:
+    """The samples a bystander hears for one trigger of `kind`'s script.
+
+    A weapon's is its firing patch (`_firing_patch`). An `ActiveKitPart`'s
+    script is an engine's, not a gun's: XPack2's rocket pack (`RocketPack.ssc`
+    -> `EngineHigh.ssc`) has patch 0 "Engine ON" (`jetpack-thrusters`, a
+    one-shot, gone 0.2 s after the trigger lets go) and patch 1 "Engine off"
+    (`jetpack-idle`, a loop that fades in from silence over its first 1.2 s).
+    `_firing_patch` prefers a looping patch, so the pack shipped the idle loop
+    as its burst's voice: every burst triggered it again, its Time gate never
+    opened, and a burn was all but silent. A burst is patch 0's.
+    """
+    if (kind or "").lower() == "activekitpart":
+        return _non_silence(patches[0].samples) if patches else []
+    return _firing_patch(patches)
+
+
 def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
                          objects: ArchivePool, sounds: ArchivePool,
                          out: Path, previous: dict | None = None
@@ -286,13 +303,28 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     # falls back to `FALLBACK_RAMP` over that pick.
     try:
         write = sample_writer(out, out, sounds=sounds)
-        layers = _sound_layers(_firing_patch(patches), sounds, write,
-                               patches=patches)
+        firing = firing_samples(template.kind, patches)
+        layers = _sound_layers(firing, sounds, write, patches=patches)
     except Exception as exc:            # noqa: BLE001 - a sample must not kill the armoury
         print(f"  {name}: layers skipped ({exc})", file=sys.stderr)
         layers = []
     if layers:
         entry["layers"] = layers
+    # An `ActiveKitPart` sounds its patch 1 while it is passive (on, not
+    # bursting): the client's `ActiveKitPart::update` selects patch 0 with a
+    # trigger on every burst, patch 1 when the burst lapses, 2 on overheat and
+    # 3 when blocked (Mac client `0x000c2e88`, the third-party corpus). The
+    # rocket pack's patch 1 is its idle loop; 2 and 3 are empty.
+    if (template.kind or "").lower() == "activekitpart" and len(patches) > 1:
+        try:
+            write = sample_writer(out, out, sounds=sounds)
+            idle = _sound_layers(_non_silence(patches[1].samples), sounds, write,
+                                 patches=patches)
+        except Exception as exc:        # noqa: BLE001
+            print(f"  {name}: idle skipped ({exc})", file=sys.stderr)
+            idle = []
+        if idle:
+            entry["idle"] = idle
     picks = _alternates(name, sample, patches, sounds, out, previous)
     if picks:
         entry["randomPlay"] = picks
@@ -302,7 +334,9 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
         entry["press"] = press
     if release:
         entry["release"] = release
-    reload = _reload_edge(name, patches, sounds, out, previous)
+    # An engine script has no reload: its second patch is the pack's idle.
+    reload = (None if (template.kind or "").lower() == "activekitpart"
+              else _reload_edge(name, patches, sounds, out, previous))
     if reload:
         entry["reload"] = reload
     eject = _eject_edge(name, getattr(template, "eject_clip_time", None),

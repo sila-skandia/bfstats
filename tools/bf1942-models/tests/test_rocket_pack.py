@@ -105,6 +105,24 @@ class RocketPackTests(unittest.TestCase):
         self.assertEqual(replay["alias"], "Lb_ParachuteIdle")
         self.assertEqual(replay["plain"], "Lb_Stand")
 
+    def test_a_replayed_burn_sounds_on_every_burst_not_once(self) -> None:
+        b = self.r["burnTriggers"]
+        self.assertAlmostEqual(b["spacing"], 1 / 15, places=6)
+        self.assertEqual(b["n"], 31)        # 0, 1/15, ... 2 s: every burst of the burn
+        self.assertTrue(b["fresh"])         # a burn that just started triggers at once
+        self.assertTrue(b["seekBack"])      # so does a clock that went back
+        self.assertFalse(b["tooSoon"])      # inside a burst's spacing: no trigger
+
+    def test_the_idle_hum_fades_in_after_a_burst_and_dies_at_five_metres(self) -> None:
+        h = self.r["hum"]
+        self.assertEqual(h["justBurst"], 0)
+        self.assertAlmostEqual(h["rising"], 0.5, places=6)   # 2.0 x 0.25, half way up the ramp
+        self.assertEqual(h["settled"], 1)
+        self.assertEqual(h["neverBurst"], 1)
+        self.assertAlmostEqual(h["at3m"], 0.5, places=6)
+        self.assertEqual(h["at5m"], 0)
+        self.assertEqual(h["none"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

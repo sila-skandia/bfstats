@@ -171,6 +171,49 @@ time since its trigger and is not released until the patch has run its full hold
 0.5 m: all three loads play, and the next reload too). The followed soldier's own reload stays
 first person only (ac830f4fb).
 
+### 7. The jet pack's thrust sound (reported again after the first pass): fixed
+
+Report: at 2:43 the pack makes a faint sound; retail's burn is continuous.
+
+- The pack's script (`RocketPack.ssc` -> `EngineHigh.ssc`) is an engine's: patch 0
+  "Engine ON" is `jetpack-thrusters.wav` (a 0.49 s one-shot, stereo, full to 2 m and gone at
+  25 m, `Volume <- TimeRelease` 1 -> 0 over 0.2 s), patch 1 "Engine off" is
+  `jetpack-idle.wav` (a loop, volume 2, `Volume <- Time` 0 -> 0.5 from 0.4 to 1.2 s, gone at
+  5 m).
+- `extract_weapon_sounds.py` picked the firing patch the way it does for a gun, which prefers
+  a looping patch, so the pack's `layers` were the idle loop, and its `reload` was the idle
+  too. A burst played the idle's fade-in from silence: faint at best, and each new burst sent
+  its Time gate back to 0. `firing_samples` now takes patch 0 for an `ActiveKitPart`, an
+  engine script gets no reload, and patch 1 ships as `idle`. XPack2's `GermanElite_RocketPack` is the only `ActiveKitPart`
+  with a sound script in any installed mod. `weapons.json` and `jetpack-thrusters.mp3` for
+  xpack2 are published and match locally.
+- The replay triggered the sound once as a burn began. It now triggers it on every burst while
+  he burns, 15 a second (`rocket-pack.js` `packBurstDue`, `PACK_BURST_SPACING`), as the play
+  page does from the pack's own burst events (`local-player.js`), so a held jump sounds for the
+  whole burn.
+- On this recording, 2:39.6 to 2:42 is him running on the hotel roof (recorded `Lb_RunJump` and
+  `Lb_RunForward`), not flying, so it is silent. 2:42 to 2:46 is a hover on short taps about
+  every half second: headless at 162-167 s, 13 bursts and 12 `jetpack-thrusters` starts
+  (0.495 s each), back to back. Before, each tap started the idle's silent fade-in.
+- The idle hum (patch 1). The client's `ActiveKitPart::update` (Mac client `0x000c2e88`, the
+  third-party corpus; `recorpus.py --build mac "ActiveKitPart::update"`, a lead the Windows
+  client has not been read for) drives the part's sound by state: on a burst it triggers the
+  sound and selects patch 0; when the burst lapses and the part goes passive it selects patch
+  1 with no trigger; overheat selects 2 and a blocked part (masked, or heat at 1) 3, both
+  empty in `EngineHigh.ssc`. So the idle loop sounds whenever the pack is on and not
+  thrusting, its `Volume <- Time` ramp counting from the last burst's trigger (SND-33): silent
+  for 0.4 s after a burst, full from 1.2 s, and gone at 5 m by its distance ramp. The
+  extractor ships it as the entry's `idle`; `page-audio.js` `packHum` plays it as a looped,
+  panned voice per wearer at `pack-hum.js` `packHumLevel`, driven by `replay-bodies.js`
+  `packHumOf` (off while burning, crouched, prone, swimming, seated, dead, paused or dragged)
+  and by `local-player.js` for the play page's own pack (`PACK_STATE.PASSIVE`). Headless at
+  158-170 s in first person: the hum starts on the roof and after each pause in the taps, never
+  inside one, and the 26 thrust starts are unchanged. From the chase camera (over 5 m) the hum
+  is out of range, as the ramp says, and the thrust carries the burn.
+- Tests: `tests/test_weapon_sounds.py` `ActiveKitPartTests`, `tests/test_rocket_pack.py`
+  `test_a_replayed_burn_sounds_on_every_burst_not_once`,
+  `test_the_idle_hum_fades_in_after_a_burst_and_dies_at_five_metres`.
+
 ### Published
 
 `soldier.json` with `materials` for vanilla and nine mod trees (xpack2, eod, fh, fhsw, fhsweurope,

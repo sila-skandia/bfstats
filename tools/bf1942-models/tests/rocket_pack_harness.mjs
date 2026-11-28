@@ -9,6 +9,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const pack = await import(pathToFileURL(path.join(viewer, 'rocket-pack.js')).href);
+const hum = await import(pathToFileURL(path.join(viewer, 'pack-hum.js')).href);
 
 // The row `extract_loadouts.py` writes for GermanElite_JetPack, as the .con has it.
 const ROW = {
@@ -100,6 +101,45 @@ results.spec = {
     seq.push(p.burning);
   }
   results.burstSequence = seq;
+}
+
+// A replayed burn's sound is triggered on every burst: a 2 s burn sampled at
+// 60 fps triggers 30 times (15 a second), not once at its start.
+{
+  let last; let was = false; let n = 0;
+  for (let i = 0; i <= 120; i++) {
+    const t = 10 + i / 60;
+    if (pack.packBurstDue(t, last, was)) { n++; last = t; }
+    was = true;
+  }
+  results.burnTriggers = {
+    n,
+    fresh: pack.packBurstDue(5, 4.99, false),
+    seekBack: pack.packBurstDue(3, 4, true),
+    tooSoon: pack.packBurstDue(4.03, 4, true),
+    spacing: pack.PACK_BURST_SPACING,
+  };
+}
+
+// The pack's idle hum (patch 1 of `EngineHigh.ssc`): silent until 0.4 s after
+// a burst, full (0.5 x volume 2.0, held to 1) from 1.2 s, gone at 5 m.
+{
+  const IDLE = {
+    volume: 2.0,
+    modulators: [
+      { dest: 'volume', source: 'time', envelope: 'ramp', params: [0.4, 1.2, 0.0, 0.5] },
+      { dest: 'volume', source: 'distance', envelope: 'ramp', params: [1.0, 5.0, 1.0, -1.0] },
+    ],
+  };
+  results.hum = {
+    justBurst: hum.packHumLevel(IDLE, 0.1, 0),
+    rising: hum.packHumLevel(IDLE, 0.8, 0),
+    settled: hum.packHumLevel(IDLE, 3, 0),
+    neverBurst: hum.packHumLevel(IDLE, Infinity, 0),
+    at3m: hum.packHumLevel(IDLE, 3, 3),
+    at5m: hum.packHumLevel(IDLE, 3, 5),
+    none: hum.packHumLevel(null, 3, 0),
+  };
 }
 
 results.damping = {

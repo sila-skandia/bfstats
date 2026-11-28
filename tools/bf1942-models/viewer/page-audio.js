@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { WEAPON_HEADROOM, distanceRolloff } from './engine-audio.js';
 import { modulate } from './ssc-curves.js';
+import { packHumLevel } from './pack-hum.js';
 import { configureDs3dPanner, standDs3dPanner } from './ds3d-pan.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
@@ -1108,6 +1109,101 @@ export function createPageAudio(page) {
    * layer that belongs to a state the soldier can leave (the free-fall wind);
    * `loop` keeps it going until then.
    */
+
+  /**
+   * A worn rocket pack's idle (patch 1 of its engine script, `jetpack-idle`):
+   * the client's `ActiveKitPart::update` selects patch 1, with no trigger,
+   * when a burst lapses and the part goes passive, and patch 0 with a trigger
+   * on every burst (Mac client `0x000c2e88`; `features/sw-hellendoorn-replay`).
+   * The patch's clock is the last trigger's (SND-33), so its `Volume <- Time`
+   * ramp (0 to 0.5 between 0.4 and 1.2 s) fades the loop in after a burst and
+   * a pack that has not burst for a while hums at once. Its `Volume <-
+   * Distance` ramp is full to 1 m and gone at 5.
+   *
+   * Called every frame for each wearer `id`: `template` the pack's
+   * ActiveKitPart (its `weapons.json` entry carries `idle`), `position` where
+   * he is, `age` seconds since his pack last burst (Infinity for none). A null
+   * template or position, or a burst under way, stops it.
+   */
+  const packHums = new Map();
+  let packIdleLayers = null;
+  function stopPackHum(id) {
+    const hum = packHums.get(id);
+    if (!hum) return;
+    packHums.delete(id);
+    hum.dead = true;
+    hum.release?.();
+  }
+  function packHum(id, template, position, age = Infinity) {
+    if (!template || !placeable(position) || page.AUDIO_OFF || masterVolume() <= 0) {
+      stopPackHum(id);
+      return;
+    }
+    if (!packIdleLayers) {
+      packIdleLayers = new Map();
+      Promise.resolve(page.weaponSoundsManifest?.()).then(manifest => {
+        for (const [name, entry] of Object.entries(manifest?.weapons ?? {})) {
+          if (entry?.idle?.length) packIdleLayers.set(name, entry.idle[0]);
+        }
+      }).catch(() => {});
+      return;
+    }
+    const layer = packIdleLayers.get(template);
+    const listener = pageAudio.audioListener;
+    const ctx = listener?.context;
+    if (!layer || !ctx || ctx.state === 'suspended') { stopPackHum(id); return; }
+    const e = listener.matrixWorld?.elements;
+    const distance = e ? Math.hypot(e[12] - position.x, e[13] - position.y, e[14] - position.z) : 0;
+    const level = packHumLevel(layer, age, distance);
+    let hum = packHums.get(id);
+    if (!(level > 0) && (distance >= 5 || !hum)) {
+      // Out of its range (or silent before it starts): no voice for it.
+      if (distance >= 5) stopPackHum(id);
+      if (!hum) return;
+    }
+    if (!hum) {
+      hum = { dead: false, gain: null, panner: null, release: null };
+      packHums.set(id, hum);
+      modelSoundBuffer(`sounds/${layer.file}`).then(buffer => {
+        if (hum.dead || !buffer || packHums.get(id) !== hum) return;
+        const pool = voicePoolOf(ctx);
+        let source = null;
+        const voice = pool.claim({
+          kind: voiceKind(true, buffer.numberOfChannels),
+          priority: layer.priority ?? 0,
+          distance,
+          stop: () => { if (packHums.get(id) === hum) packHums.delete(id); hum.dead = true; teardown(); },
+        });
+        if (!voice) { if (packHums.get(id) === hum) packHums.delete(id); return; }
+        source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        const panner = ctx.createPanner();
+        panner.distanceModel = 'inverse';
+        panner.refDistance = 1;
+        panner.maxDistance = 40;
+        panner.rolloffFactor = 1;
+        source.connect(gain);
+        gain.connect(panner);
+        panner.connect(listener.getInput());
+        function teardown() {
+          try { source.stop(); } catch (_) {}
+          try { source.disconnect(); gain.disconnect(); panner.disconnect(); } catch (_) {}
+        }
+        hum.release = () => { pool.release(voice); teardown(); };
+        hum.gain = gain;
+        hum.panner = panner;
+        try { source.start(); } catch (_) { hum.release(); }
+      });
+    }
+    if (hum.gain) {
+      standDs3dPanner(hum.panner, e, position.x, position.y, position.z);
+      hum.gain.gain.setTargetAtTime(level * masterVolume() * WEAPON_HEADROOM, ctx.currentTime, 0.02);
+    }
+  }
+
   function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0,
                               position = null, loop = false, { priority = 0, ranged = false } = {}) {
     if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return null;
@@ -1598,6 +1694,7 @@ export function createPageAudio(page) {
     playRoundMusic,
     playSoldierOneShot,
     playSupplyGive,
+    packHum,
     playWorldShot,
     playWorldReload,
     playWorldEject,

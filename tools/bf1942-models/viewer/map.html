@@ -1517,7 +1517,7 @@ const localPlayer = createLocalPlayer(bag(
   from(() => localLook, `footLookPair footWirePair lookKeyHeld lookNeedsKey mouseInput pumpLook
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
-  from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
+  from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep packHum playSoldierDeathSound
     playSoldierHurtSound playWorldShot soldierSoundTick soldierSoundView stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld
     wireAltFire wireFirePress`),
@@ -4347,6 +4347,8 @@ replayController = createReplayController({
   // With its `prime` (page-audio.js): the replay decodes every weapon its
   // recording fires as it opens, or a weapon's first burst is silent while
   // its first slot is built (replay-bodies.js `primeReports`).
+  // A worn rocket pack's idle between bursts (replay-bodies.js `packHumOf`).
+  packHum: (id, template, at, age) => pageAudio.packHum(id, template, at, age),
   playWorldShot: Object.assign((weapon, x, y, z, owner, opts) => pageAudio.playWorldShot(weapon, x, y, z, owner, opts), {
     prime: (weapon, opts) => pageAudio.playWorldShot.prime?.(weapon, opts) ?? Promise.resolve(null),
   }),

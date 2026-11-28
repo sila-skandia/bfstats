@@ -480,5 +480,48 @@ class RealTranscodeTests(unittest.TestCase):
             self.assertIn(head[:2], (b"ID", b"\xff\xfb", b"\xff\xf3"))
 
 
+ENGINE_PACK_SCRIPT = """newPatch
+load @ROOT/Sound/@RTD/jetpack-thrusters.wav
+stereo
+minDistance 3
+beginEffect
+	controlDestination Volume
+	controlSource TimeRelease
+	envelope Ramp
+	param 0
+	param 0.2
+	param 1
+	param -1
+endEffect
+
+newPatch
+load @ROOT/Sound/@RTD/jetpack-idle.wav
+mono
+volume 2.0
+loop
+minDistance 10
+beginEffect
+	controlDestination Volume
+	controlSource Time
+	envelope Ramp
+	param .4
+	param 1.2
+	param 0
+	param 0.5
+endEffect
+"""
+
+
+class ActiveKitPartTests(unittest.TestCase):
+    """XPack2's rocket pack: its burst is the engine-on patch, not the idle loop."""
+
+    def test_a_rocket_packs_burst_is_its_thrusters_not_its_idle_loop(self) -> None:
+        patches = parse_ssc(ENGINE_PACK_SCRIPT, level="high")
+        burst = extract_weapon_sounds.firing_samples("ActiveKitPart", patches)
+        self.assertEqual([s.file.lower().rsplit("/", 1)[-1] for s in burst], ["jetpack-thrusters.wav"])
+        gun = extract_weapon_sounds.firing_samples("HandFireArms", patches)
+        self.assertTrue(all(s.loop for s in gun))   # a gun's pick prefers the loop
+
+
 if __name__ == "__main__":
     unittest.main()

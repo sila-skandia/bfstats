@@ -38,11 +38,26 @@
 // bursts on every other tick, 15 times a second whatever the frequency says.
 // That is the engine's arithmetic, and it halves what the .con appears to ask.
 
+
 /** One engine tick, seconds. */
 export const PACK_TICK = 1 / 30;
 
 /** What the update takes off the burst timer each tick (a float literal). */
 export const BURST_TIMER_STEP = Math.fround(0.0333);
+
+/** The time between two bursts of a held trigger: every other tick (see the
+ *  header), 15 a second. A replay triggers the pack's sound at this spacing
+ *  (`replay-bodies.js` `updateFlames`). */
+export const PACK_BURST_SPACING = 2 * PACK_TICK;
+
+/** A replayed burn's sound: true when the burst at replay time `now` triggers
+ *  the pack's patch again. `last` is the time of the trigger before (undefined
+ *  for none); a burn that just started, or a clock that went back (a seek),
+ *  triggers at once. */
+export function packBurstDue(now, last, wasBurning) {
+  return !wasBurning || last === undefined || now < last
+    || now - last >= PACK_BURST_SPACING - 1e-6;
+}
 
 /** `ActiveKitPartState` (`setCurrentState` 0x082632d0): the part is
  *  thrusting, idling on, overheated or blocked (the engine's effect state 2

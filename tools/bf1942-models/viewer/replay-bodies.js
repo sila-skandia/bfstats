@@ -40,7 +40,7 @@ import { loadFirst, weaponUrls } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
 import { modelFileStem } from './model-file.js';
 import {
-  ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
+  packBurstDue, ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
 } from './rocket-pack.js';
 import { RocketFlames, orientRocketPack, packNodeOf } from './rocket-flame.js';
 import { walkVisibleOnly } from './shown-walk.js';
@@ -898,20 +898,48 @@ export class ReplaySoldiers {
         if (body) orientRocketPack(body);
       }
       const held = actor.state.soldier.held;
-      if (!held?.rocket || actor.state.dead) continue;
+      if (!held?.rocket || actor.state.dead) {
+        // On his feet with the pack on: passive, so it hums (unless blocked).
+        const wearing = Boolean(kits?.[actor.kit]?.activeParts?.length) && !actor.state.dead;
+        if (wearing) seen.add(actor.pid);
+        this.packHumOf(actor, wearing && this.player.playing && !this.dragging && !actor.packBlocked,
+          this.player.time);
+        continue;
+      }
       const group = this.bodies?.botVisuals?.get(actor.playerId)?.group;
       const node = group ? packNodeOf(group) : null;
       if (!node) continue;
       seen.add(actor.pid);
       this.flames.set(actor.pid, node, held.burning);
-      // The pack's report (patch 0 of its script) as a burn starts, from the
-      // pack his kit row names.
-      if (held.burning && !actor.rocketBurning && this.player.playing && !this.dragging) {
-        const template = this.player.ctx.loadouts?.()?.kits?.[actor.kit]?.activeParts?.[0]?.template;
-        const s = actor.state.soldier;
-        if (template) this.player.ctx.playWorldShot?.(template, s.x, s.y + 1.2, s.z, actor);
+      // The pack's thrust (patch 0 of its script, `jetpack-thrusters`), from
+      // the pack his kit row names: triggered on every burst while he burns,
+      // as the play page does (`local-player.js`), so it runs the whole burn.
+      // The engine bursts every other tick, 15 times a second
+      // (`rocket-pack.js` BURST_TIMER_STEP), and each burst triggers the
+      // wearer's one patch again (SND-33), so the 0.49 s sample never runs
+      // out while the jump key is held; one trigger at the burn's start left
+      // a flight of seconds with half a second of sound.
+      const now = this.player.time;
+      const live = this.player.playing && !this.dragging;
+      if (held.burning && live) {
+        if (packBurstDue(now, actor.rocketBurstAt, actor.rocketBurning)) {
+          const template = this.player.ctx.loadouts?.()?.kits?.[actor.kit]?.activeParts?.[0]?.template;
+          const s = actor.state.soldier;
+          if (template) this.player.ctx.playWorldShot?.(template, s.x, s.y + 1.2, s.z, actor);
+          actor.rocketBurstAt = now;
+          actor.rocketLastBurst = now;
+        }
+      } else {
+        actor.rocketBurstAt = undefined;
       }
       actor.rocketBurning = held.burning;
+      // Between bursts the pack hums (patch 1, `page-audio.js` `packHum`),
+      // faded in from its last burst; burning, blocked, paused or dragged, it
+      // does not.
+      this.packHumOf(actor, live && !held.burning && !actor.packBlocked, now);
+    }
+    for (const [pid, actor] of this.actors) {
+      if (!seen.has(pid) && actor.packHumming) this.packHumOf(actor, false, this.player.time);
     }
     for (const pid of [...this.flames.flames.keys()]) {
       if (!seen.has(pid)) {
@@ -920,6 +948,24 @@ export class ReplaySoldiers {
         if (actor) actor.rocketBurning = false;
       }
     }
+  }
+
+  /** His pack's idle hum on (`on`) or off, at him, faded in from his last
+   *  burst (none recorded: long ago, so it hums at once). */
+  packHumOf(actor, on, now) {
+    const hum = this.player.ctx.packHum;
+    if (!hum) return;
+    const template = on ? this.player.ctx.loadouts?.()?.kits?.[actor.kit]?.activeParts?.[0]?.template : null;
+    const s = actor.state?.soldier;
+    if (!template || !s) {
+      if (actor.packHumming) hum(actor.pid, null, null);
+      actor.packHumming = false;
+      return;
+    }
+    const last = actor.rocketLastBurst;
+    const age = last === undefined || now < last ? Infinity : now - last;
+    hum(actor.pid, template, { x: s.x, y: s.y + 1.2, z: s.z }, age);
+    actor.packHumming = true;
   }
 
   /** `actor`, the soldier of `pid` who controls `nid`, placed at `t`: true
@@ -995,6 +1041,9 @@ export class ReplaySoldiers {
     // let go, as a new life does (`bindLife`, `jump`).
     actor.swapDeferred = this.dragging;
     this.swimState(s, body, life, t, dead || Boolean(seated));
+    // A worn pack is blocked (its patch 3, silent) while he crouches, lies,
+    // swims or sits: the part's negative mask (`rocket-pack.js` MASK_FLAGS).
+    actor.packBlocked = Boolean(seated) || dead || actor.stance !== 'stand' || Boolean(s.swim?.swimming);
     // A dead man a blast threw, or one riding his canopy down, is still in
     // the air: his body keeps flying as the recording has it, and his
     // corpse is left where it comes to rest.
