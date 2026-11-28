@@ -266,6 +266,27 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   player.time = 50;
   frame();
   results.roundcam.seekPast = { state: cam.state, missed, speed: player.speed };
+  // A round that struck in the frame it was fired (a pistol into the hull
+  // beside him): never in the guns' lists, only in their impacts. An impact
+  // from before the shot is not its round.
+  {
+    player.time = 59;
+    player.speed = 1;
+    guns.tracers.length = 0;
+    guns.hits = [{ firerGroup: { replay: true }, origin: [0, 1.6, 0], point: [0, 1.6, -3] }];
+    cam.arm({ ...f, t: 60 });
+    while (player.time < 60.05) frame();
+    const before = cam.state;
+    guns.hits.unshift({ firerGroup: { replay: true }, origin: [0.1, 1.62, 0], point: [0.1, 1.6, -1.2] });
+    frame();
+    frame();
+    results.roundcam.struck = { before, after: cam.state, at: cam.impact ? vec(cam.impact.at) : null, missed,
+      speed: round(player.speed, 3), miss: cam.impact?.miss ?? null };
+    while (cam.state !== 'idle') frame();
+    guns.hits = [];
+    // Its hand-back to the shooter is not the kill's (`followed` above).
+    followed.length = 1;
+  }
   // A stand-in laid out with no page round (`modelAt`, the strip's preview):
   // over his shoulder before the shot, behind the round 60% of the way, the
   // hold drawing back, beside the victim from the victim; a shot style for
@@ -452,6 +473,14 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   const mid = { state: ghost.state, x: round(ghost.pos.x, 2), kind: ghost.target.kind };
   ghost.modelAt(5.8, toss, null, { hit: 5.6 });
   const end = { state: ghost.state, x: round(ghost.pos.x, 2) };
+  // A stab that kills nobody, laid out after it: held round the stabber
+  // (its scratch vectors are `rigPose`'s too, and it held round the origin).
+  ghost.modelAt(stab.t + 0.5, stab, null, { hit: stab.t, real: 0.5 });
+  const stabHold = {
+    state: ghost.state,
+    atFromShot: round(ghost.impact.at.distanceTo(ghost.shotPos), 2),
+    centreFromShot: round(ghost.impact.centre.distanceTo(ghost.shotPos), 2),
+  };
   results.knife = {
     throwFound: RC.knifeThrowOf(rec, toss)?.life.nid ?? null,
     stabFound: RC.knifeThrowOf(rec, stab),
@@ -461,7 +490,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     end: RC.thrownEnd(RC.knifeThrowOf(rec, toss)),
     armedMelee: melee,
     flying: flight.length, first: flight[0] ?? null, last: flight[flight.length - 1] ?? null,
-    impact, mid, ghostEnd: end,
+    impact, mid, ghostEnd: end, stabHold,
   };
 }
 

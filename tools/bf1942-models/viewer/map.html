@@ -4596,6 +4596,9 @@ function frame(dt) {
   // After the camera controls and the world: a followed replay places the
   // camera last.
   phase(() => replayController?.update(dt));
+  // A particle hung on something the replay just moved (a thrown knife's
+  // prop) goes with it, or it is drawn where it was a frame ago.
+  phase(() => effects.settle());
   // Under the dogfight school the page's camera is the school's.
   if (schoolCamera) phase(() => followSchoolCamera(schoolCamera));
   // `?shots`: a capture's own camera over every other, from a seat as from

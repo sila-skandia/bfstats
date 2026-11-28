@@ -167,6 +167,11 @@ export function victimHullLife(rec, kill) {
 }
 const PULL_UP = 1.3;
 const PULL_BACK = 0.9;
+/** A round that kills nobody (their next round, a thrown knife into a bank)
+ *  has no man to frame, and a thrown knife is gone as it strikes: its hold
+ *  draws back this many times further, so where it landed is seen rather
+ *  than the patch of ground it hit. */
+const MISS_PULL = 2;
 /** A bomb is seen falling onto what it kills (the owner, 2026-11-04, on
  *  skandia's 109 on Battleaxe: "way too tight on the victim, so it doesn't
  *  capture the epic bomb sent by the pilot. We need to zoom out"; the chase
@@ -891,6 +896,12 @@ export class RoundCam {
     for (const list of [guns.tracers, guns.projectiles]) {
       for (const obj of list) if (!this.born.has(obj)) this.born.set(obj, t);
     }
+    // The impacts too, newest first: a round that struck in the frame it was
+    // fired is never in the lists above (`claim`).
+    for (const record of guns.hits ?? []) {
+      if (this.born.has(record)) break;
+      this.born.set(record, t);
+    }
   }
 
   /** The armed shot's round, if it has appeared: the round of the page's guns
@@ -946,7 +957,39 @@ export class RoundCam {
       this.state = 'flying';
       this.readLive(t);
       this.hooks.changed?.();
+      return;
     }
+    if (!target.thrown && !flown?.drawn) this.claimStruck(t);
+  }
+
+  /** The armed shot's round when it struck something in the frame the page
+   *  fired it (a pistol shot into the hull beside him): it is gone from the
+   *  guns' lists before the next step, and only its impact (`guns.hits`)
+   *  says it flew. Without this the camera waited GIVE_UP seconds of the
+   *  recording under bullet time (ten seconds of the video at 0.06x) and then
+   *  let go, or took the man's next shot for it. The hold goes on the hit. */
+  claimStruck(t) {
+    const hits = this.guns?.hits;
+    if (!hits?.length) return false;
+    const leaves = this.leaves();
+    for (const record of hits) {
+      const born = this.born.get(record);
+      if (!(born >= leaves - 1e-3)) break;
+      const o = record.origin;
+      if (!record.firerGroup?.replay || !Array.isArray(record.point) || !Array.isArray(o)) continue;
+      if (Math.hypot(o[0] - this.shotPos.x, o[1] - this.shotPos.y, o[2] - this.shotPos.z) > MATCH_DIST) continue;
+      _v.set(record.point[0] - o[0], record.point[1] - o[1], record.point[2] - o[2]);
+      const n = _v.length();
+      if (n > 0.5 && _v.dot(this.shotDir) / n < MATCH_DOT) continue;
+      if (n > 1e-3) this.dir.copy(_v).divideScalar(n);
+      else this.dir.copy(this.shotDir);
+      this.pos.fromArray(record.point);
+      this.target.progress = 1;
+      this.state = 'flying';
+      this.startImpact(t);
+      return true;
+    }
+    return false;
   }
 
   /** The chased round's place, heading and speed now; false once it is gone
@@ -960,6 +1003,12 @@ export class RoundCam {
         if (target.flight) {
           const end = positionAt(life, life.destroyed);
           if (end) this.pos.set(end[0], end[1], -end[2]);
+        }
+        // A thrown round's hold is where it struck, not where its mesh was
+        // drawn (below).
+        if (target.drawnOff) {
+          const end = positionAt(life, (thrownEnd(target.thrown) ?? life.destroyed) - 0.02);
+          if (end && Math.hypot(end[0], end[1], end[2]) >= 1) this.pos.set(end[0], end[1], -end[2]);
         }
         return false;
       }
@@ -976,6 +1025,9 @@ export class RoundCam {
           this.speed = n / span;
         }
       }
+      // A round drawn by its trail bundle (a thrown knife) is chased where
+      // its mesh is drawn, 1.5 m behind its point (replay-props.js `drawnAt`).
+      target.drawnOff = Boolean(target.thrown) && Boolean(this.player.props?.drawnAt?.(life, t, this.pos));
       return true;
     }
     const obj = target.obj;
@@ -1010,6 +1062,7 @@ export class RoundCam {
     for (const [style, at] of Object.entries(this.flyCam)) cams[style] = at.clone();
     this.flyCam = {};
     this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t, ...this.victimHold(),
+      miss: !this.target?.kill && !this.target?.melee,
       drop: this.drop?.pos.clone() ?? null };
     this.drop = null;
     if (this.hero) this.hero.visible = false;
@@ -1074,10 +1127,11 @@ export class RoundCam {
       const centre = this.holdCentre(im, _vc);
       // A bomb's hold stays where the camera stood to watch it fall (DROP):
       // back along -dir would be straight up over the fireball.
+      const pull = im.miss ? MISS_PULL : 1;
       const back = im.drop
         ? _vo.copy(im.drop)
-        : _vo.copy(centre).addScaledVector(im.dir, -Math.max(PULL_DIST, r * HULL_PULL.back))
-          .add(_vn.set(0, Math.max(PULL_UP, r * HULL_PULL.up), 0));
+        : _vo.copy(centre).addScaledVector(im.dir, -Math.max(PULL_DIST * pull, r * HULL_PULL.back))
+          .add(_vn.set(0, Math.max(PULL_UP * pull, r * HULL_PULL.up), 0));
       cam.position.copy(start).lerp(back, k);
       this.keepAbove(cam.position);
       cam.lookAt(r > 0 ? _v.copy(centre) : _v.copy(im.at));
@@ -1260,8 +1314,10 @@ export class RoundCam {
     }
     this.state = 'impact';
     if (target.melee) {
-      const victim = target.victimAt ?? _v.copy(this.shotPos).addScaledVector(this.shotDir, 1.5);
-      const shooter = this.shoulderAnchor(f.t, _v2);
+      // Copies: `rigPose` works in the same scratch vectors, and a stab that
+      // killed nobody held round a point near the level's origin.
+      const victim = (target.victimAt ?? _v.copy(this.shotPos).addScaledVector(this.shotDir, 1.5)).clone();
+      const shooter = this.shoulderAnchor(f.t, _v2).clone();
       const shoulder = new THREE.Vector3();
       this.rigPose('chase', shooter, this.shotDir, null, shoulder, _vl);
       this.impact = { at: victim.clone(), centre: shooter.clone().lerp(victim, 0.5), cam: shoulder, dir: this.shotDir.clone(), real, t: f.t };
@@ -1272,7 +1328,7 @@ export class RoundCam {
     this.pos.copy(target.end);
     this.dir.copy(target.line);
     target.progress = 1;
-    this.impact = { at: target.end.clone(), cam: target.end.clone(), cams: {}, dir: target.line.clone(), real, t: land };
+    this.impact = { at: target.end.clone(), cam: target.end.clone(), cams: {}, dir: target.line.clone(), real, t: land, miss: !kill };
     return true;
   }
 
@@ -1288,6 +1344,8 @@ export class RoundCam {
     _v.set(p[0] - q[0], p[1] - q[1], -(p[2] - q[2]));
     if (_v.lengthSq() > 1e-8) this.dir.copy(_v.normalize());
     else this.dir.copy(this.shotDir);
+    // Where its mesh is drawn, as the live chase has it (`readLive`).
+    this.player.props?.drawnAt?.(life, t, this.pos);
     return true;
   }
 

@@ -148,6 +148,8 @@ const part = name => () => {{
   if (name === {json.dumps(throwing)}) throw new Error(name + ' threw');
 }};
 const replayController = {{ active: () => true, update: part('replay') }};
+// Particles hung on what the replay moved, carried after it (`effects.settle`).
+const effects = {{ settle: part('settle') }};
 function simulate() {{ return {{}}; }}
 const presentWorld = part('world');
 const draw = part('draw');
@@ -186,17 +188,17 @@ process.stdout.write(JSON.stringify({{ calls, thrown }}));
         out = self.run_frame("world")
         # The replay, the render, the HUD (and its Escape menu) and the shell
         # still run; the throw is still the loop's to report.
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
+        self.assertEqual(out["calls"], ["world", "replay", "settle", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertEqual(out["thrown"], "world threw")
 
     def test_the_hud_is_painted_whatever_the_render_threw(self) -> None:
         out = self.run_frame("draw")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
+        self.assertEqual(out["calls"], ["world", "replay", "settle", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertEqual(out["thrown"], "draw threw")
 
     def test_a_quiet_frame_throws_nothing(self) -> None:
         out = self.run_frame("")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
+        self.assertEqual(out["calls"], ["world", "replay", "settle", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertIsNone(out["thrown"])
 
 

@@ -196,6 +196,16 @@ class RoundCamTests(unittest.TestCase):
     def test_a_seek_past_an_armed_shot_lets_go_quietly(self) -> None:
         self.assertEqual(self.cam["seekPast"], {"state": "idle", "missed": 1, "speed": 1})
 
+    def test_a_round_that_struck_in_its_first_frame_is_held_on_its_hit(self):
+        struck = self.cam["struck"]
+        # Armed until its own impact: the older one is not its round.
+        self.assertEqual(struck["before"], "armed")
+        self.assertEqual(struck["after"], "impact")
+        self.assertEqual(struck["at"], [0.1, 1.6, -1.2])
+        # Not given up on (the camera used to wait GIVE_UP under bullet time).
+        self.assertEqual(struck["missed"], 1)
+        self.assertTrue(struck["miss"])
+
     def test_helpers(self) -> None:
         h = self.cam["helpers"]
         # pace 40 m/s unknown end; 340 m at 2000 m/s in 2.5 s; the floor.
@@ -298,6 +308,11 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(k["mid"], {"state": "flying", "x": 18.6, "kind": "thrown"})
         self.assertEqual(k["ghostEnd"]["state"], "impact")
         self.assertAlmostEqual(k["ghostEnd"]["x"], 26.2, delta=0.2)
+        # A stab that killed nobody, laid out after it, holds round the
+        # stabber: 1.5 m in front of him, not round the level's origin.
+        self.assertEqual(k["stabHold"]["state"], "impact")
+        self.assertAlmostEqual(k["stabHold"]["atFromShot"], 1.5, delta=0.05)
+        self.assertLess(k["stabHold"]["centreFromShot"], 1.5)
 
 
 class CarriedRoundTests(unittest.TestCase):

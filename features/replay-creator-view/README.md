@@ -2810,6 +2810,64 @@ the take is the throw at 43.12 s, the clip 40.12-49.19 s, the action
 The same recording showed the knife in his hand drawn on his sleeve; that
 was the model extractor, not the replay (`features/hand-weapon-part-placement`).
 
+### Their next round, then the studio (2026-11-28, later)
+
+The owner's workflow end to end, headless on `5txd9vj8ap`: follow The
+Departed, press Their next round (the panel button, and shift 5 again), then
+Open the studio, and measure what the studio plays. The take and the loop were
+right after the first fix; what the clip showed was not:
+
+- **The thrown knife was never on screen.** Retail hangs the knife's mesh
+  1.5 m behind the round's point (`e_ThrowingEliteKnife`: `setPosition
+  0.1/0/-1.5`, its emitter `addChild 1` and `addEmitterSpeed 1`). Three
+  faults put it out of the bullet chase, 1.9 m behind the point: the
+  particle took the knife's 30 m/s on top of being carried by it
+  (`effects.js` `#spawn`: a child's emitter speed is now none); the page
+  advances its effects before the replay places its props, so the knife's
+  mesh was drawn where the knife was a frame earlier (`effects.settle()`,
+  called in map.html `frame` after the replay); and the round cam chased the
+  point, not the mesh (`replay-props.js` `drawnAt`, read by
+  `replay-roundcam.js` `readLive` and the stand-in's `thrownPose`; the hold
+  still goes on the strike). Measured: the knife's particle 1.5-3.9 m off
+  the knife and outside the frame before, 0.00 m off and on screen at NDC
+  (-0.12, -0.36) after; a frozen frame at 44.2 s shows the knife in flight
+  into the bank.
+- **Four seconds of dirt.** A take that kills nobody ran its clip 4 s past
+  the strike (`TAKE_TAIL`), and the knife is gone as it strikes. Its tail is
+  now 1.5 s (`MISS_TAIL`, `clipTake`, also used by Fit to kill, which still
+  ended a no-kill take at the trigger), and its hold draws back twice as far
+  (`MISS_PULL`): clip 40.12-46.69 s instead of 40.12-49.19 s.
+- **A pistol's next round waited ten seconds.** The WalterP38 at 56.90 s
+  struck the hull beside him within its first frame, so its tracer was gone
+  before the round cam's next step; the camera sat armed under bullet time
+  (0.06x) for GIVE_UP and then let go at 57.50 s, after the man's next shot.
+  The round cam now also reads the guns' impacts (`claimStruck`): the round
+  is claimed from its own impact at 56.906 s and held there; the take loops.
+- **A stab that kills nobody held round the level's origin.** The stand-in
+  (`modelAt`) built its melee hold from scratch vectors `rigPose` overwrote:
+  after the hold the studio showed grey from (-3.5, 83.8, -0.8). They are
+  copied first; the camera now stays on the stabber.
+- **The words.** The studio called every take Kill shot ("Kill shot · The
+  Departed · German Elite Knife · 30 m" for a throw that hit a bank); it says
+  Thrown knife, Knife or Round for one that kills nobody (`takeTitle`). The
+  distance is where the recording has the round land (a thrown knife's or a
+  grenade's strike, a server flight's end), and is left off where it would
+  only be the 30 m guess (`findGeometry` `guessed`).
+
+Verified headless (studio-probe, `--mod xpack2 --map hellendoorn`), each
+case pressed while following him, then the studio opened: the EliteKnife
+throw at 43.12 s (clip 40.12-46.69 s, shoulder then bullet chase 43.2-45.2 s
+on the knife, hit 45.19 s, looping); the WalterP38 at 56.90 s (clip
+53.90-58.44 s, impact at 56.91 s, idle 57.37 s, looping); the
+K98RifleGrenade at 50.96 s (chase 50.99-52.78 s, looping); the stab at
+115.63 s (melee hold round the stabber, looping). Tests:
+`test_muzzle_bundles` (the knife's mesh rides the knife, `settle` carries a
+child to an anchor moved after the step), `test_replay_resilience` (the
+frame settles after the replay, before the draw), `test_replay_creator`
+(a round struck in its first frame is held on its hit and an older impact
+is not its round; the stand-in's stab hold is 1.5 m in front of the
+stabber).
+
 ## The studio's minimap marks one side (2026-11-19)
 
 The owner: "On the studio / creator mode - we should not show the other

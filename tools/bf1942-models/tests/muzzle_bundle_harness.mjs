@@ -55,10 +55,21 @@ const SPECS = {
     particle: { kind: 'mesh', template: 'Fx_shell1250mm', geometry: 'shell1250mmHI_m1',
                 timeToLive: n(1), size: n(1.7), gravityModifier: n(0.5) },
   },
+  // Secret Weapons' thrown knife (Objects/Effects/e_ThrowingEliteKnife): the
+  // knife's mesh is a particle hung on the round (`addChild 1`) that also
+  // declares `addEmitterSpeed 1`.
+  Em_ThrowingEliteKnife: {
+    template: 'Em_ThrowingEliteKnife', timeToLive: n(0.1), intensity: n(15),
+    startRotation: ['g', 0, 360, 0], emitterSpeedScale: 1, lodDistance: 800, looping: true,
+    startAtCreation: true, addEmitterSpeed: true, addChild: true,
+    particle: { kind: 'mesh', template: 'fx_ThrowingEliteKnife', geometry: 'EliteKnifeThrow_M1',
+                timeToLive: n(0.12), size: n(1), gravityModifier: n(0), sizeModifier: [1.3, 1.3, 1.3] },
+  },
 };
 const BUNDLES = {
   e_MuzzHeavy: ['em_MuzzHeavy', 'em_1P_MuzzHeavy', 'em_MuzzHeavy_glow'],
   e_shell1250mm: ['Em_shell1250mm'],
+  e_ThrowingEliteKnife: ['Em_ThrowingEliteKnife'],
 };
 const drawn = name => (SPECS[name].particle.kind === 'mesh'
   ? (name === 'Em_shell1250mm' ? casingMesh() : flashMesh()) : quad());
@@ -91,6 +102,7 @@ function browning() {
   gun.add(muzzle);
   const place = { e_MuzzHeavy: [0, 0.1, -0.8], e_shell1250mm: [0, 0.12, -0.16] };
   for (const [bundle, emitters] of Object.entries(BUNDLES)) {
+    if (!place[bundle]) continue;   // the knife's bundle is not the gun's
     const node = new THREE.Group();
     // GLTFLoader's own spelling: a repeat gets a suffix, the authored name
     // stays in userData.
@@ -116,6 +128,39 @@ function browning() {
 }
 
 const out = {};
+
+// --- a thrown knife: its mesh rides the knife, and only the knife moves it --
+{
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  scene.add(camera);
+  const player = new EffectPlayer({ scene, camera, library: library() });
+  player.rand = lcg(5);
+  const knife = new THREE.Object3D();
+  scene.add(knife);
+  knife.updateMatrixWorld(true);
+  player.play('e_ThrowingEliteKnife', { attach: { object: knife }, silent: true });
+  const off = p => Math.hypot(p.position[0] - knife.position.x, p.position[1] - knife.position.y,
+                              p.position[2] - knife.position.z);
+  const offs = [];
+  // 30 m/s, the knife's `velocity 30`, moved before each step as a live
+  // round is.
+  for (let i = 0; i < 60; i++) {
+    knife.position.x -= 0.5;
+    knife.updateMatrixWorld(true);
+    player.advance(1 / 60);
+    for (const p of player.particles) offs.push(off(p));
+  }
+  // Moved after the step, as the replay places its props after the page
+  // advanced its effects: drawn a frame stale until `settle`.
+  knife.position.x -= 0.5;
+  knife.updateMatrixWorld(true);
+  const stale = Math.max(0, ...player.particles.map(off));
+  player.settle();
+  const settled = Math.max(0, ...player.particles.map(off),
+    ...player.particles.map(p => p.mesh.position.distanceTo(knife.position)));
+  out.knife = { samples: offs.length, maxOff: Math.max(0, ...offs), stale, settled, live: player.particles.length };
+}
 
 function rig({ withLibrary = true, inScene = true } = {}) {
   const scene = new THREE.Scene();

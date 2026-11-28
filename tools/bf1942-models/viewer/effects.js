@@ -923,8 +923,14 @@ export class EffectPlayer {
     // emits them.
     const onWater = emitter.spec.moveToWaterSurface && Number.isFinite(this.waterLevel);
     if (onWater && emitter.spec.particle?.kind === 'mesh') levelBasis(basis);
+    // A particle hung on its anchor (`addChild`, EMT-7) is carried by it
+    // (`#follow`), so the anchor's own speed is already its speed: adding it
+    // again (`addEmitterSpeed`) counted it twice and sent a thrown knife's
+    // mesh (`Em_ThrowingEliteKnife` declares both) 1.5 m off the knife at
+    // 30 m/s, out of the round cam's frame.
+    const child = emitter.spec.addChild && run.attach?.object;
     const p = spawnParticleInto(this.recordPool.pop() ?? newParticleRecord(),
-                                emitter.spec, basis, _origin, emitterVelocity, this.rand);
+                                emitter.spec, basis, _origin, child ? null : emitterVelocity, this.rand);
     if (onWater) p.position[1] = this.waterLevel + WATER_SURFACE_LIFT;
     p.tumbleRates = null;
     p.mesh = this.#acquire(emitter, p, run.world);
@@ -1183,6 +1189,23 @@ export class EffectPlayer {
     }
     ud.anchorPos.copy(_anchorPos);
     ud.anchorQuat.copy(_anchorQuat);
+  }
+
+  /**
+   * Every particle hung on an anchor (`addChild`) carried to where the anchor
+   * stands now, without stepping time. The page advances its effects before
+   * a replay places its props (map.html `frame`), so an anchor the replay
+   * moves (a thrown knife's prop, `replay-props.js`) was drawn a frame stale:
+   * at 30 m/s that is metres, and the round cam chasing the knife from 1.9 m
+   * had its only picture of it behind the lens. Call after anything that
+   * moves an anchor, before the draw.
+   */
+  settle() {
+    for (const p of this.particles) {
+      if (!p.anchor || !p.mesh) continue;
+      this.#follow(p);
+      p.mesh.position.set(p.position[0], p.position[1], p.position[2]);
+    }
   }
 
   #recycle(p) {

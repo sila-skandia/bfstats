@@ -33,10 +33,10 @@
 
 import * as THREE from 'three';
 import { apiMode, isLocalHost, resolveApi, sharedRecordingOf, sharedRecordingsApi } from './recordings-api.js';
-import { nameAt, teamAt } from './replay-recording.js';
+import { nameAt, positionAt, teamAt } from './replay-recording.js';
 import {
   RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, kindOfWeapon, knifeThrowOf, landingOf, meleeShot, nextShotOf,
-  slowFor, thrownEnd, victimHullLife,
+  slowFor, thrownEnd, thrownLifeOf, victimHullLife,
 } from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
@@ -71,6 +71,10 @@ const TAIL = 2.5;
 /** A take's tail: long enough that the man is seen down and the camera has
  *  settled before the loop goes round, rather than cutting on the kill. */
 const TAKE_TAIL = 4;
+/** A take of a round that kills nobody: its tail past where the round lands.
+ *  Nobody falls, and a thrown knife is gone as it strikes (`dieAfterColl`),
+ *  so four seconds were a still of the ground it hit. */
+const MISS_TAIL = 1.5;
 /** A move's preview starts this long before its start and stops this long
  *  after its end, seconds. */
 const PREVIEW_PAD = 0.75;
@@ -573,7 +577,7 @@ export class ReplayCreator {
     const weapon = this.display(take.kill?.weaponName ?? take.f.weapon) || '';
     const victim = take.kill?.victim !== null && take.kill?.victim !== undefined ? nameAt(rec, take.kill.victim, take.kill.t) : null;
     const g = this.takeGeometry();
-    const metres = g?.to ? Math.round(Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2])) : null;
+    const metres = g?.to && !g.guessed ? Math.round(Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2])) : null;
     const second = [weapon, victim ? `kills ${victim}` : null, metres ? `${metres} m` : null].filter(Boolean).join('  ·  ');
     return [who, second];
   }
@@ -1498,11 +1502,19 @@ export class ReplayCreator {
     this.startTake(f, this.killOfShot(f), this.display(f.weapon) || 'Big round');
   }
 
-  /** What a take of shot `f` is called: a knife's swing is a knife kill, a
-   *  knife thrown a thrown knife, anything else `word`. */
-  takeWord(f, word) {
-    if (meleeShot(this.player.rec, f)) return 'Knife kill';
+  /** What a take of shot `f` is called: a knife's swing is a knife kill (a
+   *  knife, when it kills nobody: `kill` false), a knife thrown a thrown
+   *  knife, anything else `word`. */
+  takeWord(f, word, kill = true) {
+    if (meleeShot(this.player.rec, f)) return kill ? 'Knife kill' : 'Knife';
     return knifeThrowOf(this.player.rec, f) ? 'Thrown knife' : word;
+  }
+
+  /** The studio's name for take `take`: a kill shot (or a knife kill, a
+   *  thrown knife), and for a round that kills nobody what it was. */
+  takeTitle(take) {
+    if (!take?.f) return 'Clip';
+    return this.takeWord(take.f, take.kill ? 'Kill shot' : 'Round', Boolean(take.kill));
   }
 
   /** The followed man's next round (shift 5), whatever it goes on to hit. */
@@ -1521,7 +1533,8 @@ export class ReplayCreator {
     // A take, as a kill shot is: the clip marked round the shot and what it
     // hits, looping, so the studio opens on it rather than on whatever the
     // replay plays next (the owner, 2026-11-28, on a knife throw).
-    this.startTake(f, this.killOfShot(f), this.takeWord(f, 'Next round'));
+    const kill = this.killOfShot(f);
+    this.startTake(f, kill, this.takeWord(f, 'Next round', Boolean(kill)));
   }
 
   /** The round cam set on recorded shot `f`: waiting over the shooter's
@@ -1575,15 +1588,22 @@ export class ReplayCreator {
     this.cams = null;
     this.sync = null;
     this.syncFit = null;
-    // A round that kills nobody: the clip runs to where it lands (a thrown
-    // knife's strike, a grenade's), not to the trigger.
-    const hit = kill ? kill.t : this.hitOf({ f, kill: null });
-    this.clipAround(f.t, Number.isFinite(hit) ? Math.max(f.t, hit) : f.t, f.pid, { tail: TAKE_TAIL });
+    this.clipTake(this.take);
     this.range.loop = true;
     this.openEditor();
     this.armTake();
     const kills = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : '';
     this.ui.flash(`${word}${kills} · looping the clip · click a camera on the strip to change it`, 2600);
+  }
+
+  /** The clip marked round take `take`: the lead-in, the action and the
+   *  tail. A round that kills nobody runs to where it lands (a thrown knife's
+   *  strike, a grenade's), not to the trigger, and then a short tail. */
+  clipTake(take) {
+    const { f, kill } = take;
+    const hit = kill ? kill.t : this.hitOf({ f, kill: null });
+    const end = Number.isFinite(hit) ? Math.max(f.t, hit) : f.t;
+    this.clipAround(f.t, end, f.pid, { tail: kill ? TAKE_TAIL : MISS_TAIL });
   }
 
   /** The take from the clip's start, armed (`again`: round once more). */
@@ -3475,7 +3495,7 @@ export class ReplayCreator {
       return;
     }
     this.take = take;
-    this.clipAround(take.f.t, take.kill?.t ?? take.f.t, take.f.pid, { tail: TAKE_TAIL });
+    this.clipTake(take);
     this.clipbar?.fit();
     this.replayClip();
     this.clipbar?.sync(this.player.time, true);
@@ -3636,11 +3656,29 @@ export class ReplayCreator {
       const w = whereIs(this.player.rec, kill.victim, kill.t - 0.05, this.player.kills ?? this.player.rec.kills);
       if (w.pos) to = [w.pos[0], w.pos[1] + (w.state === 'foot' ? CHARACTER_HEIGHT : 0) + 0.3, w.pos[2]];
     }
+    // A round that kills nobody: where the recording has it land (a thrown
+    // knife's or a grenade's strike, a server flight's end).
+    if (!to) to = this.landingOf(f);
+    // Else a guess 30 m down the line, which no distance is read from.
+    let guessed = false;
     if (!to && Array.isArray(f.dir)) {
       const n = Math.hypot(f.dir[0], f.dir[1], f.dir[2]) || 1;
       to = [from[0] + (f.dir[0] / n) * 30, from[1] + (f.dir[1] / n) * 30, from[2] - (f.dir[2] / n) * 30];
+      guessed = true;
     }
-    return to ? { from, to, take } : null;
+    return to ? { from, to, take, guessed } : null;
+  }
+
+  /** Where shot `f`'s round landed by the recording, in the world, or null:
+   *  a thrown knife's or a grenade's recorded flight to its end, a server
+   *  flight's collision. */
+  landingOf(f) {
+    const rec = this.player.rec;
+    const thrown = knifeThrowOf(rec, f) ?? (/grenade/i.test(f.weapon ?? '') ? thrownLifeOf(rec, f) : null);
+    const end = thrownEnd(thrown);
+    let p = Number.isFinite(end) ? positionAt(thrown.life, end - 0.02) : null;
+    if (!p && f.flight?.drawn && Number.isFinite(f.flight.destroyed)) p = positionAt(f.flight, f.flight.destroyed);
+    return p && Math.hypot(p[0], p[1], p[2]) >= 1 ? [p[0], p[1], -p[2]] : null;
   }
 
   /**

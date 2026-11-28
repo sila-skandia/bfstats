@@ -1014,7 +1014,7 @@ export class Studio {
     }
     const take = creator.fxKill.take;
     const lines = creator.lowerLines();
-    this.titleText.textContent = take ? `Kill shot · ${lines?.[0] ?? ''}${lines?.[1] ? ` · ${lines[1]}` : ''}` : 'Clip';
+    this.titleText.textContent = take ? `${creator.takeTitle(take)} · ${lines?.[0] ?? ''}${lines?.[1] ? ` · ${lines[1]}` : ''}` : 'Clip';
     this.syncCams(force);
     this.syncClips(force);
     this.syncMoments(force);

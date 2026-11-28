@@ -80,6 +80,19 @@ class MuzzleBundleTests(unittest.TestCase):
         self.assertAlmostEqual(0.86, scale[0], places=5)
         self.assertAlmostEqual(0.86, scale[1], places=5)
 
+    def test_a_thrown_knifes_mesh_rides_the_knife(self):
+        # `addChild` and `addEmitterSpeed` together: the knife carries its
+        # mesh, and its 30 m/s is not added again (it was: 1.5 m off).
+        k = self.results["knife"]
+        self.assertGreater(k["samples"], 20)
+        self.assertLess(k["maxOff"], 1e-3)
+
+    def test_settle_carries_a_child_to_where_its_anchor_was_moved(self):
+        k = self.results["knife"]
+        self.assertGreater(k["live"], 0)
+        self.assertGreater(k["stale"], 0.4)
+        self.assertLess(k["settled"], 1e-3)
+
     def test_flash_rides_the_gun(self):
         self.assertAlmostEqual(1.0, self.results["third"]["flashMoved"], places=5)
 

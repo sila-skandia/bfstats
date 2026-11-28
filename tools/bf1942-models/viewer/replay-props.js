@@ -37,6 +37,9 @@ import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
 
+const _drawnQ = new THREE.Quaternion();
+const _drawnP = new THREE.Vector3();
+
 /** Metres from the origin inside which a recorded pose is the "carried or
  *  pooled" placeholder rather than a place. */
 const AT_ORIGIN = 1;
@@ -256,6 +259,30 @@ export class ReplayProps {
     this.player.ctx.shadeModel?.(scene);
     await wearPagePaint(scene);
     return { scene, endEffect };
+  }
+
+  /**
+   * Where the round of `life` is drawn at `t`, in the world, into `out`
+   * (a THREE.Vector3), for a round drawn by its trail bundle: that bundle's
+   * emitter, which is not the round's own point. Retail hangs a thrown
+   * knife's mesh 1.5 m behind it (`e_ThrowingEliteKnife`: `setPosition
+   * 0.1/0/-1.5`), so a camera that chases the point from close behind has the
+   * knife under the lens (the round cam, replay-roundcam.js `readLive`).
+   * Read from the recorded pose, not the node, which this frame's `update`
+   * may not have placed yet. False for any other round.
+   */
+  drawnAt(life, t, out) {
+    const prop = this.props.find(p => p.life === life);
+    if (!prop?.trail || !prop.node.parent) return false;
+    const emitter = this.player.ctx.effects?.library?.get?.(prop.trail)?.emitters?.[0];
+    if (!emitter) return false;
+    const pose = poseAt(life, t);
+    if (!pose || atOrigin(pose.p)) return false;
+    _drawnQ.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+    out.copy(emitter.position).applyQuaternion(_drawnQ).add(_drawnP.set(pose.p[0], pose.p[1], pose.p[2]));
+    prop.node.parent.updateWorldMatrix(true, false);
+    out.applyMatrix4(prop.node.parent.matrixWorld);
+    return true;
   }
 
   update(t) {
