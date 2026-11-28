@@ -486,9 +486,9 @@ function unrealBadge() {
     const water = el('figure');
     const still = el('img');
     still.width = 1080;
-    still.height = 642;
-    still.alt = 'A Zero banks above the Coral Sea shore. The Unreal view shows turquoise shallows and surf along the beach.';
-    still.src = new URL('play/coral-sea-browser-unreal.webp', VIEWER_ROOT).href;
+    still.height = 540;
+    still.alt = 'A parachute descends over the stern of a carrier, seen across the water from a landing craft on Coral Sea.';
+    still.src = new URL('play/coral-sea-landing-craft.webp', VIEWER_ROOT).href;
     const labels = el('figcaption');
     labels.append(el('span', '', 'Browser'), el('span', '', 'Unreal Engine 5'));
     water.append(still, labels);
