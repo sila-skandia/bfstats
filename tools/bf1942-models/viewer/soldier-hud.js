@@ -97,6 +97,17 @@ export function writeSoldierAmmo(vars, data, rounds, mags, heat = null) {
     if (AMMO_TYPES_WITH_ROUNDS.has(ammoType) && Number.isFinite(rounds)) {
       vars['Ammo/PrimaryAmmo'] = rounds;
     }
+    // The client feeds the same three words for every ammo type (0x006ea380
+    // -> 0x006ea490): the loaded magazine, `magSize` and the spare magazines
+    // (`mags().size() - 1`), `SoldierAmmoHasMag` the template's (default true,
+    // 0x0053c5fd). The `{2,3,4,5}` group's black box prints the spares, so a
+    // Bazooka reads 1 and 5 at spawn; without them it showed no rocket count
+    // but the loaded one (0 for the whole reload after every shot).
+    if (magazine && Number.isFinite(rounds) && Number.isFinite(mags)) {
+      vars['Ammo/MaxPrimaryAmmo'] = magazine.size;
+      vars['Ammo/PrimaryMag'] = mags;
+      vars['Ammo/SoldierAmmo/SoldierAmmoHasMag'] = true;
+    }
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
     // The bar types: 4 `ATIconAndReloadBar` (the wrench's
     // `reloadtimebar`), 6 `ATIconAndHeatBar` (the medic bag's `heatbar`) and
