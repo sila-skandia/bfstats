@@ -145,7 +145,8 @@ class SoldierSoundTests(unittest.TestCase):
     def test_the_page_runs_the_machine_for_the_player_bots_and_remotes(self) -> None:
         audio = (VIEWER / "page-audio.js").read_text()
         self.assertIn("function soldierSoundTick(owner, view, dt, position = null, armor = null)", audio)
-        self.assertIn("soldierSoundTick(bot, recordedView, dt, botSoundAt);", audio)
+        # A replay's followed soldier is the listener's own body (position null).
+        self.assertIn("soldierSoundTick(bot, recordedView, dt, own ? null : botSoundAt);", audio)
         self.assertIn("page.soldierSoundTick(soundSoldier, view, dt, null, armor);",
                       (VIEWER / "local-player.js").read_text())
         self.assertIn("ctx.soldierSound?.(s, state, dt);", (VIEWER / "netcode-render.js").read_text())

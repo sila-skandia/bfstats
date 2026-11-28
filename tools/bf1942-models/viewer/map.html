@@ -518,6 +518,7 @@ import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, packHref, unplayableReason } from './replay-open.js';
 import { installReplaySocial } from './replay-social.js';
+import { createReplayOwnHandSound } from './replay-own-sound.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -4351,7 +4352,12 @@ replayController = createReplayController({
   // A replayed soldier's magazine change: his weapon's Reload slot, at him
   // (SND-17), as the page's own bots play it (replay-bodies.js `place`).
   playWorldReload: (weapon, x, y, z, owner) => pageAudio.playWorldReload(weapon, x, y, z, owner),
-  footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
+  // The followed soldier's own hand sounds, heard as the player hears his
+  // (replay-bodies.js `ownEars`): his magazine change's Reload slot, and his
+  // medic bag's or wrench's Fire Loop, whose scripts stop at a metre, so no
+  // camera outside his head heard either. Played on the hand weapon's bus.
+  ownHandSound: createReplayOwnHandSound(soldierKit),
+  footstepTick: (actor, dt, own) => pageAudio.botFootstepTick(actor, dt, own),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
   // A replayed soldier's hurt grunt (`c_SstHitDamage`, replay-bodies.js
   // `hurt`), the one the page's own bots play (`onHurt`), one per recorded
@@ -5050,7 +5056,9 @@ function paintHud(dt) {
   // its own frame, at the game's size in a narrow one (replay-studio-fx.js
   // `clipLayout`); anywhere else, null and the stage.
   const clipHud = replayController?.hudLayout?.(hudW, hudH) ?? null;
-  hudFeed.gameHud.paint(hudW, hudH, { clip: clipHud });
+  // A replay's bar covers the stage's bottom while it is up: the HUD's bottom
+  // groups sit over it, and follow it down as it hides (replay-ui.js `hudLift`).
+  hudFeed.gameHud.paint(hudW, hudH, { clip: clipHud, lift: replayController?.active() ? replayController.hudLift() : 0 });
   // A replay runs the message log on the recording's clock: its speed while
   // it plays, stopped while it is paused. Without one the rate is 1.
   comms.tick(dt * (replayController?.feedRate() ?? 1));

@@ -745,7 +745,7 @@ results.grenadeBar = { heat: grenadeVars['Overheat/OverHeat'] ?? null,
 // A narrow clip's layout (a 9:16 Short with the game's HUD): the transform
 // each group, or each leaf of the crosshair's, is drawn under, read off a
 // context that records `setTransform`.
-function clipTransforms(W, H, clip, vars = {}) {
+function clipTransforms(W, H, clip, vars = {}, lift = 0) {
   globalThis.window ??= { devicePixelRatio: 1 };
   let current = null;
   const seen = {};
@@ -763,7 +763,7 @@ function clipTransforms(W, H, clip, vars = {}) {
   ];
   Object.assign(hud.vars, vars);
   hud._paintElement = (_ctx, el) => { seen[el.id] = current; };
-  hud.paint(W, H, { clip });
+  hud.paint(W, H, { clip, lift });
   return { ...seen, canvas: [canvas.width, canvas.height] };
 }
 const tallClip = { frame: { x: 0, y: 0, w: 540, h: 960 }, unit: 0.9, dpr: null };
@@ -773,6 +773,9 @@ results.clip = {
   seats: clipTransforms(540, 960, tallClip, { 'Vehicle/ShowVehicleIcon': 1, 'Vehicle/ShowVehiclePlayers': 1 }),
   cropped: clipTransforms(1600, 900, { frame: { x: 530, y: 0, w: 540, h: 900 }, unit: 0.9, dpr: 2 }),
   none: clipTransforms(1600, 900, null),
+  // A replay's bar up over the stage's bottom 130 px (replay-ui.js `hudLift`).
+  lifted: clipTransforms(1600, 900, null, {}, 130),
+  liftedClip: clipTransforms(540, 960, tallClip, {}, 130),
 };
 
 console.log(JSON.stringify(results));

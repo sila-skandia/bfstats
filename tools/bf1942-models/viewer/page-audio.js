@@ -965,18 +965,25 @@ export function createPageAudio(page) {
    * not wearing them. A bot of the page has a simulated soldier and is read
    * like the player; a replayed soldier names the engine's own lower-body
    * state (`recordedLower`), which is the trigger's source in the game.
+   *
+   * `own`: the replay's followed soldier, whose ears the listener is (his
+   * eyes or his chase camera). His steps are the listener's own body, as the
+   * player's are (`position` null): heard where he stands, not from a chase
+   * camera 6.5 m behind him, where the inverse roll-off took 16 dB off them
+   * and the scripts' own `Volume <- Distance` ramps dropped half the layers,
+   * and a firefight beside him buried what was left.
    */
-  function botFootstepTick(bot, dt) {
+  function botFootstepTick(bot, dt, own = false) {
     if (page.AUDIO_OFF) return;
     if (bot.vehicle) return;
     const at = bot.getPosition?.();
     if (!at) return;
     botSoundAt.x = at[0]; botSoundAt.y = at[1]; botSoundAt.z = at[2];
-    if (!soldierAudible(botSoundAt)) return;
+    if (!own && !soldierAudible(botSoundAt)) return;
     if (bot.recordedLower !== undefined) {
       recordedView.state = bot.recordedLower;
       recordedView.x = at[0]; recordedView.y = at[1]; recordedView.z = at[2];
-      soldierSoundTick(bot, recordedView, dt, botSoundAt);
+      soldierSoundTick(bot, recordedView, dt, own ? null : botSoundAt);
       return;
     }
     const soldier = page.botSoldier?.(bot) ?? null;

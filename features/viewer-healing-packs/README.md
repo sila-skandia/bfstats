@@ -389,3 +389,26 @@ only the recording player.
 Checked: `tests/test_pack_charge.py` (the law against the binary's numbers
 and the server recording's 1791, the replay's spans and work test, the two
 bars, a bot's pack); `./scripts/verify.sh`.
+
+## The packs' sound in a replay (2026-11-28)
+
+Reported on `q8uwcxrjcg` (Berlin): the medic bag and the wrench showed their
+bars but made no sound, where the game tears cloth and clanks metal.
+`MedPack.ssc` and `RepairPack.ssc` are stereo Fire Loops (`Medkit.wav`,
+`repair.wav`, volume 0.8, `stop FinishSample`) whose only modulator is
+`Volume <- Distance` ramp 1 to 1 m: nobody but the man holding the pack
+hears it. The replay had no path for a pack's fire at all (it records no
+round), and a bystander's would be silent anyway.
+
+Now the followed soldier's is played as his own (`viewer/replay-own-sound.js`,
+`hand-fire-sound.js` `setReplayFireLoop`): on the hand weapon's bus while his
+torso is in the pack's fire state, held 0.3 s across the one- or two-frame
+`Ub_StandAim` / `Ub_Fire` his recorded state passes through between pulls,
+and let run out on release. Nobody else's plays, as in the game. Silent while
+paused or dragged. "Followed" is `replay-bodies.js` `viewerPid`: his eyes or
+his chase camera, not the free camera or a creator's rig.
+
+Checked on the page (headless Chromium, `AudioBufferSourceNode.start`
+counted by caller): on `q8uwcxrjcg` from 3190 s the loop starts at 3224.6,
+3228.1, 3230.7 and 3233.0, each a use of the bag, and not between.
+Guard: `tests/test_replay_own_sound.py`.

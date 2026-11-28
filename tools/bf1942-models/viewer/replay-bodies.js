@@ -120,6 +120,13 @@ const HURT_FRESH = 0.5;
 /** Seconds after a recorded fire state starts a frame may still enter it:
  *  a seek into a throw's middle plays none of it. */
 const FIRE_STATE_FRESH = 0.25;
+
+/** The hand items whose fire is a held loop only their user hears. */
+const PACK_LOOP = /^(medpack|repairpack)$/i;
+
+/** Seconds the followed man's pack loop holds past his last frame in its
+ *  fire state: across the one- or two-frame `Ub_StandAim` between pulls. */
+const PACK_LOOP_HOLD = 0.3;
 /** How far back a recorded pack heat is compared to call a burn: a little
  *  more than one 10 Hz sample. */
 const PACK_BURN_SPAN = 0.15;
@@ -267,6 +274,10 @@ export class ReplaySoldiers {
     }
     const primed = [...names.values()];
     for (const name of primed) prime(name);
+    // And as the followed man hears them (replay-own-sound.js): his reload
+    // and, should he carry one, the medic bag's or the wrench's loop.
+    const own = this.player.ctx?.ownHandSound?.prime;
+    if (typeof own === 'function') for (const name of [...primed, 'MedPack', 'RepairPack']) own(name);
     return primed;
   }
 
@@ -495,8 +506,32 @@ export class ReplaySoldiers {
       // Nobody steps in the air: a thrown man or a parachutist moves fast
       // with nothing under his boots.
       if (actor.vehicle || actor.state.dead || actor.state.soldier.held.airborne) continue;
-      if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt));
-      else this.player.ctx.footstepTick?.(actor, dt);
+      const own = actor.pid === viewer;
+      if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt, own));
+      else this.player.ctx.footstepTick?.(actor, dt, own);
+    }
+    this.ownPackLoop(t);
+  }
+
+  /**
+   * The followed soldier's medic bag or wrench, sounding while he works it:
+   * its Fire Loop on his own bus (`ctx.ownHandSound.loop`, replay-own-sound.js),
+   * which only the man holding it hears. His torso enters the pack's fire
+   * state again on every pull and passes through `Ub_StandAim` / `Ub_Fire`
+   * for a frame or two between (q8uwcxrjcg, 3224-3236 s), so the loop holds
+   * `PACK_LOOP_HOLD` past his last frame in it rather than restarting on each.
+   * Silent while paused or dragged, and on anyone else.
+   */
+  ownPackLoop(t) {
+    const hand = this.player.ctx?.ownHandSound;
+    if (!hand) return;
+    const at = this.ownPack;
+    const live = this.player.playing && !this.dragging && at
+      && at.pid === this.viewerPid() && t >= at.t && t - at.t <= PACK_LOOP_HOLD;
+    const want = live ? at.weapon : null;
+    if (want !== this.ownPackWant) {
+      this.ownPackWant = want;
+      hand.loop(want);
     }
   }
 
@@ -910,6 +945,11 @@ export class ReplaySoldiers {
     if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
       this.bodies?.botFireHeld?.(actor);
     }
+    // The followed man working his pack (`ownPackLoop`).
+    const packName = actor.weaponAi?.name;
+    if (body?.firing && !dead && !seated && PACK_LOOP.test(packName ?? '') && pid === this.viewerPid()) {
+      this.ownPack = { pid, weapon: packName, t };
+    }
     // A fire the recording has no round for -- a grenade thrown, a rifle shot
     // out of this client's scope -- is still the torso's recorded fire state:
     // entered as playback crosses its start, unless a fire already plays (a
@@ -937,7 +977,13 @@ export class ReplaySoldiers {
       // into a fresh one, not on a seek that lands mid-change.
       if (this.player.playing && !this.dragging) {
         const weapon = actor.weaponAi?.name ?? actor.kitPrimary;
-        if (weapon && actor.recordedUpperAt <= FIRE_STATE_FRESH) this.player.ctx.playWorldReload?.(weapon, s.x, s.y + 1.4, s.z, actor);
+        if (weapon && actor.recordedUpperAt <= FIRE_STATE_FRESH) {
+          // Every vanilla reload load stops at a metre: the followed man's is
+          // heard as his own, everyone else's at him (replay-own-sound.js).
+          const hand = this.player.ctx.ownHandSound;
+          if (hand && pid === this.viewerPid()) hand.reload(weapon);
+          else this.player.ctx.playWorldReload?.(weapon, s.x, s.y + 1.4, s.z, actor);
+        }
       }
     }
     actor.reloading = reloading;
@@ -1448,6 +1494,8 @@ export class ReplaySoldiers {
   }
 
   dispose() {
+    this.player.ctx?.ownHandSound?.loop?.(null);
+    this.ownPackWant = null;
     this.bodies?.disposeBotVisuals?.();
     const guns = this.player.ctx.guns;
     for (const held of this.guns.values()) {

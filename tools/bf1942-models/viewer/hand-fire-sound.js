@@ -183,6 +183,40 @@ export function createHandFireSound(page) {
     sound.handFireLoop = null;
   }
 
+  // A replay's followed soldier's Fire Loop: the medic bag's tear, the
+  // wrench's clank. Their `MedPack.ssc` and `RepairPack.ssc` are stereo loops
+  // whose `Volume <- Distance` ramp is 1 to 1 m, so only the man using one
+  // hears it; the replay plays it for him on this bus, as the player's own
+  // plays, and never for anyone else. Its own voice, so a replay never
+  // touches the player's `handFireLoop`. `fire` null (or one with no loop
+  // patch) lets the cycle in flight run out (FinishSample).
+  sound.replayFireLoop = null;
+
+  function setReplayFireLoop(fire) {
+    const live = sound.replayFireLoop;
+    const want = fire?.spec?.loop && fire.buffer ? fire : null;
+    if (live && live.fire === want) return;
+    if (live) {
+      live.source.loop = false;
+      sound.replayFireLoop = null;
+    }
+    if (!want || !page.audioListener || page.masterVolume() <= 0) return;
+    const ctx = page.audioListener.context;
+    const source = ctx.createBufferSource();
+    source.buffer = want.buffer;
+    source.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = Math.min(want.spec.volume ?? 1, 1);
+    source.connect(gain);
+    gain.connect(ensureHandFireBus(ctx));
+    const entry = { source, gain, fire: want };
+    source.onended = () => {
+      try { source.disconnect(); gain.disconnect(); } catch (_) {}
+      if (sound.replayFireLoop === entry) sound.replayFireLoop = null;
+    };
+    try { source.start(); sound.replayFireLoop = entry; } catch (_) {}
+  }
+
   // --- one clock a patch -------------------------------------------------------
   //
   // A sample behind a `Volume <- Time` gate does not start when its patch is
@@ -364,6 +398,7 @@ export function createHandFireSound(page) {
     playHandRelease,
     refetchHandFireSound,
     releaseHandFireLoop,
+    setReplayFireLoop,
     weaponSoundsManifest,
   });
   return sound;

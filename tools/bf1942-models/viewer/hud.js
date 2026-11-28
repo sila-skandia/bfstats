@@ -801,14 +801,19 @@ export class Hud {
    *  Called once per RENDERED frame (HUD-3: the engine itself recomputes
    *  this HUD once per `Renderer_drawFrame`, not the 30 Hz tick) -- never
    *  more than that, and never at all when nothing changed. */
-  paint(stageW, stageH, { clip = null } = {}) {
+  paint(stageW, stageH, { clip = null, lift = 0 } = {}) {
     if (!this.ready || !this.canvas || !stageW || !stageH) return;
     // A clip being filmed lays the HUD out in its own frame, at the file's
     // resolution while it records (replay-studio-fx.js `clipLayout`).
     const dpr = clip?.dpr ?? Math.min(window.devicePixelRatio || 1, 3);
     const frame = clip?.frame ?? { x: 0, y: 0, w: stageW, h: stageH };
     const unit = clip?.unit ?? null;
-    const framed = `${frame.x},${frame.y},${frame.w},${frame.h},${unit}`;
+    // `lift`: CSS pixels the groups anchored to the bottom (health, ammo, the
+    // weapon bar, the vehicle panel) ride up by, clear of something over the
+    // stage's bottom edge: a replay's bar while it is up, following it down
+    // as it slides away (replay-ui.js `hudLift`). The top groups stay.
+    const up = clip ? 0 : Math.max(0, Math.round(Number(lift) || 0));
+    const framed = `${frame.x},${frame.y},${frame.w},${frame.h},${unit},${up}`;
     if (framed !== this._framed) {
       this._framed = framed;
       this._dirty = true;
@@ -825,7 +830,7 @@ export class Hud {
     ctx.clearRect(0, 0, cw, ch);
     const [vw, vh] = this.layout?.virtual || DEFAULT_VIRTUAL;
     const s = this._scaleFor(frame.w, frame.h);
-    const whole = () => ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, (s.ox + frame.x) * dpr, (s.oy + frame.y) * dpr);
+    const whole = (raise = 0) => ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, (s.ox + frame.x) * dpr, (s.oy + frame.y - raise) * dpr);
     const at = (x, y, k = unit) => ctx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
     const centred = () => at(frame.x + frame.w / 2 - unit * vw / 2, frame.y + frame.h / 2 - unit * vh / 2);
     whole();
@@ -843,7 +848,7 @@ export class Hud {
         const raise = group.key === 'weaponBar' ? RAISE_WEAPON_BAR
           : IN_VEHICLE_RAISED.has(group.key) ? vehicleRaise : 0;
         at(x, down === 'top' ? frame.y : frame.y + frame.h - k * (vh + raise), k);
-      } else whole();
+      } else whole(up && ANCHORS[group.key]?.[1] === 'bottom' ? up : 0);
       for (const el of group.elements) {
         if (unit && group.key === 'crosshair') {
           const [, , w, h] = el.rect || [0, 0, 0, 0];

@@ -1532,6 +1532,12 @@ export function createReplayController(ctx) {
       const none = { icon: 0, line: null, seconds: 0, viewing: false, fade: 0 };
       return guarded('the scout overlay', () => player.spotting?.hud() ?? none, none);
     },
+    /** CSS pixels the game HUD's bottom groups ride up by, clear of the
+     *  replay's bar while it is up and following it down as it slides away
+     *  (replay-ui.js `hudLift`); 0 without a replay. */
+    hudLift() {
+      return guarded('the HUD\'s lift', () => player?.ui?.hudLift?.() ?? 0, 0);
+    },
     /** What the replay's controls cover of the view, client rects
      *  (replay-ui.js `chromeRects`), for the scout box to keep clear of. */
     chromeRects() {

@@ -104,7 +104,7 @@ export function createHandWeapon(page) {
     get weaponToken() { return soldierKit.weaponToken; },
   });
   const { ensureHandFireBus, fetchHandFireSound, playHandFire, refetchHandFireSound,
-          releaseHandFireLoop, weaponSoundsManifest } = sound;
+          releaseHandFireLoop, setReplayFireLoop, weaponSoundsManifest } = sound;
   Object.defineProperties(soldierKit, {
     weaponSoundsIndex: { get: () => sound.weaponSoundsIndex, enumerable: true },
     handFireBus: { get: () => sound.handFireBus, enumerable: true },
@@ -1006,6 +1006,7 @@ export function createHandWeapon(page) {
     selectKitWeapon,
     adoptServerItem,
     selectBestLoadedWeapon,
+    setReplayFireLoop,
     soldierMaxHp: loadout.soldierMaxHp,
     soldierTemplateFor,
     startReload,

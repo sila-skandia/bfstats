@@ -92,6 +92,18 @@ class FillPictureGeometryTests(unittest.TestCase):
         for key in ("soldierIcon", "tickets", "cross", "scope", "periscope"):
             self.assertTransform(frame[key], [2, 0, 0, 1.5, 0, 0])
 
+    def test_a_replays_bar_lifts_the_bottom_groups_and_leaves_the_top(self) -> None:
+        # 2026-11-28: the HUD's health and ammunition sat under the replay's
+        # bar until it auto-hid. While the bar is up the groups anchored to
+        # the bottom ride up by its height; the tickets, the crosshair and the
+        # scope stay where they are. A clip being filmed has no bar over it.
+        lifted = self.results["clip"]["lifted"]
+        for key in ("soldierIcon", "primaryAmmo", "weaponBar"):
+            self.assertTransform(lifted[key], [2, 0, 0, 1.5, 0, -130])
+        for key in ("tickets", "time", "cross", "scope", "periscope"):
+            self.assertTransform(lifted[key], [2, 0, 0, 1.5, 0, 0])
+        self.assertEqual(self.results["clip"]["liftedClip"], self.results["clip"]["tall"])
+
     def test_the_combat_area_warning_wraps_into_its_own_plate(self) -> None:
         # The first leaf whose string is wider than its rect. `menu/InGame`
         # backs it with `textmessBG_3LINE_256x64` -- three lines of art for a

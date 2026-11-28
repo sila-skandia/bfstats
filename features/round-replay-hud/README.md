@@ -838,3 +838,19 @@ and, for whether a pull worked and so cost anything, a gain of hit points by
 him or by a soldier (the bag) or hull (the wrench) within 12 m. A server
 recording's `am` is the server's count and wins. The full account is in
 `features/viewer-healing-packs/README.md`, "The packs' charge bar".
+
+## The HUD clears the replay's bar (2026-11-28)
+
+The game HUD's bottom groups (health, ammunition, the weapon bar, the
+vehicle panel) were painted under the replay's bar, so they could be read
+only once the bar had auto-hidden. `hud.js` `paint` now takes a `lift`, CSS
+pixels the groups anchored to the bottom (`ANCHORS`) ride up by; the tickets,
+the clock, the crosshair and the scope stay. The page passes
+`replay-ui.js` `hudLift`, how far the bar reaches up from the stage's bottom,
+read off its live rect each frame, so as the bar slides away (`rp-idle`, its
+.3 s transform) the HUD follows it down, and it rises with the bar again. A
+clip being filmed lays the HUD out in its own frame and is never lifted.
+
+Checked headless on `q8uwcxrjcg` at 53:12 in first person: the lift is 130 px
+with the bar up, falls to 0 over the slide, and both frames show the panels
+clear (`tests/test_hud.py`, `test_a_replays_bar_lifts_the_bottom_groups...`).

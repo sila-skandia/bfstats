@@ -296,3 +296,19 @@ Checked on the page (`map.html?mod=bf1942&map=berlin&replay=...&shots`,
 headless Chromium, `WorldFire.play` counted): a minute of the round played a
 `Mp40#reload`, where it played none before. Guard: the prime's assertion in
 `tests/test_replay_auto_fire_sound.mjs`.
+
+### The followed soldier's reload is his own (2026-11-28)
+
+Still reported inaudible on `q8uwcxrjcg` at 53:13 after the change above. The
+page did play it (`Mp40#reload` at 3195.03), at him, but the replay's chase
+camera sits 6.5 m behind him and every vanilla reload load stops at a metre.
+In the game the man reloading hears it as his own. So the followed soldier's
+(`replay-bodies.js` `viewerPid`: his eyes or his chase camera) now plays on
+the hand weapon's bus, through `hand-fire-sound.js`'s own `playReload`
+(`viewer/replay-own-sound.js`); everyone else's stays at him in the world.
+His footsteps go the same way (`page-audio.js` `botFootstepTick(..., own)`,
+`position` null, as the player's): from the chase camera the inverse roll-off
+took ~16 dB off them and the scripts' distance ramps dropped about half
+their layers (3-8 sample starts per 2 s against 15-24 in his eyes), which a
+fight beside him buried. Checked headless: the reload's 13 loads start on the
+hand bus at 3195.03 and 3238.36; 151 of 178 steps in 3190-3240 are his own.

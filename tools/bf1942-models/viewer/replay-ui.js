@@ -2050,6 +2050,23 @@ export class ReplayUi {
     return out;
   }
 
+  /**
+   * How far the bar reaches up from the stage's bottom edge this frame, CSS
+   * pixels: the game HUD's health, ammunition and vehicle panel sit that far
+   * up (hud.js `paint`'s `lift`), where the bar does not cover them. Read off
+   * the bar's live rect, so while it slides away (`rp-idle`, its .3 s
+   * transform) the HUD follows it down, and comes back up with it. 0 with the
+   * bar away, or with no bar on the page (a bare replay, H).
+   */
+  hudLift() {
+    const bar = this.bar;
+    if (!bar || bar.hidden || !bar.isConnected || this.root.classList.contains('rp-bare')) return 0;
+    const stage = this.stage.getBoundingClientRect();
+    const r = bar.getBoundingClientRect();
+    if (!(r.height > 0)) return 0;
+    return Math.max(0, Math.min(stage.bottom - r.top, stage.height / 2));
+  }
+
   /** The stage's pixels the replay's controls hold at its top (the fronts)
    *  and bottom (the bar and the card), while they are up: `{ top, bottom,
    *  barBottom }`, `barBottom` the bar's alone, for the debriefing's compact
