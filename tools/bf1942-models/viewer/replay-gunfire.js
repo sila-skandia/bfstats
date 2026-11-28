@@ -13,6 +13,102 @@ const raycaster = new THREE.Raycaster();
 /** Metres a hull may have moved since its matrices were last written: the
  *  broadphase sphere below is that much wider than the hull. */
 const SPHERE_SLACK = 3;
+/** The armour a hull answers with when its model carries no collision mesh
+ *  (every shipped vehicle does; this is for a stripped glb). */
+const HULL_MATERIAL = 61;
+/** The material a round passes through (`static-index.js`). */
+const NON_SOLID = 90;
+const CATCHER = /catcher/i;
+
+/**
+ * A hull's collision meshes, found once: `{ meshes, dominant }`, the glb's
+ * collision primitives (invisible nodes whose geometry carries the
+ * `defenseMaterial` of its faces) and the material most of its faces have.
+ * The cubes FHSW hangs under a hull to stop a ranging gun's rounds are not
+ * the hull.
+ */
+export function collisionPartsOf(hull) {
+  if (hull.collisionParts) return hull.collisionParts;
+  const meshes = [];
+  const tris = new Map();
+  hull.scene?.traverse(o => {
+    if (!o.isMesh || !o.geometry?.userData?.collision) return;
+    const material = Number(o.geometry.userData.defenseMaterial);
+    if (!Number.isFinite(material)) return;
+    for (let n = o; n; n = n.parent) if (CATCHER.test(n.name ?? '')) return;
+    const count = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    // The wheels' one-face suspension probes are not the hull's skin.
+    if (count <= 2) return;
+    meshes.push(o);
+    if (material !== NON_SOLID) tris.set(material, (tris.get(material) ?? 0) + count);
+  });
+  let dominant = null;
+  let most = 0;
+  for (const [material, count] of tris) {
+    if (count > most) { most = count; dominant = material; }
+  }
+  return (hull.collisionParts = { meshes, dominant });
+}
+
+const _relative = new THREE.Matrix4();
+const _relPos = new THREE.Vector3();
+const _relQuat = new THREE.Quaternion();
+const _relScale = new THREE.Vector3();
+const _frame = new THREE.Quaternion();
+const _minusZ = new THREE.Vector3(0, 0, -1);
+
+/** The FireArms node `muzzle` belongs to (itself, else its nearest ancestor
+ *  that carries `fireArms`), or null. */
+function fireArmsOf(muzzle) {
+  for (let n = muzzle; n; n = n.parent) {
+    if (n.userData?.fireArms) return n;
+  }
+  return null;
+}
+
+/**
+ * The `aimRay` of a recorded hand-weapon shot, barrel by barrel. `ray` is
+ * the recorded launch (`origin`, `dir`: the eye and the weapon's aim, which a
+ * server row names once however many barrels the pull fires). The engine
+ * turns that frame by each barrel's own `addFireArmsPosition` rotation and
+ * moves it by its offset (`fireBarrel`, ledger XHIT-12 and XHIT-16), and a
+ * shotgun's pellet pattern is those turns: the Secret Weapons shotgun's five
+ * barrels are five pellets that leave a degree or so apart. Every barrel
+ * fired down the one recorded ray was five pellets on one line and one
+ * impact on the wall. `hand-aim.js` `handAimRay` is the play page's, this the
+ * replay's: a gun with one barrel at its origin and no turn answers `ray`
+ * itself.
+ */
+export function barrelAimRay(ray) {
+  const out = { origin: new THREE.Vector3(), dir: new THREE.Vector3() };
+  return muzzle => {
+    out.origin.copy(ray.origin);
+    out.dir.copy(ray.dir);
+    const node = fireArmsOf(muzzle);
+    if (!node || muzzle === node) return out;
+    muzzle.updateWorldMatrix(true, false);
+    node.updateWorldMatrix(true, false);
+    _relative.copy(node.matrixWorld).invert().multiply(muzzle.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+    _frame.setFromUnitVectors(_minusZ, ray.dir).multiply(_relQuat);
+    out.dir.copy(_minusZ).applyQuaternion(_frame);
+    out.origin.add(_relPos.applyQuaternion(_frame));
+    return out;
+  };
+}
+
+/**
+ * Whether recorded shot `f` is the row that fires `group`'s pull. The server
+ * writes one `f` a barrel, and `guns.fireShot` fires every barrel of a
+ * multi-barrel gun that is not `asynchronyFire` (BOMB-1), so firing it once a
+ * row fired every barrel once for each: 25 pellets from the shotgun's five
+ * rows, all on the same line. Only a pull's first row (`f.barrel`, numbered
+ * as the recording is read: replay-recording.js `numberBarrels`) fires it.
+ */
+export function leadsPull(group, f) {
+  const barrels = group?.muzzles?.length ?? 1;
+  if (barrels < 2 || group.stats?.asynchronyFire) return true;
+  return !(f?.barrel > 0) || f.barrel % barrels === 0;
+}
 
 /** A node the level placed as one of its spawner vehicles: under the level
  *  glb's `spawners` group (`level-statics.js` `indexScene`). */
@@ -116,23 +212,39 @@ export function dynamicCast(player, ox, oy, oz, dx, dy, dz, maxDist, skipOwner =
     const p = hull.castCentre;
     const r = hull.castRadius + SPHERE_SLACK;
     if (!rayNearsSphere(ox, oy, oz, _dir.x, _dir.y, _dir.z, bestDist, p.x, p.y, p.z, r)) continue;
-    const target = hull.wreck?.visible ? hull.wreck : hull.scene;
-    const hits = raycaster.intersectObject(target, true);
-    const hit = hits.find(h => h.object.visible !== false);
+    // What the engine collides a round with is the hull's collision mesh,
+    // not the model it is drawn as: its faces carry the material (the
+    // vehicle's own: a jeep's 45, a tank's plates), and the impact effect is
+    // that material's, not one steel plate for every hull. A face of
+    // material 90 is not solid to a round (`NON_SOLID_MATERIAL`).
+    const parts = collisionPartsOf(hull);
+    let hit = null;
+    let material = HULL_MATERIAL;
+    if (parts.meshes.length) {
+      hit = raycaster.intersectObjects(parts.meshes, false)
+        .find(h => Number(h.object.geometry.userData.defenseMaterial) !== NON_SOLID);
+      if (hit) material = Number(hit.object.geometry.userData.defenseMaterial);
+    }
+    if (!hit) {
+      // Nothing of the collision mesh on the line: what is drawn there (a
+      // gun barrel, an aerial) is struck as the hull's own material.
+      const target = hull.wreck?.visible ? hull.wreck : hull.scene;
+      hit = raycaster.intersectObject(target, true).find(h => h.object.visible !== false && !h.object.geometry?.userData?.collision);
+      if (hit) material = parts.dominant ?? HULL_MATERIAL;
+    }
     if (!hit || hit.distance >= bestDist) continue;
     bestDist = hit.distance;
     let nx = 0, ny = 1, nz = 0;
     if (hit.face) {
       _normalMatrix.getNormalMatrix(hit.object.matrixWorld);
       const n = hit.face.normal.clone().applyNormalMatrix(_normalMatrix).normalize();
+      if (n.dot(_dir) > 0) n.negate();
       nx = n.x; ny = n.y; nz = n.z;
     }
     best = {
       t: hit.distance, x: hit.point.x, y: hit.point.y, z: hit.point.z,
       nx, ny, nz,
-      // 61: the armour the level's own hulls carry; the impact effect is
-      // the steel one.
-      material: 61, owner: hull.ownerTag, kind: 'object',
+      material, owner: hull.ownerTag, kind: 'object',
     };
   }
   return best;

@@ -300,6 +300,80 @@ class RoundCamTests(unittest.TestCase):
         self.assertAlmostEqual(k["ghostEnd"]["x"], 26.2, delta=0.2)
 
 
+class CarriedRoundTests(unittest.TestCase):
+    """Secret Weapons, recording 5txd9vj8ap (Hellendoorn): the Natter's
+    rockets, the thrown knives and the shotgun's pellets."""
+
+    def test_a_gun_the_weapon_table_knows_as_explosive_is_a_rocket(self) -> None:
+        # `NatterGuns` fires 200 m/s rockets with a 16 m blast; no name says
+        # so. Key 6 passed over every Natter shot until the table taught the
+        # speed guess; a shotgun (200 m/s, no blast) and a rifle stay bullets.
+        p = run_harness()["pull"]
+        self.assertEqual(p["before"], {"speed": 650, "heavy": False, "kind": "tracer"})
+        self.assertEqual(p["after"]["speed"], 200)
+        self.assertTrue(p["after"]["heavy"])
+        self.assertEqual(p["after"]["kind"], "rocket")
+        self.assertEqual(p["after"]["shotgun"], [650, False])
+        self.assertFalse(p["after"]["rifle"])
+        # A gun with no speed is not taught (a bomb stays the name's 60).
+        self.assertEqual(p["after"]["bomber"], 60)
+        self.assertEqual(p["after"]["bazooka"], 50)
+        self.assertEqual(p["nextHeavy"], "NatterGuns")
+        self.assertFalse(p["cleared"])
+
+    def test_a_pull_is_fired_once_however_many_rows_the_server_wrote(self) -> None:
+        # The shotgun's five barrels are five `f` rows at one tick, and
+        # `fireShot` fires every barrel: 25 pellets on one line, one impact.
+        p = run_harness()["pull"]
+        shotgun = [row for row in p["pull"] if row[0] == "Shotgun"]
+        self.assertEqual([row[2] for row in shotgun], [0, 1, 2, 3, 4, 0, 0])
+        self.assertEqual([row[3] for row in shotgun], [True, False, False, False, False, True, True])
+        # Two shooters at one tick are two pulls; a one-barrel gun, and one
+        # that fires a barrel a pull, fire on every row.
+        self.assertEqual(p["singles"], [True, True])
+        # A sixth row is the next pull of five barrels.
+        self.assertTrue(p["sixth"])
+
+    def test_each_barrel_turns_the_recorded_aim_into_its_own_pellet(self) -> None:
+        b = run_harness()["barrels"]
+        self.assertEqual(len({tuple(d) for d in b["dirs"]}), 5)
+        for x, y, z in b["dirs"]:
+            self.assertGreater(z, 0.999)
+            self.assertLess(abs(x), 0.02)
+            self.assertLess(abs(y), 0.02)
+        # A gun with one barrel at its origin answers the recorded ray itself.
+        self.assertEqual(b["same"], [0, 0, 1])
+        self.assertEqual(b["origin"], [5, 2, 5])
+
+    def test_a_hull_answers_a_round_with_its_collision_materials(self) -> None:
+        h = run_harness()["hullMaterial"]
+        self.assertEqual(h["meshes"], 3)
+        # Not the one steel plate (61) every hull used to answer with.
+        self.assertEqual(h["dominant"], 45)
+        self.assertTrue(h["cached"])
+        cast = run_harness()["hullCast"]
+        # Through the open screen (a 90 face) onto the skin, whose face is 45.
+        self.assertEqual(cast["into"]["material"], 45)
+        self.assertAlmostEqual(cast["into"]["t"], 9.0, delta=0.1)
+        self.assertEqual(cast["into"]["nz"], -1)
+        # What is drawn with no collision face under it is the hull's own.
+        self.assertEqual(cast["drawnOnly"]["material"], 45)
+        self.assertIsNone(cast["miss"])
+
+    def test_a_recorded_round_in_the_air_is_picked_and_ridden(self) -> None:
+        c = run_harness()["carried"]
+        # A server flight (a rocket) and a thrown knife: the shot comes with them.
+        self.assertEqual(sorted((x["flight"], x["shot"]) for x in c["found"]), [(False, "EliteKnife"), (True, "EliteKnife")])
+        self.assertTrue(all(x["obj"] is None for x in c["found"]))
+        self.assertEqual(c["thrownShot"], "EliteKnife")
+        self.assertFalse(c["none"])
+        self.assertTrue(c["ridden"])
+        self.assertEqual(c["flyingAt"], {"state": "flying", "kind": "thrown", "x": 18.6})
+        self.assertEqual(c["impact"], {"x": 26.7})
+        # A knife lying still (or gone) is no round in flight.
+        self.assertEqual(c["hidden"], 0)
+
+
 class ShotTests(unittest.TestCase):
     """A clip from 10 s to 16 s at a quarter speed, eased over half a second
     at each end; A1 (pid 4) kills at 12 s with the third round of a burst and

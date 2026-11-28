@@ -33,6 +33,7 @@ import { trailOf } from './replay-props.js';
 import { wearPagePaint } from './level-skin.js';
 import { recoilSpan } from './gun-cycle.js';
 import { impactEffect } from './collision-materials.js';
+import { collisionPartsOf } from './replay-gunfire.js';
 import { CG_PROJECTILES } from './static-index.js';
 import { burstsAtEndOfLife } from './projectile-damage.js';
 
@@ -149,6 +150,8 @@ export class ReplayFlights {
     this.pool = new Map();       // lower template -> nodes put away
     this.live = new Map();       // flight -> { node, run }
     this.lastT = null;
+    this.sounding = new Map();   // flight -> the token its sound plays under
+    this.soundSpan = null;       // the longest flight, seconds, for the search
   }
 
   /** Each flight template's mesh, from the hulls' models (`hulls`) or the
@@ -265,12 +268,69 @@ export class ReplayFlights {
     return lo;
   }
 
+  /**
+   * The flights that carry a sound of their own, sounding while they fly:
+   * the thrown knife's `knife_air.wav` (`knifeprojectile.ssc`, a loop that
+   * rises 0.1 s after the throw and falls off over 20 m), which is the round's
+   * script and not the weapon's (SND-25, SND-19). The page's own rounds play
+   * the same bundle with `follow` (`effect-audio.js`); a replayed flight is
+   * the server's, so it follows the recorded path. A flight with no sound in
+   * the tree (most of them: a bullet's is the passing crack) asks nothing.
+   * Started on the first frame of playback that finds a flight in the air
+   * (a seek into one picks it up from there), stopped when it ends, when the
+   * replay pauses or is dragged, and across a seek, which no flight's sound
+   * survives.
+   */
+  updateSounds(t, prevT) {
+    const fs = this.player.ctx.flightSound;
+    const flights = this.player.rec.flights;
+    if (!fs || !flights?.length) return;
+    const walking = this.player.playing && !this.player.soldiers?.dragging
+      && prevT !== null && t > prevT && t - prevT < EFFECT_LATE;
+    if (!walking) {
+      for (const token of this.sounding.values()) fs.stop(token);
+      this.sounding.clear();
+      return;
+    }
+    for (const [flight, token] of this.sounding) {
+      if (t < flight.destroyed && t >= flight.created) continue;
+      fs.stop(token);
+      this.sounding.delete(flight);
+    }
+    if (this.soundSpan === null) {
+      this.soundSpan = 0;
+      for (const f of flights) if (f.destroyed > f.created) this.soundSpan = Math.max(this.soundSpan, f.destroyed - f.created);
+    }
+    // Sorted by creation: from the first that can still be flying to the last made.
+    let lo = 0;
+    let hi = flights.length;
+    const early = t - this.soundSpan - 1e-6;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (flights[mid].created > early) hi = mid;
+      else lo = mid + 1;
+    }
+    for (let i = lo; i < flights.length && flights[i].created <= t; i++) {
+      const flight = flights[i];
+      if (this.sounding.has(flight) || t >= flight.destroyed || !flight.tmpl || !fs.has(flight.tmpl)) continue;
+      const token = Symbol(`flight ${flight.tmpl}`);
+      const at = flightAt(flight, t, _a);
+      if (!at) continue;
+      this.sounding.set(flight, token);
+      fs.play(flight.tmpl, [at[0], at[1], at[2]], {
+        token,
+        follow: () => flightAt(flight, Math.min(this.lastT ?? t, flight.destroyed), [0, 0, 0]),
+      });
+    }
+  }
+
   /** The frame at recording time `t`: every flight in the air drawn, and the
    *  end effect of every one that struck since the last frame, when the
    *  replay played forward across it. */
   update(t) {
     const prevT = this.lastT;
     this.lastT = t;
+    this.updateSounds(t, prevT);
     const list = this.drawn;
     if (!list.length && !this.live.size) return;
     const fx = this.player.ctx.effects;
@@ -343,9 +403,11 @@ export class ReplayFlights {
       if (hit) normal = [hit.nx, hit.ny, hit.nz];
       else if (flight.impact.obj >= 0) {
         // An object the page's hull does not reach there (the drawn hull is
-        // not the server's collision mesh): the hulls' armour, as
-        // `dynamicCast` gives a replayed hull.
-        material = HULL_MATERIAL;
+        // not the server's collision mesh): the struck hull's own material
+        // (the one most of its collision faces have), as `dynamicCast` gives
+        // a replayed hull; the hulls' steel when it cannot be told.
+        const struck = [...(this.player.hulls?.values() ?? [])].find(h => h.life?.nid === flight.impact.obj);
+        material = (struck && collisionPartsOf(struck).dominant) ?? HULL_MATERIAL;
         normal = [-_dir.x, -_dir.y, -_dir.z];
       } else {
         // The ground under the point.
@@ -395,6 +457,8 @@ export class ReplayFlights {
   }
 
   dispose() {
+    for (const token of this.sounding.values()) this.player.ctx.flightSound?.stop(token);
+    this.sounding.clear();
     for (const [flight, shown] of this.live) this.putAway(flight, shown);
     for (const nodes of this.pool.values()) for (const node of nodes) node.parent?.remove(node);
     this.pool.clear();

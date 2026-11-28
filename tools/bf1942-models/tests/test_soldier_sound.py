@@ -95,6 +95,24 @@ class SoldierSoundTests(unittest.TestCase):
                           "gravel": 5, "ice": 6, "frozen": 6, "mud": 7, "water": 10},
                          self.r["MATERIAL_PATCH"])
 
+    def test_a_surface_name_picks_its_patch_by_the_engines_word_search(self) -> None:
+        self.assertEqual({"Grass": 4, "Dry Grass": 4, "Concrete": 3, "Metal": 1, "Wood": 2,
+                          "Gravel": 5, "Frozen": 6, "Mud": 7, "Sand": 0, "Water": 10,
+                          "Other": 11}, self.r["surface"]["words"])
+
+    def test_the_material_table_is_materialtosound_con_not_a_guess(self) -> None:
+        # Terrain 0 is Grass, 4 Gravel, 5 Mud; 12 and 15 are Concrete; a hull's
+        # 45 is Metal and 88 Concrete; 111 and 112 are written twice and the
+        # later line wins; 7, 16 and 99 are in no row, so the patch stays.
+        s = self.r["surface"]
+        self.assertEqual(102, s["size"])
+        self.assertEqual({"0": 4, "1": 10, "2": 4, "3": 4, "4": 5, "5": 7, "6": 7, "8": 5,
+                          "9": 6, "10": 0, "12": 3, "13": 5, "15": 3, "45": 1, "84": 1,
+                          "88": 3, "111": 2, "112": 2, "120": 1, "7": None, "16": None,
+                          "99": None}, s["vanilla"])
+        # A mod's own table replaces it whole.
+        self.assertEqual({"7": 3, "12": 2, "0": False}, s["custom"])
+
     def test_the_stop_sounds_once_and_not_within_a_second_and_a_half(self) -> None:
         self.assertEqual([[2, [0, 8, 9]]], self.r["stand"])
 

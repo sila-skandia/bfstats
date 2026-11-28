@@ -44,6 +44,7 @@ import { motionAt, poseAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
 import { weaponTableFrom } from './replay-accuracy.js';
+import { setWeaponSpeeds } from './replay-weapon-speed.js';
 import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
 import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
 import { kitPackSpec } from './kit-loadout.js';
@@ -84,7 +85,7 @@ const lower = s => String(s ?? '').toLowerCase();
 const bareName = name => lower(name).replace(/_\d+$/, '');
 
 /** A kit's row in `loadouts.json`, by name whatever its case. */
-function kitRowOf(loadouts, kit) {
+export function kitRowOf(loadouts, kit) {
   const kits = loadouts?.kits;
   if (!kits || !kit) return null;
   return kits[kit] ?? Object.entries(kits).find(([name]) => lower(name) === lower(kit))?.[1] ?? null;
@@ -449,6 +450,9 @@ export class ReplayHud {
         if (!weapons.size) return;
         this.weapons = weapons;
         this.hitMarks = null;
+        // The round cam's speed guess learns the explosive guns a name
+        // cannot place (the Natter's rockets).
+        setWeaponSpeeds(weapons);
       })
       // A tree without one times the marks at a stock speed.
       .catch(() => {});

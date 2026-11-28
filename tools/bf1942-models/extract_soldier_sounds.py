@@ -245,6 +245,25 @@ def soldier_sound_inc(objects: ArchivePool) -> tuple[dict[str, float], list[str]
     return frequencies, LOAD_RE.findall(text)
 
 
+MATERIAL_SOUND_RE = re.compile(
+    r"^\s*SoldierSound\.addMaterialToSound\s+(\d+)\s+(\S+)", re.IGNORECASE | re.MULTILINE)
+
+
+def material_sounds(objects: ArchivePool) -> dict[str, str]:
+    """`MaterialToSound.con`: material id -> the surface name that picks the
+    step's patch (`SoldierSound::addMaterialToSound`, BF1942.exe 0x00573020).
+
+    A later line for an id replaces an earlier one (vanilla writes 111 and 112
+    twice), as the engine's map insert does. An id the file never names has no
+    entry: `setMaterial` leaves the stored patch as it was.
+    """
+    hit = objects.find(f"{SOUND_DIR}/MaterialToSound.con")
+    if hit is None:
+        return {}
+    text = objects.read(hit).decode("latin-1")
+    return {str(int(i)): name for i, name in MATERIAL_SOUND_RE.findall(text)}
+
+
 STATE_RE = re.compile(r"^\s*AnimationStateMachine\.createState\s+(\S+)", re.IGNORECASE)
 TRIGGER_RE = re.compile(
     r"^\s*AnimationStateMachine\.setSoundTrigger\s+(c_Sst\w+)", re.IGNORECASE)
@@ -315,6 +334,9 @@ def extract(game_dir: Path, mod: str, out: Path,
     states = state_triggers(animations)
     if states:
         manifest["states"] = states
+    materials = material_sounds(objects)
+    if materials:
+        manifest["materials"] = materials
     wanted: dict[str, str] = {}
 
     for trigger, script in ALL_SOLDIER_SCRIPTS:
@@ -359,6 +381,22 @@ def extract(game_dir: Path, mod: str, out: Path,
     return manifest
 
 
+def backfill_materials(game_dir: Path, mod: str, out: Path) -> dict[str, str]:
+    """Add `materials` to a tree's existing `sounds/soldier.json`, touching
+    nothing else: a tree extracted before the table was read gets it without
+    a re-extraction (the samples are the same)."""
+    objects = ArchivePool()
+    for step in mod_chain(game_dir, mod):
+        archives = find_archives_dir(step)
+        if archives is not None:
+            objects.add_dir(archives, OBJECT_ARCHIVES)
+    path = out / "sounds" / "soldier.json"
+    manifest = json.loads(path.read_text())
+    manifest["materials"] = material_sounds(objects)
+    path.write_text(json.dumps(manifest, indent=1) + "\n")
+    return manifest["materials"]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
@@ -367,7 +405,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="the tree to write `sounds/` into")
     parser.add_argument("--no-transcode", action="store_true",
                         help="parse and manifest only; write no mp3s")
+    parser.add_argument("--materials-only", action="store_true",
+                        help="add the MaterialToSound table to the tree's "
+                             "existing soldier.json and write nothing else")
     args = parser.parse_args(argv)
+
+    if args.materials_only:
+        table = backfill_materials(args.game_dir, args.mod, args.out)
+        print(f"{len(table)} materials -> {args.out / 'sounds' / 'soldier.json'}")
+        return 0
 
     if not args.no_transcode and not ffmpeg_available():
         print("ffmpeg is not on PATH; run with --no-transcode to manifest only",

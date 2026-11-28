@@ -1378,4 +1378,150 @@ results.clip = {
   };
 }
 
+// --- rounds the recording carries, rounds by their speed, a pull's barrels (hellendoorn 5txd9vj8ap) ---
+//
+// Secret Weapons' Natter fires `NatterProjectile` at 200 m/s with a 16 m blast
+// from `NatterGuns`: no name says rocket, the weapon table does. A shotgun's
+// five barrels are five `f` rows at one tick, and the shotgun is a bullet
+// (200 m/s, no blast).
+{
+  const [WS, G] = await Promise.all([imp('replay-weapon-speed.js'), imp('replay-gunfire.js')]);
+  const before = { speed: RC.guessSpeed('NatterGuns'), heavy: RC.heavyRound('NatterGuns'), kind: RC.kindOfWeapon('NatterGuns') };
+  WS.setWeaponSpeeds(new Map([
+    ['natterguns', { speed: 200, radius: 16 }], ['shotgun', { speed: 200, radius: null }],
+    ['gewehr42', { speed: 1000, radius: null }], ['bomber', { speed: 0, radius: 20 }],
+  ]));
+  const after = {
+    speed: RC.guessSpeed('NatterGuns'), heavy: RC.heavyRound('NatterGuns'), kind: RC.kindOfWeapon('NatterGuns'),
+    shotgun: [RC.guessSpeed('Shotgun'), RC.heavyRound('Shotgun')], rifle: RC.heavyRound('Gewehr42'), bomber: RC.guessSpeed('Bomber'),
+    bazooka: RC.guessSpeed('Bazooka'),
+  };
+  const lines = [];
+  const L = o => lines.push(JSON.stringify(o));
+  L({ k: 'h', v: 5 });
+  L({ k: 'e', t: 0.2, e: 'createPlayer', pid: 1, name: 'A1', team: 1, ai: 1 });
+  for (let i = 0; i < 5; i++) L({ k: 'f', t: 3, pid: 1, id: 100, w: 'Shotgun', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 'f', t: 3.5, pid: 1, id: 100, w: 'Shotgun', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 'f', t: 3.5, pid: 2, id: 101, w: 'Shotgun', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 'f', t: 4, pid: 1, id: 100, w: 'NatterGuns', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 'f', t: 4, pid: 1, id: 100, w: 'NatterGuns', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 's', t: 10, o: [] });
+  const rec = R.parseRecording(lines.join('\n'));
+  const group = { muzzles: [1, 2, 3, 4, 5], stats: {} };
+  const pull = rec.fires.map(f => [f.weapon, f.t, f.barrel, G.leadsPull(group, f)]);
+  results.pull = {
+    before, after, nextHeavy: RC.nextShotOf(rec, null, 0, { heavy: true })?.weapon ?? null,
+    pull,
+    singles: [G.leadsPull({ muzzles: [1], stats: {} }, rec.fires[3]), G.leadsPull({ muzzles: [1, 2], stats: { asynchronyFire: true } }, rec.fires[3])],
+    sixth: G.leadsPull({ muzzles: [1, 2, 3, 4, 5], stats: {} }, { barrel: 5 }),
+  };
+  WS.setWeaponSpeeds(null);
+  results.pull.cleared = RC.heavyRound('NatterGuns');
+}
+
+// A shotgun's five barrels turn the one recorded aim into five pellets, and a
+// hull answers a round with its collision mesh's own material.
+{
+  const G = await imp('replay-gunfire.js');
+  const gun = new THREE.Group();
+  gun.userData.fireArms = {};
+  const turns = [[0, -1], [-0.5, 1], [0.5, 1], [-1, -0.5], [1, -0.5]];
+  const barrels = turns.map(([yaw, pitch]) => {
+    const b = new THREE.Object3D();
+    b.rotation.set((pitch * Math.PI) / 180, (yaw * Math.PI) / 180, 0, 'YXZ');
+    gun.add(b);
+    return b;
+  });
+  gun.updateMatrixWorld(true);
+  const ray = { origin: new THREE.Vector3(5, 2, 5), dir: new THREE.Vector3(0, 0, 1) };
+  const aim = G.barrelAimRay(ray);
+  const dirs = barrels.map(b => { const r = aim(b); return [round(r.dir.x, 4), round(r.dir.y, 4), round(r.dir.z, 4)]; });
+  const same = aim(gun);
+  // A hull: a jeep's skin (45) with an open windscreen (90), drawn over it.
+  const box = (w, h, d, x, userData, visible) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    mesh.position.set(x, 0, 0);
+    Object.assign(mesh.geometry.userData, userData);
+    mesh.visible = visible;
+    return mesh;
+  };
+  const scene = new THREE.Group();
+  scene.add(box(2, 2, 2, 0, { collision: true, defenseMaterial: 45 }, false));
+  scene.add(box(2, 2, 2, 0, { collision: true, defenseMaterial: 90 }, false));
+  scene.add(box(1, 1, 1, 0, { collision: true, defenseMaterial: 50 }, false).translateX(-5));
+  scene.updateMatrixWorld(true);
+  const hull = { scene };
+  const parts = G.collisionPartsOf(hull);
+  results.hullMaterial = { meshes: parts.meshes.length, dominant: parts.dominant, cached: G.collisionPartsOf(hull) === parts };
+  // A round into a hull through the open screen (a 90 face) meets the skin (45)
+  // behind it, never the drawn model's steel; one that meets only an open face
+  // and a drawn mesh is the hull's dominant material.
+  const glass = box(2, 2, 0.1, 0, { collision: true, defenseMaterial: 90 }, false);
+  glass.position.set(0, 0, -3);
+  scene.add(glass);
+  const drawn = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  drawn.position.set(0, 4, 0);
+  scene.add(drawn);
+  scene.updateMatrixWorld(true);
+  const root = new THREE.Object3D();
+  const hullAt = { scene, root, group: { visible: true }, ghost: false, ownerTag: 7, castCentre: new THREE.Vector3(), castRadius: 6 };
+  hullAt.collisionParts = null;
+  const stub = { hulls: new Map([[1, hullAt]]), time: 0 };
+  const into = G.dynamicCast(stub, 0, 0.2, -10, 0, 0, 1, 40, -1);
+  const high = G.dynamicCast(stub, 0, 4, -10, 0, 0, 1, 40, -1);
+  const miss = G.dynamicCast(stub, 30, 0, -10, 0, 0, 1, 40, -1);
+  results.hullCast = {
+    into: into && { material: into.material, t: round(into.t, 2), nz: round(into.nz, 2) },
+    drawnOnly: high && { material: high.material, t: round(high.t, 2) }, miss,
+  };
+  results.barrels = { dirs, same: [same.dir.x, same.dir.y, same.dir.z].map(v => round(v, 4)), origin: vec(same.origin) };
+}
+
+// A rocket in the air, a flak shell and a thrown knife are rounds the recording flies: the pointer finds
+// them (`pickCandidates`), each with the shot that fired it, and the round cam rides them (`chaseLife`).
+{
+  const lines = [];
+  const L = o => lines.push(JSON.stringify(o));
+  L({ k: 'h', v: 5 });
+  L({ k: 'e', t: 0.2, e: 'createPlayer', pid: 1, name: 'A1', team: 1, ai: 1 });
+  L({ k: 'e', t: 1, e: 'projPool', tid: 1597, tmpl: 'EliteKnifeThrowProjectile', netId: 910, count: 1 });
+  L({ k: 'f', t: 5, pid: 1, id: 100, w: 'EliteKnife', p: [10, 2, 20], d: [1, 0.1, 0] });
+  L({ k: 'o', t: 5, id: 910, tmpl: 'EliteKnifeThrowProjectile', tid: 1597, team: 1 });
+  for (let i = 0; i <= 18; i++) L({ k: 's', t: +(5 + i / 30).toFixed(3), o: [[910, 10.5 + i * 0.9, 2 + i * 0.05, 20, 0, 0, 0, 1]] });
+  L({ k: 'd', t: 5.6, id: 910 });
+  L({ k: 's', t: 10, o: [] });
+  const rec = R.parseRecording(lines.join('\n'));
+  const [toss] = rec.fires;
+  const life = rec.lives.find(l => l.nid === 910);
+  const node = new THREE.Object3D();
+  node.position.set(18, 2, -20);
+  const flightNode = new THREE.Object3D();
+  flightNode.position.set(3, 4, 5);
+  const player = {
+    time: 5.3, speed: 1, playing: true, followPid: 1, kills: rec.kills, rec,
+    props: { props: [{ life, node: Object.assign(node, { visible: true }) }] },
+    flights: { live: new Map([[{ tmpl: 'NatterProjectile', shot: toss }, { node: Object.assign(flightNode, { visible: true }) }]]) },
+    ctx: { camera: new THREE.PerspectiveCamera(), guns: { tracers: [], projectiles: [], hits: [] }, scene: new THREE.Scene(), groundHeight: () => 0, waterLevel: () => null },
+    camera: { rig: null, setRig(r) { this.rig = r; } },
+  };
+  const found = P.pickCandidates(player).filter(c => c.kind === 'round');
+  const cam = new RC.RoundCam(player, { follow: () => {}, changed: () => {} });
+  const knife = found.find(c => !c.flight);
+  const ridden = cam.chaseLife(knife.life, knife.shot, { flight: false });
+  const flyingAt = { state: cam.state, kind: cam.target?.kind, x: round(cam.pos.x, 2) };
+  let impact = null;
+  for (let i = 0; i < 240 && !impact; i++) {
+    player.time += 1 / 60;
+    cam.step(player.time, 1 / 60);
+    if (cam.state === 'impact') impact = { x: round(cam.pos.x, 1) };
+  }
+  results.carried = {
+    found: found.map(c => ({ flight: c.flight, shot: c.shot ? c.shot.weapon : false, kind: c.kind, obj: c.obj })),
+    thrownShot: P.shotOfThrown(rec, life, 5.3)?.weapon ?? null, none: P.shotOfThrown(rec, life, 4.9),
+    ridden, flyingAt, impact,
+  };
+  player.props.props[0].node.visible = false;
+  results.carried.hidden = P.pickCandidates(player).filter(c => c.kind === 'round' && !c.flight).length;
+}
+
 console.log(JSON.stringify(results));

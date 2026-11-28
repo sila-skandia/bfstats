@@ -30,7 +30,7 @@ installModuleHooks(VIEWER);
 const viewer = file => import(pathToFileURL(path.join(VIEWER, file)).href);
 const { WorldFire } = await viewer('world-fire.js');
 const { createHandFireSound } = await viewer('hand-fire-sound.js');
-const { ReplaySoldiers } = await viewer('replay-bodies.js');
+const { ReplaySoldiers, linkNextRounds } = await viewer('replay-bodies.js');
 
 // --- the recording and the weapon -------------------------------------------
 
@@ -200,6 +200,83 @@ async function liveBurst() {
   // Nothing like one report every half second: ten rounds a second.
   const rate = (plays.length - 1) / (plays.at(-1).from - plays[0].from);
   assert.ok(rate > 9 && rate < 11, `the replay's rate of fire is the recording's: ${rate.toFixed(2)} a second`);
+}
+
+// --- a Fire Loop carried across a burst, no gap between its cycles ----------
+//
+// A Sten's loop is 0.111 s long and its rounds are 0.133 s apart (450 a
+// minute: four server ticks). One cycle a round, struck on the frame the
+// round was handled on, leaves 22 ms of silence a round and starts every cycle
+// on a frame edge: the choppiness reported on Secret Weapons' Hellendoorn.
+// With the shooter's next round known (`linkNextRounds`), the loop runs on as
+// the retail loop does while the trigger is held, and the rounds only hold it.
+
+{
+  const STEN_CYCLE = 0.111;
+  const STEN = {
+    file: 'Sten.mp3', wav: 'sten.wav', slot: 'fireLoop', volume: 1, loop: true,
+    layers: [{ file: 'sten.mp3', loop: true, trigger: null, stop: 'finishsample', volume: 1,
+               minDistance: 2, priority: 0, stereo: false, doppler: false, randomStartPitch: null,
+               relativePosition: [0, 0, 0], modulators: [distance([10, 150, 1, -1])] }],
+  };
+  const ROUNDS = Array.from({ length: 12 }, (_, i) => 100 + i * 0.133);
+  const fires = ROUNDS.map(t => ({ t, pid: 0, weapon: 'Sten' }));
+  fires.push({ t: 120, pid: 0, weapon: 'Sten' }, { t: 120.15, pid: 1, weapon: 'Sten' });
+  linkNextRounds(fires);
+  assert.ok(Math.abs(fires[0].nextIn - 0.133) < 1e-9, 'a round knows how long to the same soldier\'s next');
+  assert.ok(fires[11].nextIn > 18, 'the last round of a burst is a long way from the next');
+  assert.equal(fires[12].nextIn, Infinity, 'his last round has none');
+  assert.equal(fires[13].nextIn, Infinity, 'and another soldier\'s round does not count as his next');
+
+  async function stenBurst(hint, fps = 60) {
+    const clock = { t: ROUNDS[0] - 0.05 };
+    const ctx = stubCtx(clock);
+    const listener = { context: ctx, getInput: () => ctx.createGain(), position: { x: 0, y: 0, z: 0 } };
+    const fire = new WorldFire({
+      listener: () => listener,
+      getBuffer: async rel => ({ ...buffer(rel), duration: STEN_CYCLE }),
+      manifest: { weapons: { Sten: STEN } }, master: () => 1, rand: () => 0.5, now: () => clock.t,
+    });
+    await fire.prime('Sten'); await settle();
+    const shooter = { pid: 0 };
+    for (const frame of frames(ROUNDS, fps)) {
+      clock.t = frame.t;
+      for (const t of frame.rounds) {
+        const f = fires[ROUNDS.indexOf(t)];
+        fire.play('Sten', { x: 20, y: 0, z: 0 }, shooter, hint ? { next: f.nextIn } : undefined);
+      }
+      fire.update(1 / fps, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
+      await settle(2);
+    }
+    const plays = ctx.sources.filter(s => !s.looped).map(s => ({ from: s.when, to: s.when + STEN_CYCLE }));
+    fire.dispose();
+    return plays;
+  }
+
+  const struck = await stenBurst(false);
+  const worstStruck = Math.max(...struck.slice(1).map((p, i) => p.from - struck[i].to));
+  assert.ok(worstStruck > 0.015, `struck once a round the cycles leave a gap: ${worstStruck.toFixed(3)} s`);
+
+  const carried = await stenBurst(true);
+  for (let i = 1; i < carried.length; i++) {
+    const gap = carried[i].from - carried[i - 1].to;
+    assert.ok(Math.abs(gap) < 1e-6, `cycle ${i} begins as the last ends: ${gap.toFixed(4)} s`);
+  }
+  // A slow page (30 frames a second) still leaves no gap longer than a frame.
+  const slow = await stenBurst(true, 30);
+  for (let i = 1; i < slow.length; i++) {
+    const gap = slow[i].from - slow[i - 1].to;
+    assert.ok(gap <= 1 / 30 + 1e-6 && gap > -STEN_CYCLE / 2, `at 30 fps cycle ${i}: ${gap.toFixed(4)} s`);
+  }
+  // The loop does not run on past the trigger: the last round's cycle is the
+  // last, give or take the one that was already scheduled when it arrived.
+  const lastRound = ROUNDS.at(-1);
+  assert.ok(carried.at(-1).from <= lastRound + 1e-3 + STEN_CYCLE,
+    `no cycle starts a cycle after the last round: ${carried.at(-1).from.toFixed(3)} vs ${lastRound.toFixed(3)}`);
+  assert.ok(carried.at(-1).to >= lastRound, 'and the last round is covered');
+  // Its rate is the loop's, as in the game (one cycle each 0.111 s).
+  const span = carried.at(-1).from - carried[0].from;
+  assert.ok(Math.abs(span / (carried.length - 1) - STEN_CYCLE) < 1e-6, 'one cycle a loop length');
 }
 
 console.log('replay automatic fire sound: all assertions passed');

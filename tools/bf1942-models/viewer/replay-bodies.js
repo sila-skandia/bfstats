@@ -28,7 +28,7 @@ import {
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
 import { strafeLeanAt } from './strafe-lean.js';
-import { syncReplayCollision } from './replay-gunfire.js';
+import { barrelAimRay, leadsPull, syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
 import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import { DIE_CLIPS, corpseSeconds } from './soldier-death.js';
@@ -42,7 +42,7 @@ import { modelFileStem } from './model-file.js';
 import {
   ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
 } from './rocket-pack.js';
-import { RocketFlames, packNodeOf } from './rocket-flame.js';
+import { RocketFlames, orientRocketPack, packNodeOf } from './rocket-flame.js';
 import { walkVisibleOnly } from './shown-walk.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
@@ -127,6 +127,13 @@ const PACK_LOOP = /^(medpack|repairpack)$/i;
 /** Seconds the followed man's pack loop holds past his last frame in its
  *  fire state: across the one- or two-frame `Ub_StandAim` between pulls. */
 const PACK_LOOP_HOLD = 0.3;
+/** Seconds between a depot's heals (`SupplyDepot::handleUpdate` runs its
+ *  cycle every 0.5 s, SUP-4), and so between the patient's heal sounds: the
+ *  recording writes a visit's first and last heal, not each one. */
+const HEAL_CYCLE = 0.5;
+/** What heals a soldier on the recording's `heal` rows: a medic's bag, or a
+ *  medic locker or med box. A wrench's `repair` heals a hull, not a man. */
+const HEAL_KINDS = new Set(['medpack', 'depot']);
 /** How far back a recorded pack heat is compared to call a burn: a little
  *  more than one 10 Hz sample. */
 const PACK_BURN_SPAN = 0.15;
@@ -201,6 +208,27 @@ function hideDrawnWeapon(root) {
  *  four, and the men alive at the opening are still first in the queue. */
 const WARM_AT_ONCE = 10;
 
+/**
+ * Stamp each recorded round with `nextIn`, the seconds to the same soldier's
+ * next round of the same weapon (Infinity for his last): what lets an
+ * automatic weapon's Fire Loop run on through a burst instead of being
+ * struck again for every round (`world-fire.js`). Once a file; `fires` is in
+ * time order.
+ */
+export function linkNextRounds(fires) {
+  if (!fires?.length || fires.linkedNext) return;
+  const next = new Map();
+  for (let i = fires.length - 1; i >= 0; i--) {
+    const f = fires[i];
+    if (f.press || !f.weapon) continue;
+    const key = `${f.pid ?? f.nid}|${String(f.weapon).toLowerCase()}`;
+    const later = next.get(key);
+    f.nextIn = later === undefined ? Infinity : Math.max(0, later - f.t);
+    next.set(key, f.t);
+  }
+  Object.defineProperty(fires, 'linkedNext', { value: true });
+}
+
 export class ReplaySoldiers {
   constructor(player) {
     this.player = player;
@@ -266,6 +294,7 @@ export class ReplaySoldiers {
   primeReports() {
     const prime = this.player.ctx?.playWorldShot?.prime;
     if (typeof prime !== 'function') return [];
+    linkNextRounds(this.player.rec?.fires);
     const names = new Map();
     for (const f of this.player.rec?.fires ?? []) {
       if (f.press || !f.weapon || /soldier/i.test(f.weapon)) continue;
@@ -521,6 +550,42 @@ export class ReplaySoldiers {
       else this.player.ctx.footstepTick?.(actor, dt, own);
     }
     this.ownPackLoop(t);
+    this.healSounds(t);
+  }
+
+  /**
+   * The heal sound of every soldier a visit heals as playback crosses a heal
+   * (`SoldierHealedByMedic.ssc`, which `BFSoldier::handleDamage` raises on
+   * any negative damage, a medic's or a depot's: SND-51, SUP-22). The
+   * recording has a visit's start and its last heal and nothing between, so
+   * the sound is placed on the depot's own cycle across that span
+   * (`HEAL_CYCLE`). Played at the patient, and as the listener's own body
+   * when it is the followed man in his first person. Silent while paused or
+   * dragged, and a seek drops the frames it jumped over.
+   */
+  healSounds(t) {
+    const play = this.player.ctx?.playSoldierHeal;
+    const last = this.healAt ?? null;
+    this.healAt = t;
+    if (typeof play !== 'function' || last === null) return;
+    if (!this.player.playing || this.dragging || t <= last || t - last > 0.5) return;
+    const heals = this.player.rec?.heals;
+    if (!heals?.length) return;
+    const ears = this.earsPid();
+    for (const visit of heals) {
+      if (visit.t > t) break;
+      if (!HEAL_KINDS.has(visit.kind) || visit.to === null) continue;
+      // The calls of this visit inside (last, t]: visit.t + n * HEAL_CYCLE,
+      // from its first heal to its last (`t1`; open while it still runs).
+      const end = Number.isFinite(visit.t1) ? visit.t1 : t;
+      const from = Math.max(0, Math.floor((last - visit.t) / HEAL_CYCLE) + 1);
+      const to = Math.floor((Math.min(t, end) - visit.t) / HEAL_CYCLE);
+      if (to < from) continue;
+      const actor = this.actors.get(visit.to);
+      if (!actor || actor.state.dead) continue;
+      const s = actor.state.soldier;
+      play(visit.to === ears ? null : { x: s.x, y: s.y + 1.0, z: s.z });
+    }
   }
 
   /**
@@ -824,7 +889,14 @@ export class ReplaySoldiers {
    *  pack puts his out. */
   updateFlames() {
     const seen = new Set();
+    const kits = this.player.ctx.loadouts?.()?.kits ?? null;
     for (const actor of this.drawn) {
+      // His pack hangs nozzles down in every pose file (`orientRocketPack`),
+      // burning or not.
+      if (kits?.[actor.kit]?.activeParts?.length) {
+        const body = this.bodies?.botVisuals?.get(actor.playerId)?.group;
+        if (body) orientRocketPack(body);
+      }
       const held = actor.state.soldier.held;
       if (!held?.rocket || actor.state.dead) continue;
       const group = this.bodies?.botVisuals?.get(actor.playerId)?.group;
@@ -1377,12 +1449,19 @@ export class ReplaySoldiers {
     // A stab's round (its own FireArms, `fireDelay` after the press) comes
     // while his torso is in the alternate fire's state, whose thrust is
     // already playing (`botStabbed`): the rifle's fire would cut it off.
-    if (!actor.stabState) {
+    // A stab the torso's recorded states never showed (the recorder samples
+    // 30 times a second and a stab can come and go between two samples, or
+    // stand in a reload state: 571.32 and 572.42 on 5txd9vj8ap) is still the
+    // alternate fire's thrust, never the knife's primary swing: the round is
+    // the stab FireArms' own (`CommandoKnifeStab`, `EliteKnifeStab`).
+    if (/stab$/i.test(weapon ?? '')) {
+      if (!actor.stabState) this.bodies?.botStabbed?.(actor);
+    } else if (!actor.stabState) {
       actor.firingUntil = t + TRIGGER_HOLD;
       this.bodies?.botFired?.(actor);
     }
     const s = actor.state.soldier;
-    this.player.ctx.playWorldShot?.(weapon, s.x, s.y + 1.4, s.z, actor);
+    this.player.ctx.playWorldShot?.(weapon, s.x, s.y + 1.4, s.z, actor, { next: f.nextIn ?? Infinity });
     // Watched through his eyes, the round leaves his eye and flashes at the
     // weapon in his hands (replay-viewmodel.js), not at his hidden body's.
     if (this.player.viewmodel?.fire(pid, weapon, f)) return;
@@ -1429,7 +1508,7 @@ export class ReplaySoldiers {
         this.player.root.add(root);
         const ray = { origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
         const groups = guns.collect(root, {
-          replace: false, speedScale: 1, maxRange: 1200, roundLifetime: 'data', aimRay: () => ray,
+          replace: false, speedScale: 1, maxRange: 1200, roundLifetime: 'data', aimRay: barrelAimRay(ray),
         });
         for (const group of groups) {
           group.replay = true;
@@ -1500,6 +1579,8 @@ export class ReplaySoldiers {
       return;
     }
     syncReplayCollision(this.player);
+    // One row a barrel: only the pull's first fires the barrels.
+    if (!leadsPull(group, f)) return;
     guns.fireShot(group);
   }
 

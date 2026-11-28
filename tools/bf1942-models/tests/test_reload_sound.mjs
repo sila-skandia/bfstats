@@ -184,6 +184,36 @@ async function worldReload(distance) {
 }
 
 {
+  // A page under ten frames a second (a heavy replay): a frame is at most 0.1 s
+  // of the patch's time however long it took, so the patch's gates run slower
+  // than the wall clock the slot's hold is kept on. The change must still be
+  // heard whole beside him, and nobody's slot is let go while it is owed.
+  const ctx = stubCtx();
+  const listener = { context: ctx, getInput: () => ctx.createGain(), position: { x: 0, y: 0, z: 0 } };
+  let now = 0;
+  const fire = new WorldFire({
+    listener: () => listener, getBuffer: async rel => buffer(rel),
+    manifest: { weapons: { M16 } }, master: () => 1, rand: () => 0.5, now: () => now,
+  });
+  await fire.prime('M16#reload');
+  await settle();
+  fire.update(0, { x: 0, y: 0, z: 0 });
+  assert.ok(fire.playReload('M16', { x: 0.5, y: 0, z: 0 }, 'soldier'));
+  for (let i = 0; i < 60; i++) {
+    now += 0.4;                                  // 2.5 frames a second
+    fire.update(0.1, { x: 0, y: 0, z: 0 });      // the page's clamp
+  }
+  assert.deepEqual(ctx.started.map(s => s.buffer.file),
+    ['M16.r1.0.mp3', 'M16.r1.5.mp3', 'M16.r1.2.mp3'],
+    'a slow page still plays a nearby soldier\'s whole reload');
+  // And the slot is let go afterwards, so a later reload plays again.
+  const before = ctx.started.length;
+  assert.ok(fire.playReload('M16', { x: 0.5, y: 0, z: 0 }, 'another'));
+  for (let i = 0; i < 60; i++) { now += 0.4; fire.update(0.1, { x: 0, y: 0, z: 0 }); }
+  assert.equal(ctx.started.length - before, 3, 'the next change plays too');
+}
+
+{
   // Ten metres off: the data's own ramps, nothing. And walking up to the spot
   // after the change is over sets nothing off.
   const { ctx, step } = await worldReload(10);

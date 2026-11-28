@@ -1882,6 +1882,7 @@ export function parseRecording(text) {
     if (life?.soldier) f.kitTemplate = kitAt(life, f.t);
   }
   rec.fires.sort((a, b) => a.t - b.t);
+  numberBarrels(rec.fires);
   // The server's flights, each to the shot that fired it and the collision
   // that ended it. One the file closed on ends with the file.
   for (const flight of openFlights.values()) flight.t1 = Math.max(flight.t0, rec.duration);
@@ -3546,6 +3547,28 @@ export function thrownLifeOf(rec, f) {
     if (d < 6 && (!best || d < best.d)) best = { life, d, from: key.t };
   }
   return best;
+}
+
+/**
+ * Number each round of a pull: a server writes one `f` a barrel, all at the
+ * pull's tick (the Secret Weapons shotgun's five rows at 599.125 s, the same
+ * muzzle and axis), so a row's `barrel` is its place in the run of its
+ * shooter's rows of one weapon at one time, from 0. `fires` is in time order.
+ */
+export function numberBarrels(fires) {
+  const run = new Map();
+  let t0 = -Infinity;
+  for (const f of fires) {
+    if (f.press) continue;
+    if (f.t - t0 > 1e-4) {
+      run.clear();
+      t0 = f.t;
+    }
+    const key = `${f.nid ?? f.pid}|${f.weapon}|${f.kind}`;
+    const n = run.get(key) ?? 0;
+    f.barrel = n;
+    run.set(key, n + 1);
+  }
 }
 
 const knifeThrows = new WeakMap();

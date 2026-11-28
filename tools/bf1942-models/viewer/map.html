@@ -3000,6 +3000,7 @@ const deployables = createDeployablesPage(bag(
   from(() => soldierKit, `currentKit handWeapon loadouts`),
   from(() => vehicleEntry, `dropEntryPoints`),
   {
+    replayActive: () => !!replayController?.active(),
     get bust() { return bust; }, get camera() { return camera; },
     get effects() { return effects; }, get guns() { return guns; },
     get kitDrops() { return kitDrops; }, get loader() { return loader; },
@@ -4346,7 +4347,7 @@ replayController = createReplayController({
   // With its `prime` (page-audio.js): the replay decodes every weapon its
   // recording fires as it opens, or a weapon's first burst is silent while
   // its first slot is built (replay-bodies.js `primeReports`).
-  playWorldShot: Object.assign((weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner), {
+  playWorldShot: Object.assign((weapon, x, y, z, owner, opts) => pageAudio.playWorldShot(weapon, x, y, z, owner, opts), {
     prime: (weapon, opts) => pageAudio.playWorldShot.prime?.(weapon, opts) ?? Promise.resolve(null),
   }),
   // A replayed soldier's magazine change: his weapon's Reload slot, at him
@@ -4365,6 +4366,18 @@ replayController = createReplayController({
   playSoldierHurtSound: (at, team) => pageAudio.playSoldierHurtSound(false, at, soldierKit.teamVoice(team), false),
   playSoldierDeathEffects: (at, team, velocity) => playSoldierDeathEffects(team, at, velocity),
   playRefillSound: at => pageAudio.playRefillSound(at),
+  // A round's own sound while it flies (the thrown knife's whoosh,
+  // `knifeprojectile.ssc`): the effect sounds' round scripts, followed along
+  // the server's recorded flight (replay-flights.js `updateSounds`).
+  flightSound: {
+    has: name => effectAudio.hasFlightLoop(name),
+    play: (name, position, opts) => effectAudio.play(name, position, opts),
+    stop: token => effectAudio.stop(token),
+  },
+  // A replayed soldier healed at a medic locker, a med box or by a medic
+  // (replay-bodies.js `healSounds`): `SoldierHealedByMedic.ssc` at him, on the
+  // listener's own body when he is the followed soldier (`at` null).
+  playSoldierHeal: at => pageAudio.playSoldierHeal(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),
   // The page's mix where it leaves for the speakers, for a creator's clip
   // recorded with its sound (replay-clip.js).

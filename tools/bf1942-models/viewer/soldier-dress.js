@@ -22,6 +22,15 @@
 import { bonePattern, kitForLevel, kitsByTemplate, wornGrafts } from './kit-graft.js';
 import { wearPagePaint } from './level-skin.js';
 
+/** The templates a part's glb carries for the effect system: `ActiveKitPart`
+ *  holds its effect bundles (`e_RocketPack`) as child nodes, emitters and all,
+ *  each with the particle's own mesh at its authored size. They are the
+ *  EffectPlayer's templates (effects.js clones a particle from them), not
+ *  geometry to draw: left visible, the rocket pack hung a full-size jet mesh
+ *  (a metre long, a torso wide, 'brown, static and inverted') from each
+ *  nozzle, the 2026-11-28 Hellendoorn report. */
+const EFFECT_TEMPLATES = new Set(['EffectBundle', 'Particle', 'SpriteParticle']);
+
 /** The flag a grafted part carries: its geometry and materials are the
  *  cache's, shared by every wearer, so disposing a figure must not free them. */
 export const KIT_PART = 'kitPart';
@@ -168,7 +177,10 @@ export function createSoldierDress(ctx) {
       node.position.set(...graft.position);
       node.userData[KIT_PART] = true;
       node.userData.kitSlot = graft.slot;
-      node.traverse(obj => { if (obj.isMesh) obj.frustumCulled = false; });
+      node.traverse(obj => {
+        if (EFFECT_TEMPLATES.has(obj.userData?.templateKind)) { obj.visible = false; return; }
+        if (obj.isMesh) obj.frustumCulled = false;
+      });
       if (ctx.shade) {
         const shared = new Set();
         source.traverse(obj => { for (const m of [obj.material].flat()) if (m) shared.add(m); });

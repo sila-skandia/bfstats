@@ -1107,7 +1107,10 @@ export class ReplayCreator {
     const list = pickCandidates(this.player);
     for (const cand of list) {
       if (cand.kind !== 'round') continue;
-      const known = this.roundFacts(cand.obj, t);
+      // A recorded round (a rocket, a flak shell, a thrown knife) comes with
+      // the shot that fired it already (replay-pick.js).
+      const known = cand.life ? { f: cand.shot || null, kill: cand.shot ? this.killOfShot(cand.shot) : null }
+        : this.roundFacts(cand.obj, t);
       cand.shot = known.f ?? false;
       cand.kill = known.kill;
       if (known.kill) cand.bonus = KILL_FIRST;
@@ -1164,7 +1167,7 @@ export class ReplayCreator {
       const extra = cand.crew.length > 1 ? ` +${cand.crew.length - 1}` : '';
       return { text: `${nameAt(this.player.rec, lead.pid, t)} · ${vehicle}${extra}`, team: teamAt(this.player.rec, lead.pid, t) };
     }
-    cand.shot ??= shotOfRound(this.player.rec.fires ?? [], cand.obj, t) ?? false;
+    cand.shot ??= (cand.obj ? shotOfRound(this.player.rec.fires ?? [], cand.obj, t) : null) ?? false;
     const f = cand.shot || null;
     cand.kill ??= f ? this.killOfShot(f) : null;
     const what = f?.weapon ? display(f.weapon) : cand.tracer ? 'Bullet' : 'Round';
@@ -1210,7 +1213,8 @@ export class ReplayCreator {
       }
     }
     if (cand.kind === 'round') {
-      this.chaseRound(cand.obj, cand.shot || shotOfRound(this.player.rec.fires ?? [], cand.obj, this.player.time));
+      if (cand.life) this.chaseLife(cand);
+      else this.chaseRound(cand.obj, cand.shot || shotOfRound(this.player.rec.fires ?? [], cand.obj, this.player.time));
       return;
     }
     if (cand.kind === 'hull') {
@@ -1388,6 +1392,23 @@ export class ReplayCreator {
     }
   }
 
+  /** The bullet cam on a round the recording carries as an object of its own
+   *  (a Natter's rocket, a flak shell, a grenade, a thrown knife), picked in
+   *  flight: `cand` of `pickCandidates`. */
+  chaseLife(cand) {
+    this.releaseRamp();
+    this.stopTrack();
+    if (this.editing) this.takeHeld = true;
+    this.rounds.holdTurns = null;
+    this.player.highlights?.setAuto(false, true);
+    this.player.highlights?.stopReel();
+    const f = cand.shot || null;
+    const kill = f ? this.killOfShot(f) : null;
+    if (this.rounds.chaseLife(cand.life, f, { kill, flight: Boolean(cand.flight) })) {
+      this.ui.flash(kill ? `Bullet cam · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : 'Bullet cam');
+    }
+  }
+
   /** A round of `pid`'s in the air now that kills somebody: the round of the
    *  burst worth riding, when it has already left. Drawn or not -- a hand
    *  weapon's round is `invisible 1` and the chase draws its own. */
@@ -1462,6 +1483,9 @@ export class ReplayCreator {
    *  the air -- what a bullet cam is for. */
   chaseHeavy() {
     const player = this.player;
+    // The weapon table names the guns whose rounds are rockets by speed
+    // alone (the Natter's): asked for here, it is there by the next press.
+    player.hud?.weaponTable?.();
     const t = player.time;
     const pid = this.on ? this.subjectPid() : player.followPid;
     const mine = pid === null || pid === undefined ? null : nextShotOf(player.rec, pid, t, { heavy: true });

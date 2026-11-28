@@ -9,7 +9,9 @@
 // input: { loadouts: { kits: {...} }, scenes: [{ name, objectSpawns,
 //          controlPoints, baked: [[x, y, z], ...] }] } -- `baked` stands a
 // node of templateKind `Kit` at each point, as a bake's `spawners` group
-// holds the level's inert copy of a pad's kit.
+// holds the level's inert copy of a pad's kit. `replay: true` runs the page
+// as a recording's player, where the pads must lay nothing (the recording's
+// own createObject rows stand the kits).
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { createDeployablesPage } from './deployables-page.js';
@@ -53,6 +55,7 @@ for (const scene of input.scenes ?? []) {
     world: { flags: [] },
     MODELS_BASE: '',
     roomJoined: false,
+    replayActive: () => !!scene.replay,
   };
   const deployables = createDeployablesPage(page);
   for (let i = 0; i < 30; i++) deployables.tick(1 / 30);

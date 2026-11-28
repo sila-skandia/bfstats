@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from extract_soldier_sounds import (
     ALL_SOLDIER_SCRIPTS, BAIL_OUT_SCRIPTS, INJURY_SCRIPTS, LANGUAGES,
-    MOVEMENT_SCRIPTS, PATCH_MATERIALS, distance_ramp, language_refs, script_manifest, time_gate,
+    MOVEMENT_SCRIPTS, PATCH_MATERIALS, distance_ramp, material_sounds, language_refs, script_manifest, time_gate,
 )
 from bf42.level import parse_ssc
 
@@ -188,6 +188,27 @@ trigger Volume
             ("sand", "metal", "wood", "concrete", "grass", "gravel", "ice", "mud", "fabric", "harness",
              "water"),
             PATCH_MATERIALS)
+
+    def test_material_to_sound_con_is_read_with_the_later_line_winning(self) -> None:
+        class Pool:
+            text = (b"rem terrain\nSoldierSound.addMaterialToSound 0 Grass\n"
+                    b"SoldierSound.addMaterialToSound 12 Concrete\n"
+                    b"SoldierSound.addMaterialToSound 112 Wood\r\n"
+                    b"SoldierSound.addMaterialToSound 112 Metal\r\n")
+
+            def find(self, name):
+                return name if name.endswith("Sounds/MaterialToSound.con") else None
+
+            def read(self, hit):
+                return self.text
+
+        self.assertEqual({"0": "Grass", "12": "Concrete", "112": "Metal"}, material_sounds(Pool()))
+
+        class Empty:
+            def find(self, name):
+                return None
+
+        self.assertEqual({}, material_sounds(Empty()))
 
     def test_a_material_script_keeps_a_patch_that_loads_nothing(self) -> None:
         # `SoldierJumpLand.ssc` ends on a WATER patch; an empty patch before a

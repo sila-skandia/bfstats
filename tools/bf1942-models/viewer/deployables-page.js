@@ -475,6 +475,11 @@ export function createDeployablesPage(page) {
     const kitDrops = page.kitDrops;
     if (!kitDrops) return;
     if (page.extras?.objectSpawns !== padsFor || page.spawnersRoot !== padRoot) buildPads();
+    // A recording is the server's own round: its createObject rows stand the
+    // kits (`replay-props.js`), so the page's pads must not stand a second
+    // set beside them (two jet packs and a third from the respawn, Hellendoorn
+    // 2026-11-28). The baked copies are already gone (`buildPads`).
+    if (page.replayActive?.()) return;
     for (const record of pads) {
       const { pad, place } = record;
       // `CPEnable` / `CPDisable` on the flag's changes, and once at the start

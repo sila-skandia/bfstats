@@ -33,7 +33,7 @@ import { activeTier, deathTier } from './vehicle-damage.js';
 import {
   crewOf, engineAt, enginesAt, hpAt, isReplicated, latestIndex, poseHeld, sampleInto, sampleRoom,
 } from './replay-recording.js';
-import { syncReplayCollision } from './replay-gunfire.js';
+import { leadsPull, syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
 import { roundIsRecorded } from './replay-props.js';
 import { fireWithoutRound, serverFlies } from './replay-flights.js';
@@ -840,6 +840,8 @@ export class ReplayHull {
       } else {
         group.aimRay = group.ownAimRay ?? null;
       }
+      // One row a barrel: only the pull's first fires the barrels.
+      if (!leadsPull(group, shot)) continue;
       guns.fireShot(group);
       // The drawn barrel, for the creator's bullet: the round leaves the
       // recorded launch moved by the barrel's offset, which need not be the

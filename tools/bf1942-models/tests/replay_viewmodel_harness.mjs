@@ -293,4 +293,50 @@ results.morph = [[0.7, 0.05], [0.7, 0.1], [0.7, 0.3], [0.5, 0.3], [4, 0.05], [10
   };
 }
 
+
+// --- a stab is a clip of its own over the aim (the 2026-11-28 Hellendoorn report) --
+// A Secret Weapons knife stabs on the alternate fire: the hub `Ub_AltFire<W>`
+// then one of five swings named for the commando knife's grip, lying or not
+// (`Ub_LieAltFireCommandoKnife4`). The arms played nothing for it.
+{
+  const knifeStates = [
+    [0, 'Lb_Stand', 0], [1, 'Lb_Lie', 0x40],
+    [2, 'Ub_StandAimEliteKnife', 0], [3, 'Ub_StandAimCommandoKnife', 0],
+    [4, 'Ub_AltFireEliteKnife', 0], [5, 'Ub_AltFireCommandoKnife3', 0],
+    [6, 'Ub_LieAltFireEliteKnife', 0], [7, 'Ub_LieAltFireCommandoKnife4', 0],
+    [8, 'Ub_LieEliteKnife', 0],
+  ];
+  const knife = {
+    idle: { duration: 5, loop: true, morph: 0.7 }, prone: { duration: 5, loop: true, morph: 0.7 },
+    deploy: { duration: 1, loop: false, morph: 10000 },
+    altfire1: { duration: 0.5, loop: false, morph: 5000 }, altfire2: { duration: 0.5, loop: false, morph: 5000 },
+    altfire3: { duration: 0.5, loop: false, morph: 5000 }, altfire4: { duration: 0.5, loop: false, morph: 5000 },
+    altfire5: { duration: 0.5, loop: false, morph: 5000 },
+  };
+  const stab = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'anim', t: 0, states: knifeStates }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1727, netId: 50, tmpl: 'GermanSoldier', pos: [0, 1, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 3, name: 'knife', team: 1, ai: 0, vehNetId: 50 }),
+    line({ k: 'e', t: 1, e: 'control', pid: 3, netId: 50 }),
+    line({ k: 'o', t: 1, id: 50, gid: 1, tmpl: 'GermanSoldier', tid: 1727, team: 1, maxhp: 30 }),
+    line({ k: 's', t: 1, o: [[50, 0, 2, 0, 0, 0, 0, 1]] }),
+    st(1, 0, 2), st(2, 0, 4), st(2.03, 0, 5), st(2.2, 0, 2),
+    st(3, 1, 8), st(4, 1, 6), st(4.03, 1, 7), st(4.2, 1, 8), st(5, 0, 2),
+    // A stab the torso never showed: only its round (`<W>Stab`) is recorded.
+    f(4.3, 'EliteKnifeStab'), f(6.3, 'EliteKnifeStab'),
+    line({ k: 'end', t: 8 }),
+  ].join('\n'));
+  const lifeOf = stab.lives.find(l => l.nid === 50);
+  const track = vm.armsTrack(stab, lifeOf, 'EliteKnife', { ...rigOf(knife), data: { roundOfFire: 1 } });
+  results.stab = {
+    fires: track.fires.map(s => [r3(s.start), r3(s.end), s.family, s.loop]),
+    base: track.base.map(b => [r3(b.start), b.hidden ? 'hidden' : b.family]),
+    standing: poseAt(track, knife, 2.1),
+    lying: poseAt(track, knife, 4.1),
+    after: poseAt(track, knife, 2.9),
+    unseen: poseAt(track, knife, 6.1),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));

@@ -1134,6 +1134,17 @@ export class EffectPlayer {
             // halo around it. `extract_effects.py` carries it for this
             // library only (`Assembler.additive_alpha_test`).
             if (c.userData.alphaTest > 0) c.alphaTest = c.userData.alphaTest;
+            // An effect authored to be seen cannot peak below its own
+            // cutoff: `e_RocketPack`'s jet says `alphaOverTime 0.1 -> 0`
+            // under `alphaTestRef 0.7`, `Em_WaterDepthRing` 0.6 -> 0 under
+            // 0.7, and the engine's StandardMesh path takes its alpha from
+            // the TEXTURE alone (stage 0 `ALPHAOP SELECTARG1, TEXTURE`,
+            // envmap-materials.md), so the particle's `setAlpha` byte cannot
+            // be what the cutoff reads. Such a curve does not drive the
+            // material's alpha here either: the texture's core is drawn at
+            // full strength for the particle's life.
+            const peak = Math.max(...(p.spec.alphaOverTime ?? []).map(k => k[1]), 0);
+            if (fades && peak > 0 && peak < c.userData.alphaTest) c.userData.alphaIsTexture = true;
           }
           this.onMaterial?.(c);
           remasterHooks.glow?.(c);
@@ -1298,7 +1309,7 @@ export class EffectPlayer {
         if (rz) mesh.quaternion.multiply(_spin.setFromAxisAngle(_axis.set(0, 0, 1), rz * p.age * DEG));
       }
       for (const material of mesh.userData.materials) {
-        if (material.transparent) material.opacity = look.opacity;
+        if (material.transparent) material.opacity = material.userData.alphaIsTexture ? 1 : look.opacity;
       }
       mesh.visible = !this.#culled(p);
     }

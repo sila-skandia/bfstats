@@ -380,6 +380,14 @@ export class EffectAudio {
     }
   }
 
+  /** Whether `name` is a round whose script sounds for as long as it flies
+   *  (the thrown knife's air loop, a rocket's motor), and not a bullet's
+   *  crack as it passes the listener, which a replay does not play from a
+   *  server flight. */
+  hasFlightLoop(name) {
+    return this.#scriptsFor(name).some(script => !script.approaches);
+  }
+
   has(name) {
     const key = String(name || '').toLowerCase();
     if (!key) return false;

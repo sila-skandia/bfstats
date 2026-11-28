@@ -50,6 +50,14 @@ class SoldierOutfitTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_a_part_s_effect_templates_are_not_drawn(self) -> None:
+        # The rocket pack's glb carries `e_RocketPack`'s emitters with the jet
+        # mesh at full size; worn visible it was a metre-long brown block
+        # (Hellendoorn, 2026-11-28).
+        seen = self.results["effectTemplates"]
+        self.assertTrue(seen)
+        self.assertTrue(all(v is False for v in seen))
+
     def test_each_side_wears_the_levels_own_soldier(self) -> None:
         # `game.setTeamSkin`, through `_shared/loadouts.json`: the Afrika Korps
         # and the British on El Alamein, the Japanese and the Marines on Wake.

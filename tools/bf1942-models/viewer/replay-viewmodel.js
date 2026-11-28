@@ -25,13 +25,13 @@
 
 import * as THREE from 'three';
 import { createArmsRig } from './arms-rig.js';
-import { heldWeapon } from './replay-hud.js';
-import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
+import { heldWeapon, kitRowOf } from './replay-hud.js';
+import { ANIM_FLAGS, bodyAt, kitAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
 import { poseWeaponParts } from './weapon-part-pose.js';
 import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import { delaySpan, hideSpan } from './fire-timer.js';
-import { syncReplayCollision } from './replay-gunfire.js';
+import { barrelAimRay, leadsPull, syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 
@@ -40,9 +40,10 @@ import { FOV_DEG as FOOT_FOV } from './soldier.js';
  *  or dies (hand-weapon.js `itemsLocked`). */
 const HIDE_WEAPON = 0x2;
 
-/** Rigs kept loaded: the weapons last in his hands, and last in the hands of
- *  whoever was watched before. One is about 2.5 MB. */
-const KEEP_RIGS = 6;
+/** Rigs kept loaded: every item of the followed man's kit (an engineer's
+ *  seven, `warmKit`), and the weapons last in the hands of whoever was watched
+ *  before. One is about 2.5 MB. */
+const KEEP_RIGS = 9;
 
 /** A rig that would not load is asked for again after this, milliseconds:
  *  a request lost while the level was still coming down is not a weapon
@@ -134,12 +135,23 @@ const ARMS_FAMILY = new Map(Object.entries({
   Lie: 'prone', LieForward: 'crawl', LieBackward: 'crawl', LieStrafeLeft: 'crawl',
   LieStrafeRight: 'crawl', LieTurnLeft: 'crawl', LieTurnRight: 'crawl',
   LieFire: 'proneFire', LieReload: 'proneReload', LieRaiseWeapon: 'proneDeploy',
+  // The alternate fire's stab: `Ub_AltFire<W>` is the hub, `Ub_AltFire<W>1..5`
+  // the swings (a commando knife's); lying has its own states, one clip family.
+  AltFire: 'altfire', LieAltFire: 'altfire',
   StandBoltOperate: 'bolt', LieBoltOperate: 'proneBolt',
 }));
 
 /** The families whose record is a shot, not a state to hold: the fire is his
  *  rounds' (`armsTrack`). */
 const FIRE_FAMILIES = new Set(['fire', 'proneFire']);
+
+/** The alternate fire's record: a stab, with a clip of its own over the aim. */
+const ALT_FAMILY = 'altfire';
+
+/** Seconds from the press to the stab FireArms' round (the knife's
+ *  `fireDelay`; the recorded stab state of 5txd9vj8ap began 0.27 s before its
+ *  round). */
+const STAB_DELAY = 0.3;
 
 /** What a rig without a family plays instead, until one it has: the stance
  *  families fall back to the standing ones (stance-clips.js), a numbered
@@ -244,6 +256,8 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
   const wanted = lower(weapon);
   const base = [];
   const fireRecords = [];     // [{ t, n, stance }]: where a recorded fire state of it began
+  const stabs = [];           // [{ t, n }]: where a recorded alternate fire (a stab) began
+  let stabbing = false;
   let family = null;
   let hidden = true;
   let firing = false;
@@ -258,6 +272,24 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
     const state = armsStateOf(upperName, weapons);
     if (typeof upperName === 'string' && STANCE_ENTRY.test(upperName)) stanceEntries.push(entry.t);
     let want = family;
+    // A stab is its own torso state, named for the stabbing weapon's grip (an
+    // EliteKnife's are `Ub_AltFireCommandoKnife1..5`): the aim holds under it,
+    // and it is none of the held weapon's switches. One stab is the run of
+    // records from its hub (`Ub_AltFire<W>`) through its numbered swing.
+    if (state?.family === ALT_FAMILY) {
+      if (!stabbing) stabs.push({ t: entry.t, n: state.n });
+      else if (state.n && !stabs[stabs.length - 1].n) stabs[stabs.length - 1].n = state.n;
+      stabbing = true;
+      firing = false;
+      want = resolveFamily(aimOf(stance), 0, has) ?? family;
+      if (hide !== hidden || want !== family) {
+        base.push({ start: entry.t, family: want, hidden: hide });
+        family = want;
+        hidden = hide;
+      }
+      continue;
+    }
+    stabbing = false;
     const fire = Boolean(state && FIRE_FAMILIES.has(state.family));
     if (fire) {
       // Another weapon's fire (a medic pack used) is none of this one's.
@@ -289,6 +321,18 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
   const delay = data?.throw?.fireDelay > 0 ? delaySpan(data.throw.fireDelay) : 0;
   const shots = [];
   const throws = [];
+  // His stabs the torso's records did not show (a recorded stab state is one
+  // above): the stab FireArms' round (`<Weapon>Stab`) leaves `STAB_DELAY`
+  // after the press, so the thrust began that long before it.
+  const stabRounds = [];
+  for (const f of rec.fires ?? []) {
+    if (f.press || f.nid !== life.nid || f.t < created || f.t >= destroyed) continue;
+    if (lower(f.weapon) !== `${wanted}stab`) continue;
+    const at = Math.max(created, f.t - STAB_DELAY);
+    if (!stabs.some(s => Math.abs(s.t - at) <= STAB_DELAY + 0.2)) stabRounds.push({ t: at, n: 0 });
+  }
+  stabs.push(...stabRounds);
+  stabs.sort((a, b) => a.t - b.t);
   for (const f of rec.fires ?? []) {
     if (f.press || f.nid !== life.nid || lower(f.weapon) !== wanted || f.t < created || f.t >= destroyed) continue;
     shots.push({ at: Math.max(created, f.t - delay), n: 0, stance: null });
@@ -316,6 +360,17 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
   }
   shots.push(...unexplained);
   shots.sort((a, b) => a.at - b.at);
+  const stabFires = [];
+  for (let i = 0; i < stabs.length; i++) {
+    // A stab with no recorded swing number (its round alone) takes the knife's
+    // swings in turn, as the page's own `stepAltFire` picks one.
+    const swings = countVariants(has, ALT_FAMILY);
+    const name = resolveFamily(ALT_FAMILY, stabs[i].n || (has(`${ALT_FAMILY}1`) ? (i % swings) + 1 : 0), has);
+    if (!name || !has(name)) continue;
+    const c = clip(name);
+    const next = stabs[i + 1]?.t ?? Infinity;
+    stabFires.push({ start: stabs[i].t, end: Math.min(next, stabs[i].t + c.duration), family: name, loop: false, lastShot: stabs[i].t });
+  }
 
   const stanceAt = t => {
     const i = lastAt(records, t, 't');
@@ -351,6 +406,10 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
       const cut = stanceEntries.find(e => e > shot.at) ?? Infinity;
       fires.push({ start: shot.at, end: Math.min(next, cut, shot.at + c.duration), family: name, loop: false, lastShot: shot.at });
     }
+  }
+  if (stabFires.length) {
+    fires.push(...stabFires);
+    fires.sort((a, b) => a.start - b.start);
   }
   return { base, fires, throws };
 }
@@ -489,6 +548,7 @@ export class ReplayViewmodel {
       weaponToken: 0,
     });
     this.rigs = new Map();       // rig key -> entry
+    this.warmed = new WeakSet();  // lives whose kit's rigs were asked for
     this.clock = 0;              // use counter, for the rigs kept
     this.shown = null;           // this frame's `{ pid, life, weapon, entry }`
     this.eased = null;           // `{ life, entry, fov, pos }`: the zoom's ease
@@ -513,6 +573,23 @@ export class ReplayViewmodel {
     entry.used = ++this.clock;
     this.trim(entry);
     return entry;
+  }
+
+  /**
+   * Ask for the rig of every item in `life`'s kit once, the first time his
+   * first person is watched. The arms are posed from the recording's clock, so
+   * a rig fetched when the weapon is selected comes in after the raise has
+   * begun and the draw is seen from the middle or not at all: the medic bag's,
+   * whose pack is never in his hands until he picks it (the 2026-11-28
+   * report: "the medic bag deployment animation is delayed"). The third
+   * person warms its bodies the same way (replay-bodies.js `warmKits`).
+   */
+  warmKit(life, t) {
+    if (!life || this.warmed.has(life)) return;
+    const row = kitRowOf(this.player.ctx.loadouts?.() ?? null, kitAt(life, t));
+    if (!row) return;
+    this.warmed.add(life);
+    for (const w of row.weapons ?? []) if (w?.weapon) this.rigFor(w.weapon, life.tmpl);
   }
 
   async load(entry) {
@@ -555,7 +632,7 @@ export class ReplayViewmodel {
     const ray = { origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
     entry.ray = ray;
     const groups = guns.collect(entry.rig, {
-      replace: false, speedScale: 1, maxRange: 1200, roundLifetime: 'data', aimRay: () => ray,
+      replace: false, speedScale: 1, maxRange: 1200, roundLifetime: 'data', aimRay: barrelAimRay(ray),
       // Remaster: a round's streak is drawn from the muzzle as the near
       // pass shows it (round-launch.js `spawnTracer`).
       viewCamera: this.arms?.vmCamera ?? null,
@@ -630,6 +707,8 @@ export class ReplayViewmodel {
       if (weapon) {
         const entry = this.rigFor(weapon, life.tmpl);
         if (entry.status === 'ready') show = { pid: player.followPid, life, weapon, entry };
+        // The rest of his kit loads behind the one in his hands.
+        this.warmKit(life, t);
       }
     }
     this.shown = null;
@@ -737,6 +816,8 @@ export class ReplayViewmodel {
       return true;
     }
     syncReplayCollision(this.player);
+    // One row a barrel: only the pull's first fires the barrels.
+    if (!leadsPull(group, f)) return true;
     guns.fireShot(group);
     return true;
   }

@@ -108,6 +108,7 @@ class Node {
   clone() {
     const out = new Node(this.name, { mesh: this.isMesh });
     out.material = this.material;           // shared, like a three.js clone
+    out.userData = { ...this.userData };
     for (const c of this.children) out.add(c.clone());
     return out;
   }
@@ -136,6 +137,10 @@ const loader = {
     if (/^models\/mods\/xp\//.test(url) && !/US_Scout_Helm|Radio/.test(url)) throw new Error('404');
     const part = new Node(url.split('/').pop().replace('.kit.glb', ''));
     part.add(new Node('mesh', { mesh: true }));
+    // A part's glb carries its effect bundle's templates (`ActiveKitPart`).
+    const fx = new Node('Em_Jet_mesh', { mesh: true });
+    fx.userData.templateKind = 'Particle';
+    part.add(fx);
     return { scene: part };
   },
 };
@@ -166,6 +171,11 @@ mp40Weapon.add(new Node('Mp40Complex', { mesh: true }));
 mp40Grip.add(mp40Weapon);
 mp40.add(mp40Grip);
 results.weaponOtherCase = weaponNodeOf(mp40, 'MP40')?.name ?? null;
+results.effectTemplates = (() => {
+  const seen = [];
+  body.traverse(o => { if (o.userData.templateKind) seen.push(o.visible); });
+  return seen;
+})();
 results.undressed = undress(body);
 results.afterUndress = wornSlots(body);
 results.ownDisposed = own.every(m => m.disposed);

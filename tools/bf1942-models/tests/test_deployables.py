@@ -262,6 +262,16 @@ class KitPadTests(unittest.TestCase):
         self.assertEqual([], scene["placed"])
         self.assertEqual(1, scene["bakedLeft"])       # the inert pile stays
 
+    def test_a_recording_lays_no_pad_kits_beside_its_own(self) -> None:
+        # Hellendoorn's two jet pack pads laid a second pair next to the kits
+        # the recording's createObject rows stand: three jet packs on the
+        # third floor where the round had two.
+        loadouts = {"kits": {"US_Sniper_hvy": {}, "US_AA": {}}}
+        scene = run_pads(loadouts, [{**SCENE, "replay": True}])["scenes"][0]
+        self.assertEqual(2, len(scene["pads"]))
+        self.assertEqual([], scene["placed"])
+        self.assertEqual(0, scene["bakedLeft"])       # the inert copy still goes
+
 
 if __name__ == "__main__":
     unittest.main()

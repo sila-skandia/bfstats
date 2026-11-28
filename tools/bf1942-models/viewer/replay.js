@@ -1264,6 +1264,10 @@ class ReplayPlayer {
     if (vis) {
       vis.group.visible = false;
       if (vis.seat?.scene) vis.seat.scene.visible = false;
+      // His canopy hangs off his body (the `Parachute` child): its shroud
+      // lines and the collapsed silk the landing leaves are drawn round the
+      // camera in his own eyes, which the engine never shows him.
+      if (vis.canopy?.scene) vis.canopy.scene.visible = false;
     }
     for (const entity of this.entities) {
       if (entity.life.pid === pid) entity.group.visible = false;

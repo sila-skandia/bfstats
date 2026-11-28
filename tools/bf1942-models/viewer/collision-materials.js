@@ -53,6 +53,11 @@ export function materialFamily(id) {
  * 'sand', 'metal', 'wood', 'concrete', 'grass', 'gravel', 'ice', 'mud'.
  *
  * Derived from materialManagerDefine.con and High/SoldierWalk.ssc.
+ *
+ * A stand-in, and not the game's table: the soldiers' steps read
+ * `MaterialToSound.con` (`soldier.json`'s `materials`, `soldier-sound.js`
+ * `materialPatchTable`), whose terrain 0 is Grass, 4 Gravel and 5 Mud where
+ * this says sand. Kept for what has no soldier manifest to ask.
  */
 export function footstepMaterial(id) {
   if (id === 2 || id === 3) return 'grass';

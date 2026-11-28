@@ -58,6 +58,17 @@
 
 import { loadEngineAudio, loadLayerBuffers, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
 
+/** A burst's rounds are this close at most (seconds): a Fire Loop carried
+ *  across them. A longer pause ends the burst. */
+const BURST_GAP = 0.5;
+/** How far ahead of a loop's end the next cycle is handed to the audio clock:
+ *  two 60 Hz frames, so the round that arrives while the cycle plays has been
+ *  handled by then and the decision is taken as late as it can be. */
+const CHAIN_LOOKAHEAD = 0.03;
+/** The trigger counts as held at a cycle's end when the next round is due no
+ *  more than this long before it: a round a frame late has not arrived yet. */
+const CHAIN_SLACK = 0.05;
+
 /**
  * A stand-in `Volume <- Distance` for a manifest with no `layers`.
  *
@@ -113,6 +124,10 @@ class Slot {
   constructor(audio) {
     this.audio = audio;
     this.busyUntil = 0;
+    // Seconds of the patch's own clock since its last trigger, and the
+    // length its hold is on that clock (`update`).
+    this.age = 0;
+    this.holdFor = 0;
     // Whose rounds this patch is playing: the clock is his (the header).
     this.owner = null;
     // When its last round went off, for the buffer's steal (`#steal`).
@@ -288,15 +303,21 @@ export class WorldFire {
       let cycle = 0;
       let tail = 0;
       let gate = 0;
+      // The shortest a cycle ever plays, for the loop that is carried across
+      // a burst: the shortest layer at its highest start pitch.
+      let period = Infinity;
       for (const layer of layers) {
         const down = layer.randomStartPitch?.[1] ?? 0;
+        const up = layer.randomStartPitch?.[0] ?? 0;
         const duration = buffers.get(layer.file)?.duration ?? 0;
+        if (duration > 0) period = Math.min(period, duration / (1 + up));
         cycle = Math.max(cycle, duration / Math.max(0.5, 1 - down));
         tail = Math.max(tail, timeGate(layer) + duration / Math.max(0.5, 1 - down));
         gate = Math.max(gate, timeGate(layer));
       }
       // A report is held past its last gate, so another shooter's round does
       // not set this one's clock back while a sample still waits on it.
+      entry.period = Number.isFinite(period) && period > 0.02 ? period : 0;
       entry.hold = entry.sequence ? Math.max(tail, ONE_SHOT_HOLD)
         : (entry.loopPatch && cycle > 0 ? cycle
           : Math.max(ONE_SHOT_HOLD, gate > 0 ? gate + GATE_MARGIN : 0)) + (entry.delay || 0);
@@ -321,12 +342,23 @@ export class WorldFire {
    * weapon is silent and every one after it is not. `prime` ahead of the
    * fight when the shooter's weapon is already known.
    */
-  play(name, position, owner = null) {
+  play(name, position, owner = null, { next = null } = {}) {
     if (this.disposed || !name) return false;
     const entry = this.weapons.get(String(name).toLowerCase());
     if (!entry) return false;
     this.shots += 1;
     const now = this.now();
+    // A Fire Loop a caller that knows the shooter's next round (`next`: seconds
+    // to it, Infinity for none) carries across a burst: see `#carry`.
+    const carried = entry.loopPatch && entry.period > 0 && next !== null && owner != null;
+    if (carried) {
+      const going = entry.slots.find(s => s.owner === owner && s.chainEnd !== undefined);
+      if (going && now < going.chainEnd - 1e-3) {
+        if (position) { going._pos.x = position.x; going._pos.y = position.y; going._pos.z = position.z; }
+        going.heldUntil = now + (next <= BURST_GAP ? next : 0);
+        return true;
+      }
+    }
     // The shooter's own patch first, busy or not: his round is a trigger of
     // the patch his last one triggered.
     let slot = owner != null ? entry.slots.find(s => s.owner === owner) : null;
@@ -354,6 +386,7 @@ export class WorldFire {
         this.stolen += 1;
       }
     }
+    if (slot.owner !== owner) slot.chainEnd = undefined;
     slot.owner = owner;
     const listener = this.getListener?.();
     if (!listener) return false;
@@ -378,8 +411,48 @@ export class WorldFire {
     // cycle, so the shooter's next round takes the same slot; anything else
     // for a second, enough to keep a report's tail from being stolen.
     slot.busyUntil = now + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
+    slot.age = 0;
+    slot.holdFor = entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0);
+    // The loop goes on from where this cycle ends while the trigger is held,
+    // which the next round's arrival (or the caller's word that none comes)
+    // says: `update` hands each next cycle to the audio clock.
+    if (carried) {
+      slot.chainEnd = now + entry.period;
+      slot.heldUntil = now + (next <= BURST_GAP ? next : 0);
+    } else {
+      slot.chainEnd = undefined;
+    }
     // A reload's loads all wait on their own gates, so none starts here.
     return started > 0 || !!entry.sequence;
+  }
+
+  /**
+   * A Fire Loop is one sample played over and over for as long as the trigger
+   * is held (`stop finishsample`: the cycle in flight plays out on release),
+   * whatever the weapon's own rate of fire. A round per cycle, as this played
+   * it, left a gap whenever the rounds were further apart than the sample
+   * (the Sten's 0.111 s loop against rounds 0.133 s apart: 22 ms of silence a
+   * round) and set each cycle's start by the frame the round was handled on.
+   * With the shooter's next round known the trigger's hold is known too, so
+   * the next cycle is handed to the audio clock to begin exactly as the last
+   * ends while the trigger is held, and the rounds only keep it held.
+   */
+  #carry(entry, slot, now) {
+    if (slot.chainEnd === undefined) return;
+    if (now < slot.chainEnd - CHAIN_LOOKAHEAD) return;
+    if (!(slot.heldUntil >= slot.chainEnd - CHAIN_SLACK)) {
+      slot.chainEnd = undefined;
+      return;
+    }
+    // A stalled page begins again from now rather than catching up.
+    if (now - slot.chainEnd > entry.period) slot.chainEnd = now;
+    slot.audio.trigger(Math.max(0, slot.chainEnd - now), { carry: true });
+    slot.busyUntil = slot.chainEnd + (entry.hold ?? ONE_SHOT_HOLD);
+    slot.age = 0;
+    slot.holdFor = entry.hold ?? ONE_SHOT_HOLD;
+    slot.lastAt = now;
+    slot.armed = true;
+    slot.chainEnd += entry.period;
   }
 
   /**
@@ -439,10 +512,24 @@ export class WorldFire {
     const now = this.now();
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) {
+        this.#carry(entry, slot, now);
+        slot.age += dt > 0 ? dt : 0;
         // A hold covers its patch's last gate, so a load still armed past it
         // was never heard (the listener stood outside its band: a reload's
         // metre, an echo's hundred) and must not go off when he later walks
         // into it. The slot is nobody's from then on.
+        //
+        // The hold is the wall clock's and the patch's gates are the frames':
+        // a page frame is at most 0.1 s of patch time however long it took,
+        // so a page under 10 frames a second runs its patches slower than the
+        // clock, and a magazine change's loads (up to 3.6 s of gates) were let
+        // go before their gates came due: a heavy replay played none of a
+        // nearby soldier's reload. The slot is held until the patch itself
+        // has run the hold's length.
+        if (slot.busyUntil > 0 && slot.busyUntil <= now && slot.armed !== false
+            && slot.age < slot.holdFor) {
+          slot.busyUntil = now + (slot.holdFor - slot.age);
+        }
         if (slot.busyUntil > 0 && slot.busyUntil <= now) {
           if (slot.armed !== false) slot.audio.disarmPending();
           slot.armed = false;

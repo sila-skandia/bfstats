@@ -3,13 +3,29 @@
 import {
   SST, SoldierSound, SoldierSoundState, ENGINE_FREQUENCIES, VANILLA_FREQUENCIES,
   LAND_GATE, CONTACT_NORMAL_Y, MATERIAL_PATCH, STANCE_STATES, VANILLA_STATE_TRIGGERS,
-  distanceGain, triggerId, triggerName, triggerOfState,
+  distanceGain, triggerId, triggerName, triggerOfState, patchOfSurface, materialPatchTable,
 } from './soldier-sound.js';
 import { VoicePool, poolSizes, voiceKind, DEFAULT_CHANNELS } from './voice-pool.js';
 
 const r = { SST, ENGINE_FREQUENCIES, VANILLA_FREQUENCIES, LAND_GATE, CONTACT_NORMAL_Y,
             MATERIAL_PATCH, STANCE_STATES, VANILLA_STATE_TRIGGERS };
 const DT = 1 / 60;
+
+// MaterialToSound.con: a surface name picks its patch by the first of the
+// words the engine searches for (BF1942.exe 0x00573020), and the table maps a
+// material id to it; an id the file never names has no entry.
+r.surface = {
+  words: Object.fromEntries(['Grass', 'Dry Grass', 'Concrete', 'Metal', 'Wood', 'Gravel', 'Frozen',
+                             'Mud', 'Sand', 'Water', 'Other'].map(n => [n, patchOfSurface(n)])),
+};
+{
+  const vanilla = materialPatchTable();
+  const mine = materialPatchTable({ '7': 'Concrete', '12': 'Wood' });
+  r.surface.vanilla = Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 13, 15, 45, 84, 88, 111, 112, 120, 7, 16, 99]
+    .map(id => [id, vanilla.has(id) ? vanilla.get(id) : null]));
+  r.surface.size = vanilla.size;
+  r.surface.custom = { 7: mine.get(7), 12: mine.get(12), 0: mine.has(0) };
+}
 
 /** Run `frames` of one trigger; the seconds each sound fired at. */
 function run(machine, trigger, frames, t0 = 0, log = []) {

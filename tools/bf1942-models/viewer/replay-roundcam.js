@@ -40,6 +40,7 @@ import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { holdYaw, isMelee, orbitYaw, styleOf } from './replay-shotstyle.js';
 import { flightAt, flightHeading } from './replay-flights.js';
+import { weaponSpeedOf } from './replay-weapon-speed.js';
 
 /** Where a drawn server flight (replay-flights.js) is at `t`, and its
  *  heading, into `pos` and `dir` (THREE vectors); false when there is none. */
@@ -358,7 +359,9 @@ export function bulletTimeSpan(f, kill = null) {
 export function guessSpeed(weapon) {
   const name = String(weapon ?? '');
   for (const [re, speed] of SPEED_GUESS) if (re.test(name)) return speed;
-  return BULLET_GUESS;
+  // A name nothing above knows, but the tree's weapon table does as a gun
+  // whose round bursts: the Natter's rockets (replay-weapon-speed.js).
+  return weaponSpeedOf(name) ?? BULLET_GUESS;
 }
 
 /** The replay's clock for a round at `speed` m/s under bullet time `preset`
@@ -426,6 +429,10 @@ export function kindOfWeapon(weapon) {
   if (/grenade/i.test(name)) return 'thrown';
   if (/bomb/i.test(name)) return 'bomb';
   if (/barrel|cannon|howitzer|mortar|artillery/i.test(name)) return 'shell';
+  // An explosive gun the name does not give away (`weaponSpeedOf`): a slow
+  // one is a rocket, a fast one a shell.
+  const known = weaponSpeedOf(name);
+  if (known) return known <= 250 ? 'rocket' : 'shell';
   return 'tracer';
 }
 
@@ -450,6 +457,9 @@ export class RoundCam {
   constructor(player, hooks = {}) {
     this.player = player;
     this.hooks = hooks;
+    // The tree's weapon table is fetched on first ask; its explosive guns
+    // teach `guessSpeed` (replay-weapon-speed.js).
+    player.hud?.weaponTable?.();
     this.state = 'idle';           // idle | armed | flying | impact
     this.bulletTime = BULLET_TIME.strong;
     this.afterHit = 'victim';      // victim | shooter | stay
@@ -498,6 +508,7 @@ export class RoundCam {
   /** Chase the round of recorded shot `f`, fired or yet to be. `kill` is the
    *  kill it made, when it made one: the hold waits for the man to fall. */
   arm(f, { kill = null, again = false } = {}) {
+    this.player.hud?.weaponTable?.();
     if (!shotRay(f, this.shotPos, this.shotDir)) return false;
     // Armed `again` (the clip looping round to its start): the swing of the
     // camera the creator dragged in is kept, and there is no glide in from
@@ -554,6 +565,37 @@ export class RoundCam {
     if (known) this.aimVictim();
     if (known) this.target.muzzleOff = this.muzzleOffset(this.target);
     this.readLive();
+    return true;
+  }
+
+  /** Chase a round the recording carries as an object of its own, already in
+   *  the air: a server flight drawn by replay-flights.js (a Natter's rocket, a
+   *  flak shell), or a grenade, rifle grenade or thrown knife the server flies
+   *  (`life` of `rec.lives`). `f` is the shot that fired it when known, which
+   *  killed `kill` when it did. The clicked round has no page object, so this
+   *  is the recorded path ridden to where it ended, as a kill shot's is. */
+  chaseLife(life, f = null, { kill = null, flight = false } = {}) {
+    if (!life) return false;
+    const t = this.player.time;
+    const known = Boolean(f) && shotRay(f, this.shotPos, this.shotDir);
+    if (!known) {
+      const from = positionAt(life, Math.max(life.created, t - 0.5));
+      if (!from) return false;
+      this.shotPos.set(from[0], from[1], -from[2]);
+    }
+    const weapon = f?.weapon ?? null;
+    const kind = flight ? (kindOfWeapon(weapon) === 'tracer' ? 'shell' : kindOfWeapon(weapon)) : 'thrown';
+    this.begin({
+      f, pid: f?.pid ?? null, kill: known ? kill : null, victim: known ? kill?.victim ?? null : null, weapon,
+      obj: null, list: null, kind, life, flight, thrown: null, victimAt: null, victimDist: null,
+    }, 'flying');
+    if (known) this.aimVictim();
+    if (!this.readLive(t)) {
+      // Already spent at this instant: nothing to ride.
+      this.stop(false);
+      return false;
+    }
+    this.hooks.changed?.();
     return true;
   }
 

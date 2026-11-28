@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { hullRadius } from './replay-camera.js';
+import { positionAt, thrownLifeOf } from './replay-recording.js';
 
 /** Pixels a thing is at least as wide as, to a pointer: a man far off, a
  *  round. */
@@ -19,6 +20,9 @@ const BODY = { stand: [0.95, 0.8], crouch: [0.6, 0.7], prone: [0.25, 0.9] };
 const ROUND_FIRST = 0.35;
 
 const _v = new THREE.Vector3();
+/** Metres a second a recorded round must move at to be one in flight (a mine
+ *  laid, a knife stuck in a wall, lies still). */
+const FLYING = 3;
 
 /** `pos` on the screen: `{ x, y, depth }` in pixels from the view's corner
  *  and metres in front of the camera, or null behind it or off the view. */
@@ -84,6 +88,22 @@ export function pickCandidates(player) {
     pos.y += r * 0.2;
     out.push({ kind: 'hull', hull, life: hull.life, crew: hull.crew ?? [], pos, radius: Math.max(1.5, r * 0.7) });
   }
+  // The server's own rounds, which the page draws from the recording and
+  // never flies (replay-flights.js, replay-props.js): a Natter's rocket, a
+  // flak shell, a grenade, a thrown knife. They are not in the page's guns,
+  // so a click on one found nothing and its bullet cam could not start.
+  for (const [flight, shown] of player.flights?.live ?? []) {
+    if (!shown?.node?.visible) continue;
+    out.push({ kind: 'round', obj: null, life: flight, flight: true, tracer: false, shot: flight.shot ?? false,
+               pos: shown.node.position.clone(), radius: 0.8 });
+  }
+  const t = player.time;
+  for (const prop of player.props?.props ?? []) {
+    const life = prop.life;
+    if (!life?.projectile || !prop.node?.visible || !movingAt(life, t)) continue;
+    out.push({ kind: 'round', obj: null, life, flight: false, tracer: false, shot: shotOfThrown(player.rec, life, t),
+               pos: prop.node.position.clone(), radius: 0.8 });
+  }
   const guns = player.ctx.guns;
   if (guns) {
     for (const obj of guns.projectiles ?? []) {
@@ -100,6 +120,42 @@ export function pickCandidates(player) {
     }
   }
   return out;
+}
+
+/** Whether recorded round `life` is moving at `t` (not lying where it was
+ *  laid or stuck where it struck). */
+function movingAt(life, t) {
+  const a = positionAt(life, t);
+  const b = positionAt(life, Math.max(life.created, t - 0.1));
+  if (!a || !b) return false;
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > FLYING * 0.1;
+}
+
+/** How far back, seconds, the shot of a round in the air may lie. */
+const THROW_BACK = 8;
+
+/**
+ * The recorded shot that threw round `life` (a grenade, a thrown knife, a
+ * rifle grenade the server flies as an object of its own), as of `t`, or
+ * false: the latest shot up to `t`, within THROW_BACK of it, whose recorded
+ * throw is this object (`thrownLifeOf`). A pooled round serves many throws,
+ * so the object alone does not name the shot.
+ */
+export function shotOfThrown(rec, life, t) {
+  const fires = rec?.fires ?? [];
+  let lo = 0;
+  let hi = fires.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (fires[mid].t <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  for (let i = lo - 1; i >= 0 && fires[i].t >= t - THROW_BACK; i--) {
+    const f = fires[i];
+    if (f.press || !Array.isArray(f.pos)) continue;
+    if (thrownLifeOf(rec, f)?.life === life) return f;
+  }
+  return false;
 }
 
 /**

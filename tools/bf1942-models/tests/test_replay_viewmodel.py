@@ -167,7 +167,11 @@ class ReplayViewmodelTests(unittest.TestCase):
     def test_the_rig_is_his_in_his_first_person_only(self) -> None:
         v = self.results["viewmodel"]
         self.assertFalse(v["loading"], "nothing is drawn while the rig loads")
-        self.assertEqual(v["loads"], ["GermanSoldier__MP40.fp.glb"], "his side's sleeves, his weapon")
+        # His side's sleeves, his weapon first, then the rest of his kit (the
+        # medic bag's draw must find its rig loaded: 2026-11-28 report).
+        self.assertEqual(v["loads"][0], "GermanSoldier__MP40.fp.glb")
+        self.assertEqual(sorted(v["loads"]), ["GermanSoldier__GrenadeAxis.fp.glb", "GermanSoldier__MP40.fp.glb",
+                                              "GermanSoldier__MedPack.fp.glb"])
         aim = v["aim"]
         self.assertTrue(aim["shown"] and aim["visible"])
         self.assertEqual(aim["key"], "germansoldier__mp40")
@@ -188,6 +192,20 @@ class ReplayViewmodelTests(unittest.TestCase):
         self.assertEqual(fire["fired"], [{"firer": "replay:3", "view": "first", "replay": True}])
         self.assertEqual(fire["ray"], {"origin": [0.5, 2.65, -1.5], "dir": [0, 0, -1]},
                          "from the recorded origin down the recorded axis, in the view's frame")
+
+    def test_a_knife_stab_plays_its_own_clip_standing_or_lying(self) -> None:
+        # Secret Weapons: `Ub_AltFire<W>` then a numbered swing named for the
+        # commando grip, even on an EliteKnife; Hellendoorn, 2026-11-28.
+        stab = self.results["stab"]
+        # The third is a round with no torso record: thrust 0.3 s before it.
+        self.assertEqual(stab["fires"], [[2, 2.5, "altfire3", False], [4, 4.5, "altfire4", False],
+                                         [6, 6.5, "altfire3", False]])
+        self.assertEqual(families(stab["unseen"]), [["altfire3", 1]])
+        self.assertEqual(families(stab["standing"]), [["altfire3", 1]])
+        self.assertEqual(families(stab["lying"]), [["altfire4", 1]])
+        self.assertEqual(families(stab["after"]), [["idle", 1]])
+        # The stab states are not weapon switches: the aim holds under them.
+        self.assertEqual(stab["base"], [[1, "idle"], [3, "prone"], [5, "idle"]])
 
 
 if __name__ == "__main__":

@@ -585,12 +585,20 @@ export class EngineAudio {
    * still owns, which is what makes that safe. The stack stops at the game's
    * `INSTANCES_PER_SAMPLE`, past which the oldest tail goes.
    *
+   * `lead`: seconds from now the patch starts, for a caller that knows when a
+   * sample must begin to follow the last without a gap or an overlap (a
+   * gun's Fire Loop carried across a burst, `world-fire.js`); the patch's
+   * clock counts from that start. `carry`: this start continues a loop the
+   * patch is already running, so its clock is not set back and a layer that
+   * waits on its `Time` gate (the Sten's near layer at one second) keeps the
+   * time it has earned.
+   *
    * @returns {number} how many layers actually started.
    */
-  trigger() {
+  trigger(lead = 0, { carry = false } = {}) {
     if (this.relatch) return this.#press();
     if (!this.started || this.disposed || this.released) return 0;
-    return this.#fire();
+    return this.#fire(lead, carry);
   }
 
   /**
@@ -617,9 +625,10 @@ export class EngineAudio {
     return this.voices.some(voice => voice.layer.loop && voice.targetGain > 0);
   }
 
-  #fire() {
-    const now = this.ctx.currentTime;
-    this.elapsed = 0;
+  #fire(lead = 0, carry = false) {
+    const ahead = lead > 0 ? lead : 0;
+    const now = this.ctx.currentTime + ahead;
+    if (!carry) this.elapsed = ahead > 0 ? -ahead : 0;
     // A fresh alternate and a fresh pitch offset per round: `randomStartPitch`
     // is rolled once per *play* in the engine, and a one-shot voice that kept
     // the offset it was built with would give every ricochet in a burst the

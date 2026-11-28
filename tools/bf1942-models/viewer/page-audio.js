@@ -12,7 +12,6 @@ import { modulate } from './ssc-curves.js';
 import { configureDs3dPanner, standDs3dPanner } from './ds3d-pan.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
-import { footstepMaterial } from './collision-materials.js';
 import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
 import { environmentPlays, scriptVolume } from './environment-sound.js';
 import { entryInMode } from './game-modes.js';
@@ -21,7 +20,7 @@ import { nationStems } from './radio.js';
 import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
 import { createVoiceGates } from './soldier-voice-gates.js';
 import {
-  MATERIAL_PATCH, SST, SoldierSound, SoldierSoundState, VANILLA_FREQUENCIES,
+  MATERIAL_PATCH, SST, SoldierSound, materialPatchTable, SoldierSoundState, VANILLA_FREQUENCIES,
   distanceGain, triggerName, triggerOfState,
 } from './soldier-sound.js';
 import { voiceKind, voicePoolOf } from './voice-pool.js';
@@ -715,11 +714,13 @@ export function createPageAudio(page) {
 
   /** One round from a bot's hand weapon, at the bot. Fire-and-forget.
    *  `owner` stands for the shooter (the bot, a replayed soldier): his rounds
-   *  share one patch and so one clock (`world-fire.js`, ledger SND-33). */
-  function playWorldShot(weaponName, x, y, z, owner = null) {
+   *  share one patch and so one clock (`world-fire.js`, ledger SND-33).
+   *  `opts.next`: seconds to his next round when the caller knows it (a
+   *  replay), which lets an automatic weapon's Fire Loop run on through a burst. */
+  function playWorldShot(weaponName, x, y, z, owner = null, opts = undefined) {
     if (!weaponName || page.AUDIO_OFF) return;
     ensureWorldFire().then(fire => {
-      fire?.play(weaponName, { x, y, z }, owner);
+      fire?.play(weaponName, { x, y, z }, owner, opts);
     });
   }
 
@@ -903,7 +904,22 @@ export function createPageAudio(page) {
       // one a frame.
       contact = view.grounded && view.ticked !== false && !entry.takeoff;
     }
-    if (contact) entry.machine.setMaterial(null);
+    if (contact) {
+      // The floor under his feet. A cast a frame a soldier is wasted: the
+      // answer is kept until he has moved half a metre or a third of a second
+      // has passed (a step is longer than either).
+      entry.floorAge = (entry.floorAge ?? Infinity) + step;
+      if (Number.isFinite(view.x)) {
+        const moved = entry.floorAt
+          ? Math.hypot(view.x - entry.floorAt.x, view.z - entry.floorAt.z, view.y - entry.floorAt.y) : Infinity;
+        if (moved > 0.5 || entry.floorAge > 0.33) {
+          entry.floor = floorPatchAt(view.x, view.y, view.z, manifest);
+          entry.floorAt = { x: view.x, y: view.y, z: view.z };
+          entry.floorAge = 0;
+        }
+      }
+      entry.machine.setMaterial(entry.floor ?? null);
+    }
     const out = entry.machine.update(step, trigger);
     if (!out) return null;
     const log = pageAudio.soldierSoundLog;
@@ -1180,11 +1196,31 @@ export function createPageAudio(page) {
     dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
   };
 
-  /** The patch of the floor under (x, y, z): `addMaterialToSound`'s index
-   *  for the material a cast down finds (`soldier-sound.js` `MATERIAL_PATCH`). */
-  function floorPatchAt(x, y, z) {
+  /** `soldier.json`'s `materials` as `id -> patch`, built once a manifest. */
+  const materialTables = new WeakMap();
+  function materialTable(manifest) {
+    let table = manifest ? materialTables.get(manifest) : null;
+    if (!table) {
+      table = materialPatchTable(manifest?.materials ?? null);
+      if (manifest) materialTables.set(manifest, table);
+    }
+    return table;
+  }
+
+  /** The collider a soldier's feet are cast against: the player's own, or the
+   *  level's (a replay has no soldier of the page's, only the level). */
+  function floorCollider() {
+    return page.soldier?.collider ?? page.collider ?? null;
+  }
+
+  /** The patch of the floor under (x, y, z): `MaterialToSound.con`'s surface
+   *  for the material a cast down finds (`soldier-sound.js` `MATERIAL_PATCH`),
+   *  a mesh's own material where a mesh is the floor and the level's
+   *  `Materialmap.raw` where the terrain is. Null for a material the table
+   *  never names: `SoldierSound::setMaterial` then leaves the patch it had. */
+  function floorPatchAt(x, y, z, manifest = null) {
     let matId = 0;
-    const collider = page.soldier?.collider;
+    const collider = floorCollider();
     if (collider) {
       let onStatic = false;
       let best = -Infinity;
@@ -1198,6 +1234,16 @@ export function createPageAudio(page) {
           onStatic = true;
         }
       }
+      // A replayed hull under the feet (a deck, a jeep's bonnet): its own
+      // collision faces carry the material, the vehicle's plating, and a
+      // hull stands over the ground and over a static it was driven onto.
+      const dyn = collider.dynamicCast ? collider.dynamicCast(x, y + 0.5, z, 0, -1, 0, 1.0, -1) : null;
+      if (dyn && dyn.y >= best && Number.isFinite(dyn.material)) {
+        const ground = collider.surfaceHeight ? collider.surfaceHeight(x, z) : NaN;
+        if (!Number.isFinite(ground) || dyn.y >= ground) {
+          return materialTable(manifest ?? pageAudio.soldierSoundsDoc).get(dyn.material) ?? null;
+        }
+      }
       const ground = collider.surfaceHeight ? collider.surfaceHeight(x, z) : NaN;
       if (!onStatic || (Number.isFinite(ground) && ground >= best)) {
         matId = collider.heightfield?.material ? collider.heightfield.material(x, z) : 0;
@@ -1209,7 +1255,7 @@ export function createPageAudio(page) {
         }
       }
     }
-    return MATERIAL_PATCH[footstepMaterial(matId)] ?? 0;
+    return materialTable(manifest ?? pageAudio.soldierSoundsDoc).get(matId) ?? null;
   }
 
   /**
@@ -1226,7 +1272,9 @@ export function createPageAudio(page) {
     if (indices) {
       // The stored material is the floor of the last contact, which for a
       // body on the ground is the floor under it now.
-      indices = [floorPatchAt(at.x, at.y, at.z), ...indices.slice(1)];
+      // The material patch is the one the machine stored; a caller with no
+      // machine (`handleSoldierFootstep`) names none and reads the floor.
+      if (indices[0] == null) indices = [floorPatchAt(at.x, at.y, at.z, manifest) ?? 0, ...indices.slice(1)];
     } else {
       indices = script.patches.map((_, i) => i);
     }
@@ -1259,6 +1307,22 @@ export function createPageAudio(page) {
     }
   }
 
+  /**
+   * A soldier healed (`SoldierHealedByMedic.ssc`, `medkit.wav`), the sound
+   * `BFSoldier::handleDamage` raises on a negative damage whoever gave it:
+   * a medic's bag, a medic locker or a med box (ledger SND-51, SUP-22). At
+   * `position`, or on the listener's own body when it is null (the followed
+   * soldier's own heal). Its `Volume <- Distance` ramp is full at 2 m and
+   * gone at 6.
+   */
+  async function playSoldierHeal(position = null) {
+    if (page.AUDIO_OFF || masterVolume() <= 0) return;
+    const manifest = await soldierSoundsManifest();
+    if (!manifest) return;
+    await playSoldierScript(manifest, { name: triggerName(SST.HealedByMedic), patches: null },
+                            position ?? botSoundAt, position);
+  }
+
   /** A step at a place, by gait: the path a caller with no soldier of its own
    *  still has (`c_SstRun` or `c_SstWalk`'s material patch, cloth and harness). */
   async function handleSoldierFootstep(step, position = null) {
@@ -1271,7 +1335,7 @@ export function createPageAudio(page) {
     const material = trigger === SST.Run || trigger === SST.Walk;
     await playSoldierScript(manifest, {
       name: triggerName(trigger),
-      patches: material ? [0, 8, 9] : null,
+      patches: material ? [null, 8, 9] : null,
     }, step, position);
   }
 
@@ -1523,6 +1587,7 @@ export function createPageAudio(page) {
     ensureWorldFire,
     handleParachuteEvent,
     handleSoldierFootstep,
+    playSoldierHeal,
     masterVolume,
     modelSoundBuffer,
     playSoldierDeathSound,

@@ -141,6 +141,53 @@ export const MATERIAL_PATCH = Object.freeze({
   ice: 6, frozen: 6, mud: 7, water: 10,
 });
 
+/** The words `addMaterialToSound` searches a surface name for, in its order:
+ *  the first one found picks the patch (BF1942.exe 0x00573020). */
+const SURFACE_WORDS = Object.freeze([
+  ['Sand', 0], ['Metal', 1], ['Wood', 2], ['Concrete', 3], ['Grass', 4],
+  ['Gravel', 5], ['Frozen', 6], ['Mud', 7], ['Water', 10],
+]);
+
+/** The patch a surface name (`Grass`, `Metal`...) selects: the first of the
+ *  words it contains, 11 (a patch no script has) when it has none. */
+export function patchOfSurface(name) {
+  const text = String(name ?? '');
+  for (const [word, patch] of SURFACE_WORDS) if (text.includes(word)) return patch;
+  return 11;
+}
+
+/**
+ * Vanilla's `Objects/Soldiers/Common/Sounds/MaterialToSound.con` (Road to Rome
+ * and Secret Weapons carry the same file): surface name -> the material ids
+ * `SoldierSound.addMaterialToSound` gives it. A mod's own table rides in its
+ * `soldier.json` (`materials`, `extract_soldier_sounds.py`); this is for a
+ * tree extracted before that, and the unit tests.
+ */
+const VANILLA_SURFACES = Object.freeze({
+  Grass: [0, 2, 3, 145, 160, 161, 162, 163, 195],
+  Water: [1],
+  Gravel: [4, 8, 13, 14, 108, 140],
+  Mud: [5, 6, 38, 39, 40, 41, 42, 43, 44, 94],
+  Frozen: [9],
+  Sand: [10, 11, 107],
+  Concrete: [12, 15, 88, 89, 90, 91, 92, 93, 96, 100, 101, 102, 103, 118],
+  Metal: [45, 46, 47, 48, 49, 50, 51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 71, 84, 85, 86, 87, 98, 110, 120, 143, 191, 193, 194],
+  Wood: [65, 66, 67, 68, 69, 80, 81, 82, 83, 97, 104, 105, 106, 109, 111, 112, 113, 114, 115, 116, 117, 164, 165, 166, 167, 190, 192],
+});
+
+/** `id -> patch` for a table of `{ "<id>": "<surface>" }`, or vanilla's. */
+export function materialPatchTable(table = null) {
+  const out = new Map();
+  if (table && typeof table === 'object') {
+    for (const [id, name] of Object.entries(table)) out.set(Number(id), patchOfSurface(name));
+    return out;
+  }
+  for (const [name, ids] of Object.entries(VANILLA_SURFACES)) {
+    for (const id of ids) out.set(id, patchOfSurface(name));
+  }
+  return out;
+}
+
 // trigger -> [timer, interval, frequency key, random key]
 const CADENCE = Object.freeze({
   [SST.Walk]: ['walk', 'walk', 'randomWalk'],

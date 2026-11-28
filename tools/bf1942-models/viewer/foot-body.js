@@ -4,7 +4,7 @@
 // (features/vehicle-instance-refactor Part 2); `soldier-body.js` stays the
 // clip rules.
 
-import { RocketFlames, packNodeOf } from './rocket-flame.js';
+import { RocketFlames, orientRocketPack, packNodeOf } from './rocket-flame.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -683,6 +683,7 @@ export function createFootBody(page) {
 
     // A worn rocket pack burns while the part says so (`rocket-pack.js`), on
     // the part's own node of this figure.
+    if (page.soldier.pack) orientRocketPack(footBodies.footBody.scene);
     if (page.effects) {
       footBodies.rocketFlames ??= new RocketFlames(page.effects);
       const burning = !dead && !!page.soldier.pack?.burning;
