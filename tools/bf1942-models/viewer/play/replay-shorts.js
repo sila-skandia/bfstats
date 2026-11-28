@@ -13,6 +13,7 @@
 // with no strip.
 
 import { ago, clock, count, shortShareHref, watchHref } from '../recordings-api.js';
+import { VIEWER_ROOT } from '../viewer-root.js';
 import { decodePlayerName } from '../vehicle-players.js';
 import { createShortLoader, endBootShortLoader } from './short-loader.js';
 
@@ -271,10 +272,11 @@ const STYLE = `
   transition: border-color .15s ease, transform .2s cubic-bezier(.2, .8, .2, 1); }
 .rs-card.landscape { width: calc(var(--rs-card-w) * 256 / 81); max-width: calc(100% - 8px); aspect-ratio: 16 / 9; }
 .rs-card:hover { border-color: var(--rf-edge-strong); }
-.rs-card:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rs-card-link { display: block; width: 100%; height: 100%; color: inherit; text-decoration: none; }
+.rs-card:has(> .rs-card-link:focus-visible) { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rs-card img, .rs-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .rs-card video { opacity: 0; transition: opacity .2s ease; }
-.rs-card.previewing video { opacity: 1; }
+.rs-card-link.previewing video { opacity: 1; }
 .rs-card::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(to top, rgba(0, 0, 0, .86), rgba(0, 0, 0, .25) 42%, rgba(0, 0, 0, 0) 62%); }
 .rs-badge { position: absolute; top: 7px; left: 7px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; max-width: calc(100% - 14px);
@@ -283,6 +285,32 @@ const STYLE = `
   text-transform: uppercase; white-space: nowrap; overflow: hidden; }
 .rs-badge::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--rs-kind, var(--rf-khaki));
   box-shadow: 0 0 6px var(--rs-kind, var(--rf-khaki)); }
+.rs-origin { position: relative; display: inline-flex; }
+.rs-card > .rs-origin { position: absolute; z-index: 3; top: 30px; left: 7px; }
+.rs-origin-button { border: 1px solid #e6bd62; border-radius: 4px; padding: 4px 7px; min-height: 24px;
+  color: #ffe5aa; background: #2c2315; cursor: pointer; font: 800 10px/1 'Trebuchet MS', sans-serif;
+  text-transform: uppercase; letter-spacing: .09em; }
+.rs-origin-button:hover, .rs-origin-button:focus-visible { background: #49391e; outline: 2px solid #ffda86; outline-offset: 1px; }
+.rs-origin-preview { position: absolute; z-index: 3; top: 100%; left: 0; width: 112px; padding: 7px;
+  border-radius: 4px; background: #181812; color: #fff1cf; font: 600 11px/1.4 'Trebuchet MS', sans-serif; display: none; }
+.rs-origin:has(:focus-visible) .rs-origin-preview { display: block; }
+@media (hover: hover) { .rs-origin:hover .rs-origin-preview { display: block; } }
+.rs-labels { display: flex; align-items: center; gap: 7px; }
+.rs-labels .rs-origin-preview { top: auto; bottom: 100%; }
+.rs-remaster-dialog { box-sizing: border-box; width: min(540px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: clamp(14px, 4vw, 22px); border: 1px solid #9d8754;
+  border-radius: 9px; color: #f5efdf; background: #201f19; font: 14px/1.5 'Trebuchet MS', sans-serif; text-align: left; text-shadow: none; }
+.rs-remaster-dialog::backdrop { background: rgb(0 0 0 / .65); }
+.rs-remaster-dialog small { color: #f3ce7b; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.rs-remaster-dialog h2 { font: bold 22px/1.15 'Trebuchet MS', sans-serif; margin: 10px 0; }
+.rs-remaster-dialog p { margin: 0 0 18px; }
+.rs-remaster-dialog figure { position: relative; margin: 14px 0; overflow: hidden; border-radius: 5px; }
+.rs-remaster-dialog figure img { position: static; display: block; width: 100%; height: auto; }
+.rs-remaster-dialog figcaption { position: absolute; inset: auto 0 0; display: grid; grid-template-columns: 1fr 1fr;
+  padding: 14px 0 6px; background: linear-gradient(transparent, rgba(0,0,0,.8)); color: #fff;
+  font: 700 12px/1.25 'Trebuchet MS', sans-serif; text-shadow: 0 1px 3px #000; }
+.rs-remaster-dialog figcaption span { padding-left: 8px; }
+.rs-remaster-dialog a { color: #ffda86; }
+.rs-remaster-dialog button { float: right; color: inherit; background: transparent; border: 1px solid #877b60; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
 .rs-kind-air-to-air { --rs-kind: #8fc0e8; }
 .rs-kind-ground-to-air { --rs-kind: #e0a96a; }
 .rs-kind-tank-to-air { --rs-kind: #f0c060; }
@@ -437,6 +465,56 @@ function iconButton(className, label, onClick, iconName) {
 function badge(kind) {
   const b = el('span', `rs-badge rs-kind-${kind || 'other'}`, shortKindLabel(kind));
   return b;
+}
+
+// The two published Unreal edits have their own share IDs. Their browser originals use the same recording and event.
+const UNREAL_SHORTS = new Set(['gb67uhz6ux', '4s8u59nwtz']);
+
+function unrealBadge() {
+  const origin = el('span', 'rs-origin');
+  const button = el('button', 'rs-origin-button', 'Unreal');
+  button.type = 'button';
+  button.setAttribute('aria-label', 'About Battlefield 1942 in Unreal Engine');
+  button.setAttribute('aria-haspopup', 'dialog');
+  const preview = el('span', 'rs-origin-preview', 'Coming soon · Battlefield 1942 in Unreal Engine');
+  preview.setAttribute('aria-hidden', 'true');
+  origin.append(button, preview);
+  button.addEventListener('click', () => {
+    const dialog = el('dialog', 'rs-remaster-dialog');
+    const title = 'Battlefield 1942 in Unreal Engine';
+    dialog.setAttribute('aria-label', title);
+    const water = el('figure');
+    const still = el('img');
+    still.width = 1080;
+    still.height = 642;
+    still.alt = 'A Zero banks above the Coral Sea shore. The Unreal view shows turquoise shallows and surf along the beach.';
+    still.src = new URL('play/coral-sea-browser-unreal.webp', VIEWER_ROOT).href;
+    const labels = el('figcaption');
+    labels.append(el('span', '', 'Browser'), el('span', '', 'Unreal Engine 5'));
+    water.append(still, labels);
+    const link = el('a', '', 'Visit BF42 Remastered');
+    link.href = 'https://bf42remastered.com/';
+    link.target = '_blank';
+    link.rel = 'noopener';
+    const close = el('button', '', 'Close');
+    close.type = 'button';
+    close.addEventListener('click', () => dialog.close());
+    dialog.append(el('small', '', 'Coming soon'), el('h2', '', title), water,
+      el('p', '', 'The original maps and ballistics return in Unreal Engine 5, with remastered vehicle skins, soldier uniforms and battlefield sounds.'), link, close);
+    dialog.addEventListener('keydown', event => event.stopPropagation());
+    dialog.addEventListener('wheel', event => event.stopPropagation(), { passive: true });
+    dialog.addEventListener('click', event => {
+      event.stopPropagation();
+      if (event.target !== dialog) return;
+      const box = dialog.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close();
+    });
+    dialog.addEventListener('close', () => { dialog.remove(); button.focus({ preventScroll: true }); });
+    origin.after(dialog);
+    dialog.showModal();
+    close.focus();
+  });
+  return origin;
 }
 
 const canHover = () => globalThis.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
@@ -775,10 +853,12 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
 
   function card(short) {
     const wide = isLandscape(short);
-    const a = el('a', `rs-card${wide ? ' landscape' : ''}`);
-    a.setAttribute('role', 'listitem');
+    const item = el('div', `rs-card${wide ? ' landscape' : ''}`);
+    item.setAttribute('role', 'listitem');
+    const a = el('a', 'rs-card-link');
+    item.append(a);
     a.href = shortAddress(location.href, short.slug);
-    a.dataset.slug = short.slug;
+    item.dataset.slug = short.slug;
     const length = wide ? shortLength(short.lengthSeconds) : '';
     a.setAttribute('aria-label', `Play the ${short.kind === 'recap' ? 'recap' : wide ? 'roll' : 'Short'}: ${short.title}${length ? `, ${length}` : ''}, ${count(short.views, 'view')}`);
     if (short.posterUrl) {
@@ -826,7 +906,8 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
       video.play().catch(() => {});
     });
     a.addEventListener('pointerleave', () => stopPreview(a));
-    return a;
+    if (UNREAL_SHORTS.has(short.slug)) item.append(unrealBadge());
+    return item;
   }
 
   function stopPreview(a) {
@@ -1151,7 +1232,10 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
         const length = shortLength(short.lengthSeconds);
         if (length) where.append(`${short.level ? ' · ' : ''}${length}`);
       }
-      info.append(badge(short.kind), el('h2', '', short.title), ...(by ? [by] : []), ...(where ? [where] : []), kill, sub, watch);
+      const labels = el('div', 'rs-labels');
+      labels.append(badge(short.kind));
+      if (UNREAL_SHORTS.has(short.slug)) labels.append(unrealBadge());
+      info.append(labels, el('h2', '', short.title), ...(by ? [by] : []), ...(where ? [where] : []), kill, sub, watch);
       screen.append(paused, info);
       node.append(screen);
       // A click on the picture pauses and plays; the info's links are their own.
@@ -1311,7 +1395,7 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
     // Keys while the player is up are the player's: the feed's Escape and the
     // page's own keys wait.
     window.addEventListener('keydown', e => {
-      if (overlay.hidden) return;
+      if (overlay.hidden || e.target.closest?.('.rs-remaster-dialog')) return;
       wake();
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '');
       if (e.key === 'Escape') shut();
@@ -1349,7 +1433,7 @@ export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
     }
 
     async function openOn(slug, card, push) {
-      from = card ?? strip.querySelector(`.rs-card[data-slug="${CSS.escape(slug)}"]`) ?? document.activeElement;
+      from = card ?? strip.querySelector(`.rs-card[data-slug="${CSS.escape(slug)}"] > a`) ?? document.activeElement;
       // The Short is asked for alongside the strip's page, not after it: a
       // link to a Short waits for the slower of the two, not both.
       const listed = load();
