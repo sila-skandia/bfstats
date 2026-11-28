@@ -14,6 +14,7 @@ import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
 import { disarmTarget, medPackHeals, repairPackTarget } from './healing-packs.js';
+import { PACK_TICK_HZ, PackCharge, packChargeSpec } from './pack-charge.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
@@ -399,14 +400,16 @@ export function createHandFire(page) {
    * holder, friend or enemy (the function has no team test), takes
    * `healFactor`, and the holder `selfHealFactor`. `pack` carries the three
    * numbers (`kit-loadout.js` `healingPack`); the amount is per invocation
-   * and the pack fires at its `roundOfFire` (vanilla 10/s), so holding the
-   * trigger pays 2.5 HP/s to every wounded soldier in reach and 1.5 HP/s to
-   * the holder.
+   * and a held trigger invokes it every tick (pack-charge.js, SUP-34), so
+   * holding it pays 7.5 HP/s to every wounded soldier in reach and 4.5 HP/s
+   * to the holder, for as long as the bag's charge lasts (6.7 s from full).
+   * `apply` false only asks whether anyone is there to heal. Returns whether
+   * anyone was healed.
    */
-  function useMedPack(pack) {
+  function useMedPack(pack, apply = true) {
     const world = page.world;
     const me = page.soldier;
-    if (!world || !me) return;
+    if (!world || !me) return false;
     const soldiers = [];
     for (const [id, player] of world.players) {
       const s = player.soldier;
@@ -415,7 +418,9 @@ export function createHandFire(page) {
     }
     const holder = { id: page.LOCAL_PLAYER, x: me.x, y: me.y, z: me.z,
                      armor: world.armorOf(page.LOCAL_PLAYER) };
-    for (const heal of medPackHeals(holder, soldiers, pack)) page.applyHeal?.(heal.id, heal.amount);
+    const heals = medPackHeals(holder, soldiers, pack);
+    if (apply) for (const heal of heals) page.applyHeal?.(heal.id, heal.amount);
+    return heals.length > 0;
   }
 
   /**
@@ -437,10 +442,10 @@ export function createHandFire(page) {
    * splash pass walks; a hull's side is its crew's, or the spawner's stamp
    * (`vehicles.teamOf`, SEAT-27).
    */
-  function useRepairPack(pack) {
+  function useRepairPack(pack, apply = true) {
     const me = page.soldier;
-    if (!me) return;
-    if (me.stance === 'crouch') { disarmWithWrench(pack); return; }
+    if (!me) return false;
+    if (me.stance === 'crouch') return apply ? Boolean(disarmWithWrench(pack)) : false;
     const hulls = [];
     for (const [owner, visual] of page.damageVisuals ?? []) {
       if (visual?.wrecked || visual?.removed || !visual?.node) continue;
@@ -461,7 +466,8 @@ export function createHandFire(page) {
     const holder = { x: me.x, y: me.y, z: me.z, crouched: me.stance === 'crouch',
                      team: page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId ?? 0 };
     const best = repairPackTarget(holder, hulls, pack);
-    if (best) best.armor.heal(pack.repairHeal);
+    if (best && apply) best.armor.heal(pack.repairHeal);
+    return Boolean(best);
   }
 
   /**
@@ -713,6 +719,55 @@ export function createHandFire(page) {
 
   // The weapon `footTrigger` stepped this frame, before the world did.
   let stepped = null;
+  // Seconds of frames since the page began, for a holstered pack's recharge.
+  let packClock = 0;
+
+  /**
+   * The medic bag's or the wrench's frame (pack-charge.js, SUP-34), on the
+   * 30 Hz grid: each tick a held trigger pulls once (`use`, which answers
+   * whether it healed, repaired or disarmed anything; a use that did nothing
+   * costs nothing), then the item in hand regains `trunc(reloadTime)`. On
+   * the first frame of a raise the holster's debt is paid,
+   * `trunc(away x reloadTime x 30)`. The count lives on the kit's entry
+   * (`hw.ammo`), so it survives the rig being rebuilt on every switch; the
+   * rig in hand is a new raise whenever it is a different rig. Returns the
+   * pulls that worked.
+   */
+  function stepPackCharge(hw, spec, dt, use = null) {
+    const entry = hw.ammo;
+    if (!entry) return 0;
+    const pack = new PackCharge(spec, Number.isFinite(hw.rounds) ? hw.rounds : spec.cap);
+    if (entry.packRig !== hw) {
+      if (Number.isFinite(entry.packSeen)) pack.raise(packClock - entry.packSeen);
+      entry.packRig = hw;
+      entry.packTick = 0;
+    }
+    let worked = 0;
+    entry.packTick = (entry.packTick ?? 0) + dt;
+    while (entry.packTick >= 1 / PACK_TICK_HZ - 1e-9) {
+      entry.packTick -= 1 / PACK_TICK_HZ;
+      if (use && pack.pull(use)) worked += 1;
+      pack.tick();
+    }
+    entry.packSeen = packClock;
+    hw.rounds = pack.charge;
+    return worked;
+  }
+
+  /** One use of the pack in hand, for `stepPackCharge`: whether it did
+   *  anything. In a room the server runs the use on its own world and hands
+   *  the hit points back (`server/room-packs.mjs`), so the page only asks its
+   *  copy of the law whether there was anything to do, and names the pull;
+   *  the crouched wrench's disarm is the page's to find either way. */
+  function usePack(hw, pack) {
+    if (page.reportPack) {
+      const lifted = pack.kind === 'repair' ? disarmWithWrench(pack) : null;
+      const worked = lifted ? true : pack.kind === 'medic' ? useMedPack(pack, false) : useRepairPack(pack, false);
+      if (worked) page.reportPack(hw.name, lifted);
+      return worked;
+    }
+    return pack.kind === 'medic' ? useMedPack(pack) : useRepairPack(pack);
+  }
 
   /**
    * The trigger's half of a frame: the item gate, the barrel's heat, the
@@ -729,6 +784,9 @@ export function createHandFire(page) {
   function footTrigger(dt, live = true) {
     const hw = page.handWeapon;
     stepped = live ? hw : null;
+    // The packs' clock, run whether or not he has one in hand: a holstered
+    // pack is paid what it missed when it is raised (pack-charge.js).
+    if (Number.isFinite(dt) && dt > 0) packClock += dt;
     if (!hw || !live) return;
     // The 0.4 m `em_1P_*` sprite in first person, not the 1.76 m mesh; the
     // mesh in the chase view on foot, where the camera is outside the man.
@@ -843,13 +901,24 @@ export function createHandFire(page) {
       // past it is carried while the trigger stays down: a held pack's rounds
       // land on the 30 Hz grid at any frame rate. Let go, nothing is owed.
       hw.cool -= dt;
-      const firing = page.triggerHeld && (page.captured || page.params.has('shots'))
-        && hw.reload <= 0 && hw.rounds > 0;
+      const held = page.triggerHeld && (page.captured || page.params.has('shots')) && hw.reload <= 0;
+      // A `magType 1` pack (pack-charge.js, SUP-34): a held trigger pulls
+      // every tick, each use that heals or repairs costs `trunc(roundOfFire)`
+      // of its charge, it works only above `trunc(reloadTime)`, and the item
+      // in hand regains `trunc(reloadTime)` a tick. The arms and the report
+      // below keep the weapon's own cycle. An export without the magazine's
+      // `type` keeps the round-a-cycle count.
+      const charge = packChargeSpec(hw.data);
+      if (charge) {
+        const pack = page.healingPack();
+        stepPackCharge(hw, charge, dt, held ? () => usePack(hw, pack) : null);
+      }
+      const firing = held && (charge ? hw.rounds > charge.floor : hw.rounds > 0);
       if (!firing) hw.cool = Math.max(0, hw.cool);
       if (firing && hw.cool <= 0) {
         const pack = page.healingPack();
         hw.cool = Math.max(0, hw.cool + fireCycle(hw.data?.roundOfFire));
-        if (Number.isFinite(hw.rounds)) hw.rounds -= 1;
+        if (!charge && Number.isFinite(hw.rounds)) hw.rounds -= 1;
         beginHandFire(hw);
         // In a room the server runs the pack on its own world and hands the
         // hit points back (`server/room-packs.mjs`): the page's copy heals
@@ -857,10 +926,12 @@ export function createHandFire(page) {
         // The crouched wrench's disarm is the page's to find, the rounds
         // being the page's (the room flies none, `room-hits.mjs`): it lifts the
         // round here and names it to the room, which takes it off every page.
-        if (page.reportPack) {
-          page.reportPack(hw.name, pack.kind === 'repair' ? disarmWithWrench(pack) : null);
-        } else if (pack.kind === 'medic') useMedPack(pack);
-        else useRepairPack(pack);
+        // A charged pack was used above, a tick at a time.
+        if (!charge) {
+          if (page.reportPack) page.reportPack(hw.name, pack.kind === 'repair' ? disarmWithWrench(pack) : null);
+          else if (pack.kind === 'medic') useMedPack(pack);
+          else useRepairPack(pack);
+        }
       }
       if (!firing) page.releaseHandFireLoop();
     }

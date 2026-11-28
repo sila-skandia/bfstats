@@ -1,4 +1,4 @@
-import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
+import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_BAR, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
 import { soldierArt } from './nation.js';
 import { recoverBar } from './rocket-burn.js';
 
@@ -98,6 +98,21 @@ export function writeSoldierAmmo(vars, data, rounds, mags, heat = null) {
       vars['Ammo/PrimaryAmmo'] = rounds;
     }
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
+    // The bar types: 4 `ATIconAndReloadBar` (the wrench's
+    // `reloadtimebar`), 6 `ATIconAndHeatBar` (the medic bag's `heatbar`) and
+    // 7. Each layout leaf fills `Ammo/PrimaryAmmo` over
+    // `Ammo/MaxPrimaryAmmo` and prints no number, so for a `magType 1` pack
+    // the bar is its charge over `magSize` (pack-charge.js, SUP-34). Left
+    // unfed, the painter culls a leaf whose `valueVar` is missing
+    // (hud.js `contentVarsOf`): the medic and the engineer had an icon and
+    // no bar at all.
+    // A pack declares `setHasMag 0`, so the `{2,3,4,5}` panel's spare-count
+    // box stays down over the wrench.
+    if (AMMO_TYPES_WITH_BAR.has(ammoType) && magazine && Number.isFinite(rounds)) {
+      vars['Ammo/PrimaryAmmo'] = rounds;
+      vars['Ammo/MaxPrimaryAmmo'] = magazine.size;
+      if (magazine.type === 1) vars['Ammo/SoldierAmmo/SoldierAmmoHasMag'] = false;
+    }
   }
   // The held weapon's raw heat, every frame (client 0x006e9773 ->
   // `0x006e9a50`, `fld [weapon+0x268]`, GUN-16). The layout's

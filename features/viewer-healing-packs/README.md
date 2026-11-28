@@ -98,9 +98,9 @@ spent per round, refilled by a supply depot like every kit item.
 
 ## Non-goals
 
-- The soldier ammo panel's heat bar (`ATIconAndHeatBar`) is still unfed, so
-  the packs draw their icons but not their bars. Pre-existing gap, not
-  touched here.
+- ~~The soldier ammo panel's heat bar (`ATIconAndHeatBar`) is still unfed, so
+  the packs draw their icons but not their bars.~~ Fed 2026-11-28, with the
+  charge law behind it (below, SUP-34).
 - The engine's pose branch adds `+0x2f0` instead of `+0x2ec` in the wrench's
   reach; vanilla registers both at 2.0, so the viewer keeps one constant.
 
@@ -325,3 +325,67 @@ not).
 Open: the object manager's candidate order (`0x082761a1`) is not read; the
 page takes the oldest launched first. The pools of every other networked
 weapon (FA-2's "fields not named") are not built.
+
+## The packs' charge bar, and how it refills (2026-11-28)
+
+Reported on replay.bfstats.io: the medic and the engineer "aren't quite
+right". In retail each pack has its own bar beside its icon that empties
+while it works and slowly fills again. The replay drew the icon and no bar,
+the playable page the same, and the page's pack was spent one unit of 1800
+a use and never refilled.
+
+What retail does, ledger SUP-34 (lnxded, with the server recordings' `am`
+as the check):
+
+- a held trigger pulls every tick. The soldier runs the pack's use only
+  while its charge is above `trunc(reloadTime)` (1), and a use that did
+  nothing (nobody wounded in reach, no hull, nothing to disarm) is not
+  passed on to the pack and costs nothing;
+- a use that worked, or a pull at the floor, reaches `FireArms::Fire`, which
+  takes `trunc(roundOfFire)` (10) off the charge, floored at 0. Held at
+  empty, a pack stays empty;
+- the item in hand regains `trunc(reloadTime)` (1) every 30 Hz update,
+  capped at `magSize`; a holstered one is paid `away x reloadTime x 30` when
+  it is raised (45 a second for the bag, 33 for the wrench);
+- so a working bag lasts 6.7 s from full and refills in 60 s in the hand, a
+  wrench 11 s and 100 s. One invocation a tick also settles SUP-15's open
+  cadence: 7.5 HP/s to each wounded soldier in reach, not the 2.5 this page
+  used.
+
+What changed:
+
+- `viewer/pack-charge.js` is the law: `packChargeSpec` (a weapon glb's
+  `magazine.type === 1`), `PackCharge` (`pull`, `tick`, `raise`), and
+  `packChargeAt`, which runs a life's held and using spans on the 30 Hz grid.
+- `soldier-hud.js` `writeSoldierAmmo` feeds `Ammo/PrimaryAmmo` over
+  `Ammo/MaxPrimaryAmmo` for the bar types 4 (`ATIconAndReloadBar`, the
+  wrench's `reloadtimebar`), 6 (`ATIconAndHeatBar`, the bag's `heatbar`) and
+  7. Unfed, the painter culled both leaves, so no pack ever had a bar, here
+  or in the replay. A pack is `setHasMag 0`, so the spare-count box stays
+  down over the wrench.
+- `hand-fire.js`: a held pack pulls every tick (`stepPackCharge`, `usePack`),
+  pays only for a pull that worked, and regains its charge in the hand and
+  across a holster. The arms' fire clip and the Medkit loop keep the
+  weapon's own 10 a second; a restart every tick would stutter. In a room
+  the page asks its own copy of the law whether there is anyone to heal and
+  names the pull; `server/room-packs.mjs`'s bucket is 32 a second, burst 8.
+- `bot-referee.js`: a bot's pack pulls the same way (`fireRound`), its
+  report and shot clock on the weapon's own cycle; `magazineTick` regains
+  the charge and pays the holster; `botWeaponReady` and `canFire` hold the
+  floor.
+- `replay-hud.js`: a client recording carries no charge (bf42plus's fire
+  hook sits past the pack's branch of `Fire`, so a pack writes no `f`), but
+  it carries what the law needs. `packSpans` reads when the pack is in his
+  hands (`st`'s item) and when it is in use (his torso in `Ub_FireMedPack`,
+  `Ub_LieFireRepairPack`, ...), and `packWorked` says a tick's pull worked
+  when he, or a soldier (the bag) or a hull (the wrench) within 12 m, gained
+  hit points within 0.2 s of it. A server recording's `am` is the server's
+  own count and still wins.
+
+So nothing needs adding to the bf42plus recorder: the state and the hit
+points it already writes give the charge for every soldier in the file, not
+only the recording player.
+
+Checked: `tests/test_pack_charge.py` (the law against the binary's numbers
+and the server recording's 1791, the replay's spans and work test, the two
+bars, a bot's pack); `./scripts/verify.sh`.

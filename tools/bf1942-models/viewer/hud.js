@@ -579,6 +579,14 @@ export const AMMO_TYPE_CODES = {
  */
 export const AMMO_TYPES_WITH_ROUNDS = new Set([2, 3]);
 
+/**
+ * Which of the icon-family types fill a bar from `Ammo/PrimaryAmmo` over
+ * `Ammo/MaxPrimaryAmmo`: 4 `ATIconAndReloadBar` (`reloadtimebar`, the
+ * RepairPack), 6 `ATIconAndHeatBar` (`heatbar`, the MedPack) and 7, the
+ * `{6,7}` panel's second leaf. None of them prints the count.
+ */
+export const AMMO_TYPES_WITH_BAR = new Set([4, 6, 7]);
+
 /** The 800x600 point the seat-occupancy dots are offset from (VHUD-7): the
  *  six 8x8 leaves draw at `(192 + VehiclePosX[i+1], 452 + VehiclePosY[i+1])`.
  *  It is also exactly `hud-layout.json`'s own seat-0 rect (247,457) minus that

@@ -950,7 +950,7 @@ class RoomTests(unittest.TestCase):
     def test_a_page_cannot_claim_more_rounds_than_the_pack_fires(self) -> None:
         from_bucket = self.results["z3p"]["burst"]
         self.assertGreater(from_bucket, 0)
-        self.assertLessEqual(from_bucket, 7)
+        self.assertLessEqual(from_bucket, 9)
 
     def test_the_rooms_wrench_repairs_standing_not_crouched_nor_an_enemy_hull(self) -> None:
         # `useRepairPack` 0x08276100: getPose()==1 skips the hull branch

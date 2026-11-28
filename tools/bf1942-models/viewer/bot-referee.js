@@ -58,6 +58,7 @@ import { FireState, reloadAmmo } from './fire-state.js';
 import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 import { disarmTarget, healingPackKind, medPackHeals, packParams, repairPackTarget, worldHulls } from './healing-packs.js';
+import { PACK_TICK_HZ, PackCharge, packChargeSpec } from './pack-charge.js';
 
 // A downed bot waits for the reinforcement wave, as every player does
 // (SPAWN-35: `GameServer::killPlayer` 0x0814d920 sets `BFPlayer+0x8c` with no
@@ -104,7 +105,7 @@ export function botWeaponReady(bot) {
   const mag = bot._mags?.get?.(name);
   if (mag) {
     if (mag.reloadLeft > 0 || mag.ejectLeft > 0) return false;
-    if (!(mag.rounds > 0)) return false;
+    if (!(mag.rounds > (mag.charge?.floor ?? 0))) return false;
   }
   const heat = bot._heat?.get?.(name);
   if (heat && heat.overheatRemaining > 0) return false;
@@ -831,7 +832,9 @@ export function createBotReferee(env) {
       ? { rounds: size, spare: Math.max(0, (m.magazines ?? 1) - 1), size, reloadTime: m.reloadTime ?? 0,
           reloadLeft: 0, autoReload: !!m.autoReload,
           // The clip in the gun and the time it takes to leave (FA-7).
-          ejectClipTime: m.ejectClipTime > 0 ? m.ejectClipTime : 0, clipIn: true, ejectLeft: 0 }
+          ejectClipTime: m.ejectClipTime > 0 ? m.ejectClipTime : 0, clipIn: true, ejectLeft: 0,
+          // A medic bag's or wrench's charge law (pack-charge.js, SUP-34).
+          charge: packChargeSpec(bot.weaponData?.[name]), chargeTick: 0, heldAt: null }
       : { rounds: Infinity, spare: 0, size: 0, reloadTime: 0, reloadLeft: 0, autoReload: false };
     bot._mags.set(name, mag);
     return mag;
@@ -876,6 +879,7 @@ export function createBotReferee(env) {
       bot.magazineEndsPlan = false;
       return { canFire: true };
     }
+    if (mag.charge) stepBotPack(mag, dt);
     if (mag.reloadLeft > 0) {
       mag.reloadLeft = Math.max(0, mag.reloadLeft - dt);
       if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; mag.clipIn = true; }
@@ -901,16 +905,41 @@ export function createBotReferee(env) {
       // `Reload` triggers the weapon's Reload sound slot as it starts (SND-17).
       env.onReload?.(bot, bot.weaponAi?.name ?? null);
     }
-    const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
-    bot.magazineEmpty = mag.rounds <= 0;
+    const canFire = mag.reloadLeft === 0 && mag.rounds > (mag.charge?.floor ?? 0);
+    bot.magazineEmpty = mag.rounds <= (mag.charge?.floor ?? 0);
     bot.magazineEndsPlan = !mag.autoReload && mag.spare > 0;
     mag.canFire = canFire;
     return mag;
   };
 
+  /**
+   * A held pack's charge for one call of `magazineTick`: `trunc(reloadTime)`
+   * back each 30 Hz tick in the hand, and what a holster owed it on the first
+   * call after one (the referee's clock moved on more than a call's `dt`
+   * since the bot last held it), as the human's (`hand-fire.js`
+   * `stepPackCharge`).
+   */
+  function stepBotPack(mag, dt) {
+    const pack = new PackCharge(mag.charge, mag.rounds);
+    const now = referee.clock ?? 0;
+    if (mag.heldAt !== null && now - mag.heldAt > dt * 1.5 + 1e-6) {
+      pack.raise(now - mag.heldAt);
+      mag.chargeTick = 0;
+    }
+    mag.chargeTick += dt;
+    while (mag.chargeTick >= 1 / PACK_TICK_HZ - 1e-9) {
+      mag.chargeTick -= 1 / PACK_TICK_HZ;
+      pack.tick();
+    }
+    mag.heldAt = now;
+    mag.rounds = pack.charge;
+  }
+
   referee.magazineShot = (bot, mag) => {
     if (!mag || !Number.isFinite(mag.rounds)) return;
-    mag.rounds = Math.max(0, mag.rounds - 1);
+    // A charged pack is spent by `fireRound`'s pull (SUP-34); this is one
+    // round of anything else.
+    mag.rounds = Math.max(0, mag.rounds - (mag.charge ? mag.charge.cost : 1));
   };
 
   /**
@@ -1242,6 +1271,31 @@ export function createBotReferee(env) {
    * press (`pressThrow`).
    */
   function fireRound(bot, mag, heat, stats, opts = null) {
+    const pack = healingPackKind(bot.weaponAi?.name);
+    if (pack && mag?.charge) {
+      // A charged pack (SUP-34): nothing paces its pull, so a held trigger
+      // pulls every tick, and the pull costs `trunc(roundOfFire)` only when
+      // the use healed or repaired something (pack-charge.js).
+      // `Fire`'s `magType 1` branch sets no fire timer: nothing to wait out.
+      bot._fireCooldown = bot._firePeriod = 0;
+      const charge = new PackCharge(mag.charge, mag.rounds);
+      charge.pull(() => {
+        const done = referee.usePack(bot, pack);
+        return Array.isArray(done) ? done.length > 0 : done !== null && done !== undefined;
+      });
+      mag.rounds = charge.charge;
+      // The report, the arms and the AI's shot clock keep the weapon's own
+      // cycle, as the human's do (hand-fire.js).
+      bot._packCycle = (bot._packCycle ?? 0) - 1 / PACK_TICK_HZ;
+      if (bot._packCycle <= 1e-6) {
+        const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
+        bot._packCycle = firePeriod(rof);
+        const at = bot.getPosition();
+        roundLeft(bot, at);
+        env.onShot?.(bot, at, opts);
+      }
+      return;
+    }
     const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
     bot._fireCooldown = firePeriod(rof);
     // The round's own period (FireArms +0x234), which `botWeaponReady`
@@ -1256,7 +1310,6 @@ export function createBotReferee(env) {
     // `useMedPack` / `useRepairPack` on them by NAME (SUP-27, `usePack`). Any
     // other `healing 1` weapon (BF1918's whistles, `BottleHeal`) throws its
     // round, whose depots do the healing, and is never hitscan.
-    const pack = healingPackKind(bot.weaponAi?.name);
     if (pack) { referee.usePack(bot, pack); return; }
     if (bot.weaponAi?.healing) { env.launchRound?.(bot, stats); return; }
     // A round the caller flies (`env.launchRound`: the page's rockets and

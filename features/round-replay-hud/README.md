@@ -825,3 +825,16 @@ Left open:
   skinned path uses `animatedMeshAmbientColor` plus the scene ambient and a
   scaled sun with no global ambient (DL-6). Not calibrated: a retail capture
   of an arm needs its sun aspect, which no folder capture records.
+
+## The medic bag's and the wrench's bars (2026-11-28)
+
+A medic or an engineer followed in first person now has the bar beside the
+pack's icon, emptying while the pack works and refilling on its own, by the
+engine's charge law (ledger SUP-34, `viewer/pack-charge.js`). A client
+recording writes no charge and no round for a pack, so `replay-hud.js` runs
+the law over what it does write: the pack in his hands (`st`'s item), his
+torso in the pack's fire state (`Ub_FireMedPack`, `Ub_LieFireRepairPack`),
+and, for whether a pull worked and so cost anything, a gain of hit points by
+him or by a soldier (the bag) or hull (the wrench) within 12 m. A server
+recording's `am` is the server's count and wins. The full account is in
+`features/viewer-healing-packs/README.md`, "The packs' charge bar".

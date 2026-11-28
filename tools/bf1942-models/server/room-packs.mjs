@@ -31,10 +31,10 @@ import { disarmItemOf, healingPackKind, medPackHeals, packParams, repairPackTarg
   from '../viewer/healing-packs.js';
 
 /** The rounds a page may claim: a bucket of `burst` refilled at `perSecond`.
- *  The vanilla packs fire at `roundOfFire` 10 (`MedPack.con`,
- *  `RepairPack.con`); the bucket leaves room for the rows a jittery link
- *  bunches together, and for a mod's pack a little faster. */
-export const PACK_ROUNDS = Object.freeze({ perSecond: 12, burst: 6 });
+ *  A held pack is used every 30 Hz tick while its charge lasts (ledger
+ *  SUP-34, `viewer/pack-charge.js`); the bucket leaves room for the rows a
+ *  jittery link bunches together. */
+export const PACK_ROUNDS = Object.freeze({ perSecond: 32, burst: 8 });
 
 /** The widest round radius a reported disarm may claim past
  *  `disarmMinesDistance`: vanilla's mine and pack bodies are well under it. */

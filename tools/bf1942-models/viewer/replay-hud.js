@@ -40,7 +40,7 @@ import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-h
 import { reloadBarValue, weaponIconCount } from './vehicle-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, kitAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
-import { motionAt } from './replay-kinematics.js';
+import { motionAt, poseAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
 import { weaponTableFrom } from './replay-accuracy.js';
@@ -49,6 +49,7 @@ import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
 import { kitPackSpec } from './kit-loadout.js';
 import { ROCKETEERING_LOWER } from './rocket-pack.js';
 import { PackFuel } from './replay-pack-fuel.js';
+import { packChargeAt, packChargeSpec } from './pack-charge.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
  *  hardly decays is taken as settled after this. */
@@ -144,6 +145,109 @@ export function weaponEvents(rec, life, weapon) {
     reloading = now;
   }
   return { rounds, reloads };
+}
+
+/**
+ * `life`'s time with a pack (the medic bag, the wrench) as `packChargeAt`
+ * takes it: one `{ t0, t1, held, using }` a body record, `held` while the
+ * record's item is the pack's kit slot `item`, `using` while his torso is in
+ * the pack's fire state (`Ub_FireMedPack`, `Ub_LieFireRepairPack`: a name
+ * with `Fire` and the pack's in it, not ending in `End`). A client recording
+ * writes no round for a pack (bf42plus's fire hook sits past the pack's
+ * branch of `FireArms::Fire`), so the torso is what says it is in use; the
+ * server replicates every soldier's states, so it says so for everyone.
+ */
+export function packSpans(rec, life, weapon, item) {
+  const want = lower(weapon);
+  const list = rec.stances?.get(life?.nid) ?? [];
+  const from = life?.created ?? -Infinity;
+  // In a seat the item is holstered (HandFireArms::disable on boarding, so
+  // no update and no pull), whatever his last recorded torso state says: the
+  // body record is not written while he rides, and a wrench last seen in
+  // use stays "in use" through a whole drive.
+  const seats = (life?.pid !== undefined ? rec.seats?.get(life.pid) : null) ?? [];
+  const cuts = [];
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
+    const name = lower(rec.animStates?.[e.upper]?.name);
+    cuts.push({ t: e.t, held: e.item === item, using: name.includes('fire') && name.includes(want) && !name.endsWith('end') });
+  }
+  // A seat row's root is the object he controls: his own body on foot.
+  for (const s of seats) cuts.push({ t: s.t, seated: s.root >= 0 && s.root !== life.nid });
+  cuts.sort((a, b) => a.t - b.t || (a.seated === undefined) - (b.seated === undefined));
+  const spans = [];
+  let body = null;
+  let seated = false;
+  for (let i = 0; i < cuts.length; i++) {
+    const c = cuts[i];
+    if (c.seated !== undefined) seated = c.seated;
+    else body = c;
+    const next = cuts[i + 1]?.t ?? Infinity;
+    if (!body || next <= from || next <= c.t) continue;
+    const held = body.held && !seated;
+    const span = { t0: Math.max(c.t, from), t1: next, held, using: held && body.using };
+    const prev = spans[spans.length - 1];
+    if (prev && prev.held === span.held && prev.using === span.using && prev.t1 >= span.t0) prev.t1 = span.t1;
+    else spans.push(span);
+  }
+  return spans;
+}
+
+/** How far from the holder a recorded gain of hit points counts as his
+ *  pack's work, metres: the medic bag's vanilla `healDistance` 10, and the
+ *  wrench's `repairDistance` 2 past a hull's radius, measured to its origin.
+ *  Slack for the sample's lag. */
+export const PACK_REACH = Object.freeze({ medpack: 12, repairpack: 12 });
+/** Seconds either side of a pull that a recorded gain may sit: a client
+ *  records hit points on its 10 Hz samples. */
+export const PACK_WORK_WINDOW = 0.2;
+
+/**
+ * Every recorded gain of hit points `pack` could have made, sorted: for the
+ * medic bag a soldier's (his own included), for the wrench anything else
+ * with hit points. `{ t, life }` per gain; a respawn is a new life, so a
+ * gain is always within one.
+ */
+export function packGains(rec, pack) {
+  const medic = lower(pack) === 'medpack';
+  const out = [];
+  for (const life of rec.lives ?? []) {
+    if (life.projectile || life.kit || life.camera || life.controlPoint || !life.hp?.length) continue;
+    if (Boolean(life.soldier) !== medic) continue;
+    for (let i = 1; i < life.hp.length; i++) {
+      const before = life.hp[i - 1].hp;
+      if (before > 0 && life.hp[i].hp > before + 1e-3) out.push({ t: life.hp[i].t, life });
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Whether `holder`'s pull of `pack` at `t` did something: a gain in `gains`
+ * (`packGains`) within `PACK_WORK_WINDOW` of `t` by a life within
+ * `PACK_REACH` of him then. A use that heals nobody costs the pack nothing
+ * (SUP-34), so a medic waving his bag at nobody keeps a full bar.
+ */
+export function packWorked(gains, holder, pack, t) {
+  const reach = PACK_REACH[lower(pack)] ?? 12;
+  let lo = 0;
+  let hi = gains.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (gains[mid].t < t - PACK_WORK_WINDOW) lo = mid + 1;
+    else hi = mid;
+  }
+  let me = null;
+  for (let i = lo; i < gains.length && gains[i].t <= t + PACK_WORK_WINDOW; i++) {
+    const g = gains[i];
+    if (g.life === holder) return true;
+    me ??= poseAt(holder, t);
+    const them = poseAt(g.life, t);
+    if (!me || !them) continue;
+    const dx = me.p[0] - them.p[0], dy = me.p[1] - them.p[1], dz = me.p[2] - them.p[2];
+    if (dx * dx + dy * dy + dz * dz <= reach * reach) return true;
+  }
+  return false;
 }
 
 /**
@@ -387,6 +491,23 @@ export class ReplayHud {
     return byWeapon.get(key);
   }
 
+  /** `packSpans` for `life`'s pack `weapon` in kit slot `item`, gathered once. */
+  packSpansOf(life, weapon, item) {
+    let byWeapon = this.events.get(life);
+    if (!byWeapon) this.events.set(life, byWeapon = new Map());
+    const key = `pack:${lower(weapon)}:${item}`;
+    if (!byWeapon.has(key)) byWeapon.set(key, packSpans(this.player.rec, life, weapon, item));
+    return byWeapon.get(key);
+  }
+
+  /** `packGains` for the pack `weapon`, gathered once a file. */
+  packGainsOf(weapon) {
+    this.gains ??= new Map();
+    const key = lower(weapon);
+    if (!this.gains.has(key)) this.gains.set(key, packGains(this.player.rec, weapon));
+    return this.gains.get(key);
+  }
+
   /** A weapon's glb block (arms-rig.js reads the same `weapon` extras), once
    *  loaded; undefined while it loads. */
   weaponData(name) {
@@ -447,6 +568,16 @@ export class ReplayHud {
       const events = weapon ? this.eventsOf(life, weapon) : null;
       const refills = refillsOf(rec, pid, this.player.recordingPid);
       let ammo = data && events ? handAmmoAt({ ...events, refills }, data.magazine ?? null, t, weapon) : null;
+      // The medic bag and the wrench count a charge, not rounds (pack-charge.js,
+      // SUP-34): drained by his torso's uses of it, refilled a tick at a time.
+      const charge = packChargeSpec(data);
+      if (charge) {
+        const item = latestAt(rec.stances?.get(life.nid), t)?.item;
+        const gains = this.packGainsOf(weapon);
+        const at = packChargeAt(charge, this.packSpansOf(life, weapon, item), t, refills,
+          tick => packWorked(gains, life, weapon, tick));
+        ammo = at ? { rounds: at.charge, mags: 0, size: at.cap, reloading: false } : null;
+      }
       const exact = data ? recordedAmmoAt(rec, life, t) : null;
       if (exact) {
         // The server's count wins; unlimited magazines keep the kit's own

@@ -20,9 +20,9 @@ import { soldierTemplateValue } from './soldier-death.js';
 /** `BFSoldier::useMedPack`'s numbers as vanilla `CommonSoldierData.inc` sets
  *  them (SUP-15): the sweep's reach `healDistance` (+0x2f4), the HP each
  *  soldier in it takes per invocation `healFactor` (+0x2d8), and what the
- *  holder takes `selfHealFactor` (+0x2dc). One invocation per round, at the
- *  MedPack's `roundOfFire` 10/s: 2.5 HP/s to everyone wounded in reach and
- *  1.5 HP/s to the medic. The stand-ins for a tree whose `gaits.json` predates
+ *  holder takes `selfHealFactor` (+0x2dc). One invocation a tick while the
+ *  trigger is down and the bag has charge (pack-charge.js, SUP-34): 7.5 HP/s
+ *  to everyone wounded in reach and 4.5 HP/s to the medic. The stand-ins for a tree whose `gaits.json` predates
  *  the fields. */
 export const MEDIC_PACK = Object.freeze({ radius: 10.0, allyHeal: 0.25, selfHeal: 0.15 });
 
