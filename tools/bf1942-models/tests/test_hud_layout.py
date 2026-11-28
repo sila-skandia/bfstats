@@ -231,6 +231,26 @@ class HudLayoutGoldenTests(unittest.TestCase):
         self.assertEqual((leaf["var"], leaf["font"], leaf["align"]), ("Time/Time", "standard6_latin", "center"))
         self.assertEqual(leaf["when"], [{"var": "Time/ShowTime", "op": "eq", "value": True}])
 
+    def test_the_control_point_strip_sits_under_the_minimap(self) -> None:
+        # Top 29 (MEME-12, HUD-32): its own plate below the minimap frame, not
+        # inside it, and seven 16x8 slots on it, slot i shown while
+        # `Radio/NumberOfControlPoints` >= i in the picture for
+        # `ControlPoint/ControlPoint<i>` 0 grey, 1 red, 2 blue.
+        els = self.group("controlPoints")["elements"]
+        self.assertEqual((els[0]["rect"], els[0]["texture"]), ([620.0, 207.0, 256.0, 16.0], "ingame_cpbar_256x16"))
+        gate = [{"var": "ControlPoint/ShowControlPoints", "op": "eq", "value": True},
+                {"var": "Submarine/DepthHud/ShowSubmarineCockpit", "op": "ne", "value": True}]
+        self.assertEqual(els[0]["when"], gate)
+        slots = els[1:]
+        self.assertEqual(21, len(slots))
+        for i, x in enumerate([634, 657, 679, 702, 723, 744, 765]):
+            for value, colour in enumerate(("gray", "red", "blue")):
+                el = slots[3 * i + value]
+                self.assertEqual((el["rect"], el["texture"]), ([float(x), 211.0, 16.0, 8.0], f"cpbar_{colour}_cp_16x8"))
+                self.assertEqual(el["when"], gate + [
+                    {"var": "Radio/NumberOfControlPoints", "op": "ge", "value": i + 1},
+                    {"var": f"ControlPoint/ControlPoint{i + 1}", "op": "eq", "value": value}])
+
     def test_soldier_icon_group_rect(self) -> None:
         self.assertEqual([47.0, 525.0, 107.0, 64.0], self.group("soldierIcon")["rect"])
 
@@ -373,10 +393,11 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_twenty_one_groups_are_present_and_non_empty(self) -> None:
+    def test_all_twenty_two_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair", "tickets", "time", "outside",
+                    "hitIndicator", "weaponBar", "crosshair", "tickets", "time",
+                    "controlPoints", "outside",
                     "spawnTimer", "spawnText", "statusMessage", "disconnectMessage",
                     "periscope", "depthFade", "submarine"}
         self.assertEqual(expected, set(self.hud["groups"]))
@@ -713,7 +734,7 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         "primaryAmmo": ["vehicleAmmo"], "secondaryAmmo": ["vehicleAmmo"],
         "supplyIcon": list(hud.SUPPLY_KEYS), "hitIndicator": ["hitIndicator"],
         "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"], "time": ["time"],
-        "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
+        "controlPoints": ["controlPoints"], "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
         "statusMessage": ["statusMessage"], "disconnectMessage": ["disconnectMessage"],
         # The submarine's three tops, found by what each one draws (SUB-4).
         "periscope": ["periscope"], "depthFade": ["depthFade"], "submarine": ["submarine"],

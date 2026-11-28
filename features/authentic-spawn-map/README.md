@@ -253,12 +253,26 @@ All six steps, in one change to `map.html` plus the new extractor:
   `icon_vehicledot_empty` for templates with no icon, the tinted
   `minimap_icon_ring_32x32` for the player. Names, capture radii, the
   combat-area box and the per-entry spawn dots are gone.
-- The HUD widget lost its CSS panel; the `icon_mapbar_small` nine-patch bezel,
-  the grid readout and the `cpbar` strip are painted into the canvas, and the
-  art is drawn translucent over the world. The strip is retail's tally, not a
+- The HUD widget lost its CSS panel; the `icon_mapbar_small` nine-patch bezel
+  and the grid readout are painted into the canvas, and the art is drawn
+  translucent over the world. The `cpbar` strip is retail's tally, not a
   segment per control point (2026-11-28, ledger HUD-32, `cp-strip.js`): one
   slot per capturable point (main bases left out), team 2's from the left,
   team 1's from the right, grey between, seven at most, and none in CTF or TDM.
+- The strip is not in the minimap canvas (2026-11-28, from a user's retail
+  capture of Hellendoorn: a dark bar of seven dashes under the frame, ours
+  were inside it). It is `menu/InGame` top 29, its own node BELOW the frame:
+  the `ingame_cpbar_256x16` plate at (620,207), 176 units of ink, and seven
+  16x8 slots at x 634, 657, 679, 702, 723, 744, 765, y 211, slot i shown
+  while `Radio/NumberOfControlPoints` >= i in the `cpbar_gray/red/blue`
+  picture for `ControlPoint/ControlPoint<i>` 0/1/2, the whole culled on
+  `ControlPoint/ShowControlPoints` and a submarine's cockpit view.
+  `extract_hud_layout.py` decodes it as the `controlPoints` group; every
+  mod's file declares the same node (`hud.js` `CONTROL_POINTS_DEFAULT` stands
+  in for a layout written before the group), and GC and BF1918 ship their own
+  plate picture. `ticket-feed.js` `feedControlPointVars` writes the
+  variables, so the replay and the playable page draw it alike; it is down
+  with the full map open and on a phone's disk minimap.
 - The deploy state is the two-pane spawn screen: AXIS / ALLIED tabs, flag header
   (`icon_flag_<nation>`), five kit rows with the kit photographs (Japanese,
   Soviet and Canadian variants where the game has them), dimmed map with one
@@ -1334,7 +1348,7 @@ already on record, now fed z instead of 0:
 | centre | `(1 - z) * player + z * 0.5`, clamped per level only while +0x3c is clear (MMAP-6) | `bfmap.window()` |
 | turn | `(1 - z) * heading` when the map is not static (MMAP-2): the spin as it opens | `bfmap.rotation(z, ...)` |
 | alpha | closed `+0x54 = 1 - T/100`, open 0.8 of it (MEME-10) | `paintMap`, the box's opacity |
-| chrome | the flag strip and grid readout are their own nodes; gone past z 0.5 | `drawMinimapChrome` |
+| chrome | the flag strip and grid readout are their own nodes; gone past z 0.5 | `drawMinimapChrome` (readout), `feedControlPointVars` (strip) |
 
 `page-input.js` `mapKey`: over the deploy screen it still cancels it; a live
 player (on foot or seated) toggles the open map; nobody alive keeps the old

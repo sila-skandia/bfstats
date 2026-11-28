@@ -266,7 +266,7 @@ There is **no compass ring, no north indicator and no zoom button art** anywhere
 | `icon_non_takeable_flag.dds` | 64x64 | dark disc with a crossed-out flag |
 | `icon_flag_{us,ger,brit,can,jp,rus}.dds`, `icon_flag.dds`, `icon_ctf.dds` | 64x64 | large flags (CTF / world-space, not the map) |
 | `menu/Texture/Minimap/Objectives/Objective{000,012,025,037,050,062,075,087,100}.dds` | 32x32 | nine-frame capture-progress ring, empty through full |
-| `menu/Texture/ingame_cpbar_256x16.dds`, `menu/Texture/Ingame/cpbar/cpbar_{blue,red,gray}_cp_16x8.dds` | 256x16, 16x8 | the flag-status bar along the top of the HUD, not the map |
+| `menu/Texture/ingame_cpbar_256x16.dds`, `menu/Texture/Ingame/cpbar/cpbar_{blue,red,gray}_cp_16x8.dds` | 256x16, 16x8 | the control point strip, its own `menu/InGame` node under the minimap frame at (620,207): the plate and its seven 16x8 slots (ledger HUD-32) |
 
 **Player blips** — `menu/Texture/`
 

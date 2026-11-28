@@ -1,4 +1,5 @@
 import { GAME_PLAY_MODE, gamePlayModeOf, holdWeight } from './round-state.js';
+import { CP_STRIP_SLOTS, cpStripSlots } from './cp-strip.js';
 
 /** The weight an enemy holds that raises a side's ticket blink, and the
  *  tickets under which ObjectiveMode raises it instead (BF1942.exe map draw
@@ -197,6 +198,7 @@ export function createTicketFeed(page) {
     const time = roundTimeText(page.roundTime ?? null);
     vars['Time/ShowTime'] = time !== null;
     vars['Time/Time'] = time ?? '';
+    feedControlPointVars(vars);
     const memo = ticketMemoFor();
     if (!memo.show) {
       vars['ShowTicket'] = false;
@@ -223,6 +225,30 @@ export function createTicketFeed(page) {
       vars[`Ticket/${side}TicketBlink`] = b.on;
     }
     return true;
+  }
+
+  /** Fill in the control point strip's variables (`menu/InGame` top 29,
+   *  the `controlPoints` group: the `ingame_cpbar_256x16` plate at (620,207)
+   *  under the minimap and its seven 16x8 slots). `Radio/NumberOfControlPoints`
+   *  says how many slots show and `ControlPoint/ControlPoint<i>` paints slot i
+   *  grey (0), red (1) or blue (2): retail's tally (`cp-strip.js`, HUD-32).
+   *  The strip is down in CTF and TDM, which leave no slots, and while the
+   *  full-screen map is open (the minimap's z past half way, as the grid
+   *  readout beside it goes). A phone's disk minimap has no frame for it to
+   *  sit under, so it is down there too. */
+  function feedControlPointVars(vars) {
+    const mode = page.round?.gamePlayMode ?? page.extras?.gameplayMode;
+    const slots = cpStripSlots(page.extras?.controlPoints, mode);
+    const open = (page.bfmap?.z ?? 0) > 0.5;
+    vars['ControlPoint/ShowControlPoints'] = slots.length > 0 && !open && !page.minimapDisk;
+    // The strip's second gate is a submarine's cockpit view. The HUD culls a
+    // leaf whose variable is unset, and `submarine-hud.js` unsets its own off
+    // a boat (it runs first, `updateSoldierHud`), so its resting value goes
+    // in here without overriding a boat's.
+    vars['Submarine/DepthHud/ShowSubmarineCockpit'] ??= false;
+    vars['Radio/NumberOfControlPoints'] = slots.length;
+    for (let i = 0; i < CP_STRIP_SLOTS; i++) vars[`ControlPoint/ControlPoint${i + 1}`] = slots[i] ?? 0;
+    return vars['ControlPoint/ShowControlPoints'];
   }
 
   /** Fill in the `ShowFlagIcon` group's variables: the flag the game paints
@@ -257,6 +283,7 @@ export function createTicketFeed(page) {
 
   Object.assign(ticketFeed, {
     ticketBlinks,
+    feedControlPointVars,
     feedFlagIconVars,
     feedTicketVars,
     ticketFlagTexture,

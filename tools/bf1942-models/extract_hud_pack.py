@@ -143,6 +143,9 @@ SPRITES: list[str] = [
     # HUD minimap bezel and the flag-status bar segments.
     "Texture/Minimap/icon_mapbar_small",
     *[f"Texture/Ingame/cpbar/cpbar_{k}_cp_16x8" for k in ("blue", "red", "gray")],
+    # The plate the control point strip's slots sit on, under the minimap
+    # (`menu/InGame` top 29, `extract_hud_layout.py` `controlPoints`).
+    "Texture/ingame_cpbar_256x16",
     # Spawn-screen chrome.
     *[f"Texture/Ingame/respawn/ingame_respawn_kits_{k}_256x128"
       for k in ("top", "middle", "bottom")],

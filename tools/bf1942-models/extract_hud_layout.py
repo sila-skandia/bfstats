@@ -860,6 +860,16 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     # `limit - g_clientGameTime` (0x009a2160) as "%.2d:%.2d" (0x0091de40),
     # else `Time/ShowTime` is cleared and the cell is empty (ledger HUD-31).
     "time":             ([("is", "Time/ShowTime")], (690.0, 12.0, 37.0, 20.0)),
+    # The control point strip, its own top (29) under the minimap: the
+    # `ingame_cpbar_256x16` plate at (620,207) and seven 16x8 slots on it at
+    # x 634, 657, 679, 702, 723, 744, 765, y 211, slot i shown while
+    # `Radio/NumberOfControlPoints` >= i in the `cpbar_{gray,red,blue}`
+    # picture for `ControlPoint/ControlPoint<i>` 0, 1, 2 (MEME-12, HUD-32).
+    # The client fills the slots as a tally (`Score::outputScore`,
+    # `viewer/cp-strip.js`); a submarine's cockpit view hides the strip.
+    "controlPoints":    ([("is", "ControlPoint/ShowControlPoints"),
+                          ("not", "Submarine/DepthHud/ShowSubmarineCockpit")],
+                         (620.0, 207.0, 256.0, 16.0)),
     # The combat-area warning. Its leading cull is a comparison rather than a
     # bool -- `0 < Outside/OutsideTime`, a LessData with no symbol of its own,
     # which `leading_culls` reports as the anonymous ("?", "") -- so the rect
@@ -1030,6 +1040,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "crosshair": raw["crosshair"],
         "tickets": raw["tickets"],
         "time": raw["time"],
+        "controlPoints": raw["controlPoints"],
         "outside": raw["outside"],
         **{key: raw[key] for key in RESPAWN_GROUPS},
     }

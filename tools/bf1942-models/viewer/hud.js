@@ -66,7 +66,7 @@ export function setGlyphTable(fn) {
 /** The groups in the order `menu/InGame` draws them: its root chain, each
  *  group at its first top's index (ledger HFD-8) -- crosshair 3, periscope 4,
  *  supply 6-13, depthFade 15, weaponBar 19, soldierIcon 21, soldierAmmo 22,
- *  the vehicle panel 23-26, tickets 27, time 28, spawnTimer 33, spawnText 35,
+ *  the vehicle panel 23-26, tickets 27, time 28, controlPoints 29, spawnTimer 33, spawnText 35,
  *  hitIndicator 37, submarine 41, outside 42, statusMessage 46.
  *  `hud-layout.json` lists them in
  *  its own order, which put the weapon bar, the crosshair group and the
@@ -76,7 +76,7 @@ export function setGlyphTable(fn) {
 export const PAINT_ORDER = [
   'crosshair', 'periscope', 'supplyIcon', 'depthFade', 'weaponBar', 'soldierIcon', 'soldierAmmo',
   'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
-  'tickets', 'time', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
+  'tickets', 'time', 'controlPoints', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
   'disconnectMessage',
 ];
 
@@ -127,6 +127,34 @@ export const TIME_DEFAULT = {
   ],
 };
 
+/** The control point strip under the minimap (`menu/InGame` top 29, culled
+ *  on `ControlPoint/ShowControlPoints` and not a submarine's cockpit view;
+ *  MEME-12, HUD-32) as vanilla's file has it, for a `hud-layout.json` written
+ *  before `extract_hud_layout.py` carried the group: the `ingame_cpbar_256x16`
+ *  plate at (620, 207) and seven 16x8 slots on it at y 211, slot i shown
+ *  while `Radio/NumberOfControlPoints` >= i, in the `cpbar_gray`, `_red` or
+ *  `_blue` picture for `ControlPoint/ControlPoint<i>` 0, 1 or 2. Every mod's
+ *  file (EoD, DC, DC Final, FH, FHSW, FHSW Europe, GC, BF1918, the two
+ *  expansions) declares the same node; five ship their own plate picture. */
+export const CP_STRIP_SLOT_X = Object.freeze([634, 657, 679, 702, 723, 744, 765]);
+const CP_STRIP_WHEN = [
+  { var: 'ControlPoint/ShowControlPoints', op: 'eq', value: true },
+  { var: 'Submarine/DepthHud/ShowSubmarineCockpit', op: 'ne', value: true },
+];
+export const CONTROL_POINTS_DEFAULT = {
+  rect: [620, 207, 256, 16],
+  elements: [
+    { kind: 'picture', rect: [620, 207, 256, 16], when: CP_STRIP_WHEN, texture: 'ingame_cpbar_256x16' },
+    ...CP_STRIP_SLOT_X.flatMap((x, i) => ['gray', 'red', 'blue'].map((colour, value) => ({
+      kind: 'picture', rect: [x, 211, 16, 8],
+      when: [...CP_STRIP_WHEN,
+        { var: 'Radio/NumberOfControlPoints', op: 'ge', value: i + 1 },
+        { var: `ControlPoint/ControlPoint${i + 1}`, op: 'eq', value }],
+      texture: `cpbar_${colour}_cp_16x8`,
+    }))),
+  ],
+};
+
 /** Where each group of the layout sits in a frame narrower than 4:3 (a 9:16
  *  Short, `clipLayout`'s `unit`): the game's 800 x 600 screen at one scale,
  *  big enough to read, rather than stretched or shrunk to the width. At that
@@ -141,7 +169,7 @@ export const ANCHORS = Object.freeze({
   vehicleSeats: ['left', 'bottom'], submarine: ['left', 'bottom'],
   soldierAmmo: ['right', 'bottom'], primaryAmmo: ['right', 'bottom'], secondaryAmmo: ['right', 'bottom'],
   supplyIcon: ['right', 'bottom'], weaponBar: ['middle', 'bottom'],
-  tickets: ['right', 'top'], time: ['right', 'top'], outside: ['middle', 'top'], spawnTimer: ['middle', 'top'], spawnText: ['middle', 'top'],
+  tickets: ['right', 'top'], time: ['right', 'top'], controlPoints: ['right', 'top'], outside: ['middle', 'top'], spawnTimer: ['middle', 'top'], spawnText: ['middle', 'top'],
   statusMessage: ['middle', 'top'], disconnectMessage: ['middle', 'top'],
 });
 /** The virtual x each `middle` group is centred on in the game's screen. */
@@ -680,6 +708,9 @@ export class Hud {
       data.groups.disconnectMessage = structuredClone(DISCONNECT_MESSAGE_DEFAULT);
     }
     if (data.groups.tickets && !data.groups.time) data.groups.time = structuredClone(TIME_DEFAULT);
+    if (data.groups.tickets && !data.groups.controlPoints) {
+      data.groups.controlPoints = structuredClone(CONTROL_POINTS_DEFAULT);
+    }
     const groups = this.groupFilter
       ? Object.fromEntries(Object.entries(data.groups).filter(([key]) => this.groupFilter(key)))
       : data.groups;

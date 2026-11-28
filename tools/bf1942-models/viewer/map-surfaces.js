@@ -24,7 +24,6 @@ import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
 import { RING_ART_BIAS } from './capture-rings.js';
-import { cpStripSlots } from './cp-strip.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -700,16 +699,15 @@ export function createMapSurfaces(page) {
     return ratio;
   }
 
-  /** The HUD widget's chrome, all of it in the canvas: the `icon_mapbar_small`
-   *  bezel as the nine-patch it is (a four-pixel frame round a transparent
-   *  middle), the grid readout in the lower-left corner, and the flag-status
-   *  strip along the bottom edge — retail's tally of the capturable control
-   *  points, each side's from its own end (`cp-strip.js`).
+  /** The HUD widget's chrome: the `icon_mapbar_small` bezel as the
+   *  nine-patch it is (a four-pixel frame round a transparent middle) and the
+   *  grid readout in the lower-left corner.
    *
-   *  The strip is retail's own bottom edge: below the frame the capture has a
-   *  second, shorter plate of its own (y ~207.4..216.9). This widget keeps the
-   *  strip inside the frame rather than painting that second plate — one
-   *  surface, one bezel — so it rides the frame's bottom edge. */
+   *  The control point strip is not in here. Retail draws it as its own
+   *  `menu/InGame` node BELOW the frame, the `ingame_cpbar_256x16` plate at
+   *  (620,207) with seven slots on it (MEME-12, HUD-32), so the HUD canvas
+   *  paints it from the layout's `controlPoints` group (`hud.js`), fed by
+   *  `ticket-feed.js` `feedControlPointVars`. */
   /** The minimap frame in the HUD's own 800x600 virtual space, measured off
    *  the retail captures (`MINIMAP_RECT` below is the whole story):
    *
@@ -747,29 +745,12 @@ export function createMapSurfaces(page) {
       cut(w - edge, edge, edge, bh - 2 * edge, size - d, d, d, h - 2 * d);
     }
 
-    // The flag strip and the grid readout are their own `menu/InGame` nodes
-    // beside the closed frame (MEME-12); the retail open map shows neither,
+    // The grid readout is its own `menu/InGame` node beside the closed frame
+    // (MEME-12); the retail open map shows neither it nor the flag strip,
     // only the lettered art in its frame.
     if (z > 0.5) return;
-    // Retail's tally, not a list: team 2's points fill from the left, team
-    // 1's from the right, grey between, main bases left out (cp-strip.js).
-    const slots = cpStripSlots(page.extras.controlPoints, page.extras.gameplayMode);
-    const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
-    const gap = Math.round(2 * ratio);
-    let x = d + gap;
-    const y = h - d - segH - gap;
-    for (const team of slots) {
-      if (x + segW > size - d) break;
-      const name = team === 1 ? 'cpbar_red_cp_16x8'
-        : team === 2 ? 'cpbar_blue_cp_16x8' : 'cpbar_gray_cp_16x8';
-      const seg = page.sprite(name);
-      if (seg) ctx.drawImage(seg, x, y, segW, segH);
-      else {
-        ctx.fillStyle = TEAM_FILL[team] || TEAM_FILL[0];
-        ctx.fillRect(x, y, segW, segH);
-      }
-      x += segW + gap;
-    }
+    // Its baseline sits where it did over the strip this frame once carried.
+    const y = h - d - Math.round(6 * ratio) - Math.round(2 * ratio);
 
     const text = gridRef(page.camera.position.x, page.camera.position.z);
     ctx.font = `bold ${Math.round(13 * ratio)}px 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif`;
