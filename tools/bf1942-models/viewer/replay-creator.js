@@ -35,7 +35,8 @@ import * as THREE from 'three';
 import { apiMode, isLocalHost, resolveApi, sharedRecordingOf, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import {
-  RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, kindOfWeapon, landingOf, nextShotOf, slowFor, victimHullLife,
+  RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, kindOfWeapon, knifeThrowOf, landingOf, meleeShot, nextShotOf,
+  slowFor, thrownEnd, victimHullLife,
 } from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
@@ -53,7 +54,7 @@ import {
 import { fitSpeedOver, fitStart, syncOf, syncWords } from './replay-sync.js';
 import { ClipMusic } from './replay-music.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
-import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
+import { STYLE_IDS, angleOf, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
 import { whereIs } from './replay-battles.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -891,7 +892,7 @@ export class ReplayCreator {
       ['double-click', 'their eyes'],
       ['5', 'their next kill as a take: its clip, looping'],
       ['shift 5', 'ride their next round, whatever it hits'],
-      ['6', 'the next rocket, shell or grenade as a take'],
+      ['6', 'the next rocket, shell, grenade or thrown knife as a take'],
       ['G', 'the next style of the camera on the round'],
       ['U', 'use this view: your camera from the playhead'],
       ['X', 'stop the chase or the camera move'],
@@ -1436,7 +1437,7 @@ export class ReplayCreator {
       this.ui.flash(`${name(pid)} has no more kills · riding ${name(next.f.pid)}'s`, 2400);
       this.subject = next.f.pid;
     }
-    this.startTake(next.f, next.kill, isMelee(next.f.weapon) ? 'Knife kill' : 'Kill shot');
+    this.startTake(next.f, next.kill, this.takeWord(next.f, 'Kill shot'));
   }
 
   /** A kill picked off the timeline (its tooltip's Kill shot): the creator
@@ -1452,7 +1453,7 @@ export class ReplayCreator {
     }
     if (!this.on) this.toggle(true);
     this.subject = f.pid;
-    this.startTake(f, hit.kill, isMelee(f.weapon) ? 'Knife kill' : 'Kill shot');
+    this.startTake(f, hit.kill, this.takeWord(f, 'Kill shot'));
     return true;
   }
 
@@ -1466,11 +1467,18 @@ export class ReplayCreator {
     const mine = pid === null || pid === undefined ? null : nextShotOf(player.rec, pid, t, { heavy: true });
     const f = mine ?? nextShotOf(player.rec, null, t, { heavy: true });
     if (!f) {
-      this.ui.flash('No more rockets, shells or grenades after this point', 2200);
+      this.ui.flash('No more rockets, shells, grenades or thrown knives after this point', 2200);
       return;
     }
     if (!mine) this.subject = f.pid;
     this.startTake(f, this.killOfShot(f), this.display(f.weapon) || 'Big round');
+  }
+
+  /** What a take of shot `f` is called: a knife's swing is a knife kill, a
+   *  knife thrown a thrown knife, anything else `word`. */
+  takeWord(f, word) {
+    if (meleeShot(this.player.rec, f)) return 'Knife kill';
+    return knifeThrowOf(this.player.rec, f) ? 'Thrown knife' : word;
   }
 
   /** The followed man's next round (shift 5), whatever it goes on to hit. */
@@ -1607,7 +1615,10 @@ export class ReplayCreator {
   hitOf(take, span = this.span) {
     const f = take?.f;
     if (!f) return null;
-    if (isMelee(f.weapon)) return f.t;
+    if (meleeShot(this.player.rec, f)) return f.t;
+    // A thrown knife strikes where the server's flight of it ended.
+    const end = thrownEnd(knifeThrowOf(this.player.rec, f));
+    if (Number.isFinite(end)) return Math.max(f.t, end);
     // A server recording's shell, rocket or bomb: where the server's round
     // struck (replay-flights.js).
     if (f.flight?.drawn && Number.isFinite(f.flight.destroyed)) return Math.max(f.t, f.flight.destroyed);
@@ -1954,7 +1965,7 @@ export class ReplayCreator {
     const preset = this.rounds.bulletTime;
     const flight = hit - f.t;
     return {
-      shot: f.t, hit, kill: take.kill?.t ?? null, preset, melee: isMelee(f.weapon), orbitHold: turns,
+      shot: f.t, hit, kill: take.kill?.t ?? null, preset, melee: meleeShot(this.player.rec, f), orbitHold: turns,
       hull: Boolean(victimHullLife(this.player.rec, take.kill)),
       armedSlow: slowFor(guessSpeed(f.weapon), preset, dist),
       flightSlow: flight > 0 ? slowFor((dist ?? 0) / flight, preset, dist) : 1,
@@ -3767,7 +3778,7 @@ export class ReplayCreator {
     const kill = row.kill ?? this.killAt(row.t, row.victim)?.kill ?? null;
     // One kill is a take, looping; a reel rides each once.
     if (!reel) {
-      this.startTake(f, kill, isMelee(f.weapon) ? 'Knife kill' : 'Bullet cam');
+      this.startTake(f, kill, this.takeWord(f, 'Bullet cam'));
       return;
     }
     this.rounds.stop(false);

@@ -85,6 +85,17 @@ class ReplayKillingRoundTests(unittest.TestCase):
         r = self.round("grenade")
         self.assertEqual((r["weapon"], r["t"], r["kind"]), ("GrenadeAxis", 57, "thrown"))
 
+    def test_a_thrown_knife_is_the_throw_that_flew_to_him(self) -> None:
+        # Secret Weapons' elite knife thrown 0.5 s before the kill, a stab
+        # 2 s before it: the throw, whose recorded knife left his hand.
+        r = self.round("knife throw")
+        self.assertEqual((r["weapon"], r["t"], r["kind"]), ("EliteKnife", 121.5, "thrown"))
+
+    def test_a_knife_stab_is_the_swing_not_an_older_throw(self) -> None:
+        # A throw 2 s before and a stab 0.3 s before: the stab, a melee kill.
+        r = self.round("knife stab")
+        self.assertEqual((r["weapon"], r["t"], r["kind"]), ("EliteKnifeStab", 123.7, "melee"))
+
     def test_a_mine_has_no_round(self) -> None:
         self.assertIsNone(self.round("landmine"))
         self.assertEqual(self.rounds["landmine"]["fact"]["distance"], 5)

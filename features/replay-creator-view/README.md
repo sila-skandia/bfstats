@@ -1666,8 +1666,9 @@ against the change:
 - Touch: a tap on the view picks, and also shows or hides the chrome.
 - A hand weapon's rounds are not drawn (`invisible 1`), so they cannot be
   hovered or clicked in the view: 5 and 6 are the way to them.
-- A thrown knife is shot as a melee orbit; riding the thrown round (a prop
-  the recording carries, replay-props.js) is not done.
+- ~~A thrown knife is shot as a melee orbit; riding the thrown round (a prop
+  the recording carries, replay-props.js) is not done.~~ Done: "A thrown
+  knife is ridden like a grenade (2026-11-28)".
 - A camera of yours has two views at most, its camera and its end camera.
   A path through three or more is two cameras of yours with a glide between
   (the end camera dragged earlier, a new camera right-clicked in after it).
@@ -2758,6 +2759,46 @@ pointed at (svbh27wdma, a Chi-Ha on an SBD, Midway) filmed again from its
 recording: chat and tickets readable where they were not, the crosshair
 square where it was tall and thin. Recording was slow in that
 browser with the HUD on or off alike (a 10 s clip took 76-150 s).
+
+### A thrown knife is ridden like a grenade (2026-11-28)
+
+Asked: can a Secret Weapons knife throw be chased like a kill shot? The
+Commando and Elite knives throw on fire (`<Knife>ThrowProjectile`, 30 m/s,
+3 s, `networkableInfo ProjectileInfo`) and stab on alt fire (the
+`<Knife>Stab` FireArms, an invisible round). The recorder samples the thrown
+knife like a grenade (a kit pool, then 30 Hz samples from the throw to the
+strike), so the flight is in the file. Every knife used to be a melee orbit
+by its name.
+
+- A knife's shot is a throw when a recorded round leaves its hand
+  (`replay-recording.js` `knifeThrowOf`, through `thrownLifeOf`), whatever
+  the knife is called; else it is a swing or a stab (`meleeShot`). On
+  `5txd9vj8ap` (Hellendoorn) every one of the 19 throws finds its knife within
+  1.8 m of the muzzle and none of the 6 stabs finds one; the recorder names a
+  stab `EliteKnifeStab` / `CommandoKnifeStab`.
+- The round cam rides it as it rides a grenade (`replay-roundcam.js`): armed
+  over the shoulder, then on the recorded knife, kind `thrown`, until the
+  server stops sending it (`thrownEnd`: it dies on its strike). The strip's
+  stand-in lays it on the recorded arc, not the line to the man. Key 6 (the
+  next heavy round) reaches a throw and never a stab or a swing
+  (`heavyRound` leaves knives out; `nextShotOf` takes a throw).
+- The kill dossier (`replay-dossier.js`): a knife kill takes a throw up to
+  the knife's 3 s life before it (`kind: 'thrown'`) when no swing is nearer;
+  a stab within a second still wins. The take says "Thrown knife".
+
+Checked: unit tests (`test_replay_creator` knife block: the throw ridden
+from 10.5 m to 26.7 m and held where it struck at 5.62 s; `test_replay_dossier`
+"knife throw" and "knife stab"), and the real page on `5txd9vj8ap` with the
+studio probe (`--mod xpack2 --map hellendoorn`): key 6 at 42.4 s armed over
+his shoulder, then "Camera 2 · Bullet chase" rode the knife thrown at 43.12 s
+from 43.2 s to 45.17 s, 0 m off the recorded knife in every one of 35
+samples, 1.89 m behind it, the plate reading 23-30 m/s, and the hit at
+45.30 s (the knife struck at 45.19 s). No recording yet has a thrown-knife
+kill: the two Secret Weapons recordings on the feed have 21 throws and none
+kills.
+
+The same recording showed the knife in his hand drawn on his sleeve; that
+was the model extractor, not the replay (`features/hand-weapon-part-placement`).
 
 ## The studio's minimap marks one side (2026-11-19)
 

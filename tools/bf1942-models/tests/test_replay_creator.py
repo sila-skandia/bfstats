@@ -273,6 +273,32 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(thrown["from"], 5.8)
         self.assertIsNone(thrown["far"])
 
+    def test_a_thrown_knife_is_ridden_on_the_recorded_knife(self) -> None:
+        # Secret Weapons' elite knife: the throw finds its pooled knife, the
+        # stab (`EliteKnifeStab`) and a vanilla swing find none and stay
+        # melee. Key 6 reaches the throw and never a stab or a swing.
+        k = run_harness()["knife"]
+        self.assertEqual(k["throwFound"], 910)
+        self.assertIsNone(k["stabFound"])
+        self.assertEqual(k["melee"], [False, True, True])
+        self.assertEqual(k["heavy"], [False, False, False])
+        self.assertEqual(k["nextHeavy"], [5, None])
+        self.assertEqual(k["end"], 5.6)
+        # Armed, it is not a melee orbit: it flies on the recorded knife, from
+        # its first sample (10.5 m) to its last (26.7 m), and holds where the
+        # knife struck as it does.
+        self.assertFalse(k["armedMelee"])
+        self.assertGreater(k["flying"], 10)
+        self.assertEqual(k["first"]["kind"], "thrown")
+        self.assertLess(k["first"]["x"], 11.5)
+        self.assertEqual(k["last"]["x"], 26.7)
+        self.assertEqual(k["impact"], {"t": 5.62, "x": 26.7})
+        # The strip's stand-in lays it on the same arc, paused: at 5.3 s the
+        # recorded 18.6 m, and once struck, where it struck.
+        self.assertEqual(k["mid"], {"state": "flying", "x": 18.6, "kind": "thrown"})
+        self.assertEqual(k["ghostEnd"]["state"], "impact")
+        self.assertAlmostEqual(k["ghostEnd"]["x"], 26.2, delta=0.2)
+
 
 class ShotTests(unittest.TestCase):
     """A clip from 10 s to 16 s at a quarter speed, eased over half a second

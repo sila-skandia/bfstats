@@ -11,6 +11,7 @@ import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
 import { ROCKETEERING_AIRBORNE } from './rocket-pack.js';
 import { RADIO_MESSAGES } from './radio.js';
 import { lowerBase } from './remote-gait.js';
+import { isMelee } from './replay-shotstyle.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -3504,3 +3505,47 @@ export function enginesAt(rec, nid, t, from = -Infinity, to = Infinity) {
   return out.sort((a, b) => a.id - b.id);
 }
 
+/**
+ * The recorded round object a shot threw, when the server flies it (a
+ * grenade or a thrown knife: replay-props.js): the round life whose first
+ * pose away from the origin comes within 1.5 s of the shot and 6 m of its
+ * muzzle. null when the recording has none (out of range, or a round the
+ * page flies).
+ */
+export function thrownLifeOf(rec, f) {
+  if (!Array.isArray(f?.pos)) return null;
+  let best = null;
+  for (const life of rec?.lives ?? []) {
+    if (!life.projectile || life.created > f.t + 1.5 || life.destroyed < f.t) continue;
+    const key = life.keys?.find(k => k.t >= f.t - 0.2 && Math.hypot(k.p[0], k.p[1], k.p[2]) > 1);
+    if (!key || key.t > f.t + 1.5) continue;
+    const d = Math.hypot(key.p[0] - f.pos[0], key.p[1] - f.pos[1], key.p[2] - f.pos[2]);
+    if (d < 6 && (!best || d < best.d)) best = { life, d, from: key.t };
+  }
+  return best;
+}
+
+const knifeThrows = new WeakMap();
+
+/**
+ * The recorded knife a knife's shot `f` threw (`thrownLifeOf`), or null for
+ * a swing or a stab, or a throw the recording did not see. Secret Weapons'
+ * `CommandoKnife` and `EliteKnife` throw on fire (`<Knife>ThrowProjectile`,
+ * `networkableInfo ProjectileInfo`, so the recorder samples it like a
+ * grenade) and stab on alt fire (the `<Knife>Stab` FireArms, whose round is
+ * not networked); a vanilla or FH knife only swings. So whether a knife's
+ * shot flew is whether a recorded round left its hand, whatever its name:
+ * on recording 5txd9vj8ap (Hellendoorn) every one of the 19 throws finds its
+ * knife within 1.8 m of the muzzle, and none of the 6 stabs finds one.
+ */
+export function knifeThrowOf(rec, f) {
+  if (!f || !isMelee(f.weapon)) return null;
+  if (knifeThrows.has(f)) return knifeThrows.get(f);
+  const found = thrownLifeOf(rec, f);
+  knifeThrows.set(f, found);
+  return found;
+}
+
+/** Whether shot `f` is a knife's that nothing flew from: a swing or a stab,
+ *  shot as the melee orbit. */
+export const meleeShot = (rec, f) => isMelee(f?.weapon) && !knifeThrowOf(rec, f);

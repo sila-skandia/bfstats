@@ -23,11 +23,18 @@
 // Where the camera stands is the shot style's (replay-shotstyle.js): behind
 // the round (chase), in front of it swinging round (Chase 360), alongside it,
 // beside the man it kills looking back, or a camera the creator placed. A
-// knife's kill has nothing in flight: its swing is shot as a slow orbit round
-// the two men, whatever the style, unless the creator placed the camera.
+// knife's swing has nothing in flight: it is shot as a slow orbit round the
+// two men, whatever the style, unless the creator placed the camera. A knife
+// thrown (Secret Weapons' commando and elite knives) flies, and the
+// recording carries it as an object of its own, so it is ridden like a
+// grenade (`knifeThrowOf`).
 
 import * as THREE from 'three';
-import { controlledAt, isReplicated, lifeAt, positionAt, rootOf } from './replay-recording.js';
+import {
+  controlledAt, isReplicated, knifeThrowOf, lifeAt, meleeShot, positionAt, rootOf, thrownLifeOf,
+} from './replay-recording.js';
+
+export { knifeThrowOf, meleeShot, thrownLifeOf };
 import { hullRadius } from './replay-camera.js';
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -173,6 +180,9 @@ const DROP = Object.freeze({ stand: 40, up: 15, look: 0.6, turn: 0.5 });
 const SPEED_GUESS = [
   [/bazooka|panzers?c?hreck|piat|rocket/i, 50],
   [/grenade/i, 18],
+  // A thrown knife leaves at 30 m/s (`CommandoKnife`, `EliteKnife`: their
+  // `velocity 30`). A swing never flies, so it never asks (`heavyRound`).
+  [/knife/i, 30],
   [/bomb/i, 60],
   [/barrel|cannon|howitzer|mortar|artillery/i, 320],
 ];
@@ -380,7 +390,7 @@ export function nextShotOf(rec, pid, t, { heavy = false } = {}) {
     const f = fires[i];
     if (pid !== null && pid !== undefined && f.pid !== pid) continue;
     if (f.press || f.feedOnly || !Array.isArray(f.dir)) continue;
-    if (heavy && !heavyRound(f.weapon)) continue;
+    if (heavy && !heavyRound(f.weapon) && !knifeThrowOf(rec, f)) continue;
     return f;
   }
   return null;
@@ -394,26 +404,18 @@ export function nextShotOf(rec, pid, t, { heavy = false } = {}) {
  * round cam's own slow motion is set the same way, from the round's speed.
  */
 export function heavyRound(weapon) {
-  return guessSpeed(weapon) < BULLET_GUESS;
+  return !isMelee(weapon) && guessSpeed(weapon) < BULLET_GUESS;
 }
 
-/**
- * The recorded round object a shot threw, when the server flies it (a
- * grenade: replay-props.js): the round life whose first pose away from the
- * origin comes within 1.5 s of the shot and 6 m of its muzzle. null when the
- * recording has none (out of range, or a round the page flies).
- */
-export function thrownLifeOf(rec, f) {
-  if (!Array.isArray(f?.pos)) return null;
-  let best = null;
-  for (const life of rec.lives ?? []) {
-    if (!life.projectile || life.created > f.t + 1.5 || life.destroyed < f.t) continue;
-    const key = life.keys?.find(k => k.t >= f.t - 0.2 && Math.hypot(k.p[0], k.p[1], k.p[2]) > 1);
-    if (!key || key.t > f.t + 1.5) continue;
-    const d = Math.hypot(key.p[0] - f.pos[0], key.p[1] - f.pos[1], key.p[2] - f.pos[2]);
-    if (d < 6 && (!best || d < best.d)) best = { life, d, from: key.t };
-  }
-  return best;
+/** When a thrown round's recorded flight (`thrownLifeOf`) ends, seconds of
+ *  the round: the end of the stretch the server sent it for, from the throw
+ *  (a pooled round is replicated only while it flies, and goes when it
+ *  strikes: `dieAfterColl`). */
+export function thrownEnd(thrown) {
+  const life = thrown?.life;
+  if (!life) return null;
+  const span = (life.replicated ?? []).find(([from, to]) => thrown.from >= from - 1e-3 && thrown.from < to);
+  return Math.min(span ? span[1] : life.destroyed, life.destroyed);
 }
 
 /** What kind of round a weapon sends, by its name, for a round laid out
@@ -503,7 +505,7 @@ export class RoundCam {
     const orbit = again ? { ...this.orbit } : null;
     this.begin({
       f, pid: f.pid, kill, victim: kill?.victim ?? null, weapon: f.weapon, obj: null, list: null,
-      kind: null, life: null, thrown: null, victimAt: null, victimDist: null, melee: isMelee(f.weapon),
+      kind: null, life: null, thrown: null, victimAt: null, victimDist: null, melee: meleeShot(this.player.rec, f),
     }, 'armed');
     if (orbit) {
       this.orbit = orbit;
@@ -893,8 +895,10 @@ export class RoundCam {
       this.hooks.changed?.();
       return;
     }
-    // A grenade: the server flies it, and the recording carries it.
-    target.thrown ??= /grenade/i.test(target.weapon ?? '') ? thrownLifeOf(this.player.rec, f) ?? false : false;
+    // A grenade or a thrown knife: the server flies it, and the recording
+    // carries it.
+    target.thrown ??= /grenade/i.test(target.weapon ?? '') ? thrownLifeOf(this.player.rec, f) ?? false
+      : knifeThrowOf(this.player.rec, f) ?? false;
     if (target.thrown && t >= target.thrown.from) {
       Object.assign(target, { life: target.thrown.life, kind: 'thrown' });
       this.state = 'flying';
@@ -1173,13 +1177,20 @@ export class RoundCam {
     let target = this.target;
     if (!target || target.f !== f || target.kill !== kill) {
       if (!shotRay(f, this.shotPos, this.shotDir)) return false;
+      const rec = this.player.rec;
+      const thrown = (/grenade/i.test(f.weapon ?? '') ? thrownLifeOf(rec, f) : knifeThrowOf(rec, f)) ?? false;
       target = this.target = {
         f, pid: f.pid, kill, victim: kill?.victim ?? null, weapon: f.weapon, obj: null, list: null,
-        kind: kindOfWeapon(f.weapon), life: null, thrown: null, victimAt: null, victimDist: null, melee: isMelee(f.weapon),
+        kind: thrown ? 'thrown' : kindOfWeapon(f.weapon), life: null, thrown, victimAt: null, victimDist: null,
+        melee: meleeShot(rec, f),
       };
       this.aimVictim();
       target.muzzleOff = this.muzzleOffset(target);
       target.end = target.victimAt?.clone() ?? this.shotPos.clone().addScaledVector(this.shotDir, 30);
+      // A thrown round with no man to land on stops where its recorded
+      // flight did.
+      const stop = !target.victimAt && thrown ? positionAt(thrown.life, thrownEnd(thrown) - 0.02) : null;
+      if (stop && Math.hypot(stop[0], stop[1], stop[2]) >= 1) target.end.set(stop[0], stop[1], -stop[2]);
       target.line = target.end.clone().sub(this.shotPos);
       if (target.line.lengthSq() < 1e-6) target.line.copy(this.shotDir);
       target.line.normalize();
@@ -1195,8 +1206,9 @@ export class RoundCam {
       const p = (t - f.t) / Math.max(1e-6, land - f.t);
       this.state = 'flying';
       // On the server's recorded flight when it drew one (replay-flights.js),
-      // else on the line to the man it kills.
-      if (!flightPose(f.flight, t, this.pos, this.dir)) {
+      // or the thrown round's recorded arc, else on the line to the man it
+      // kills.
+      if (!flightPose(f.flight, t, this.pos, this.dir) && !this.thrownPose(target.thrown, t)) {
         this.pos.copy(this.shotPos).lerp(target.end, p);
         this.dir.copy(target.line);
       }
@@ -1219,6 +1231,21 @@ export class RoundCam {
     this.dir.copy(target.line);
     target.progress = 1;
     this.impact = { at: target.end.clone(), cam: target.end.clone(), cams: {}, dir: target.line.clone(), real, t: land };
+    return true;
+  }
+
+  /** Where a thrown round's recorded flight is at `t`, and its heading, into
+   *  `pos` and `dir`; false before it leaves the hand or once it is gone. */
+  thrownPose(thrown, t) {
+    const life = thrown?.life;
+    if (!life || t < thrown.from || !isReplicated(life, t)) return false;
+    const p = positionAt(life, t);
+    if (!p || Math.hypot(p[0], p[1], p[2]) < 1) return false;
+    const q = positionAt(life, Math.max(thrown.from, t - 0.06), [0, 0, 0]);
+    this.pos.set(p[0], p[1], -p[2]);
+    _v.set(p[0] - q[0], p[1] - q[1], -(p[2] - q[2]));
+    if (_v.lengthSq() > 1e-8) this.dir.copy(_v.normalize());
+    else this.dir.copy(this.shotDir);
     return true;
   }
 

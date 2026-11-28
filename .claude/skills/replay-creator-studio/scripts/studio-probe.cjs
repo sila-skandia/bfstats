@@ -4,6 +4,7 @@
 //   node studio-probe.cjs --steps steps.js [--base http://localhost:5273]
 //        [--replay replays/replay_20260928-133433.ndjson] [--out probe.json]
 //        [--shots probe] [--width 1600] [--height 900] [--video dir]
+//        [--mod xpack2 --map hellendoorn]   (the recording's own mod and level)
 //
 // `steps.js` exports `[[label, async (page, sleep) => result, waitMs, screenshot]]`.
 // Each step's result (or `{ error }`) lands in `out.steps[label]`; with
@@ -68,7 +69,7 @@ async function main() {
       report.video = { dir };
     }
     const t0 = Date.now();
-    await page.goto(`${opts.base}/map.html?mod=bf1942&replay=${opts.replay}&shots`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${opts.base}/map.html?mod=${opts.mod ?? 'bf1942'}${opts.map ? `&map=${opts.map}` : ''}&replay=${opts.replay}&shots&mute`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.replay?.statusLine, null, { timeout: 600000, polling: 500 });
     report.loadSeconds = (Date.now() - t0) / 1000;
     await sleep(2500);

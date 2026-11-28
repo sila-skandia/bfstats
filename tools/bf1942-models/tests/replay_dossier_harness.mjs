@@ -215,6 +215,34 @@ const brief = r => (r ? { weapon: r.f.weapon, t: r2(r.f.t), kind: r.kind, angle:
       kill(L, 120, 29, 68, 'Thompson');
       L({ k: 's', t: 120.1, o: [[2068, 0, 1, 1400, 0, 0, 0, 1]] });
     }
+    /** A knife thrown by `nid` from `from` at `t`, flying to `to` over
+     *  `secs` and struck there: a pooled round, replicated while it flies. */
+    const throwKnife = (t, killer, nid, knife, from, to, secs) => {
+      L({ k: 'e', t: 1, e: 'projPool', tid: 1597, tmpl: 'EliteKnifeThrowProjectile', netId: knife, count: 1 });
+      fire(L, t, killer, nid, 'EliteKnife', from, toward(from, to));
+      L({ k: 'o', t, id: knife, tmpl: 'EliteKnifeThrowProjectile', tid: 1597, maxhp: 9999 });
+      for (let i = 0; i <= 10; i++) {
+        const w = i / 10;
+        L({ k: 's', t: +(t + secs * w).toFixed(3), o: [[knife, ...from.map((c, j) => c + (to[j] - c) * w), 0, 0, 0, 1]] });
+      }
+      L({ k: 'd', t: +(t + secs).toFixed(3), id: knife });
+    };
+    {
+      // Thrown 0.5 s before the kill, after a stab 2 s before it: the throw.
+      const [a, v] = [[0, 0, 1500], [15, 0, 1500]];
+      const k = duel('knife throw', 122, 31, 71, a, v);
+      fire(L, 120, 31, k, 'EliteKnifeStab', eye(a), toward(eye(a), chest(v)));
+      throwKnife(121.5, 31, k, 4071, eye(a), chest(v), 0.5);
+      kill(L, 122, 31, 71, 'EliteKnife');
+    }
+    {
+      // A throw 2 s before the kill and a stab 0.3 s before it: the stab.
+      const [a, v] = [[0, 0, 1600], [1.5, 0, 1600]];
+      const k = duel('knife stab', 124, 32, 72, a, v);
+      throwKnife(122, 32, k, 4072, eye(a), [30, 1, 1600], 1);
+      fire(L, 123.7, 32, k, 'EliteKnifeStab', eye(a), toward(eye(a), chest(v)));
+      kill(L, 124, 32, 72, 'EliteKnife');
+    }
     L({ k: 's', t: 125, o: [] });
   });
   const facts = D.killFactsOf(rec, rec.kills);

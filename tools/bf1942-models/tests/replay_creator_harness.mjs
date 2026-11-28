@@ -401,6 +401,70 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   results.thrown = { found: found?.life.nid ?? null, from: found ? round(found.from, 2) : null, far: RC.thrownLifeOf(rec, { ...f, pos: [90, 2, 20] }) };
 }
 
+// --- a knife thrown, and one stabbed (Secret Weapons) -----------------------------------------
+//
+// A1 throws an EliteKnife at 5 s from (10, 2, 20) along +x: its pooled knife
+// is replicated from 5 s to 5.6 s, 0.9 m a sample, and struck at 5.6 s. At 7 s
+// he stabs (`EliteKnifeStab`, nothing flies) and at 9 s swings a vanilla
+// KnifeAxis. The throw is ridden on the recorded knife; the stab and the
+// swing are melee.
+{
+  const lines = [];
+  const L = o => lines.push(JSON.stringify(o));
+  L({ k: 'h', v: 5 });
+  L({ k: 'e', t: 0.2, e: 'createPlayer', pid: 1, name: 'A1', team: 1, ai: 1 });
+  L({ k: 'e', t: 1, e: 'projPool', tid: 1597, tmpl: 'EliteKnifeThrowProjectile', netId: 910, count: 1 });
+  L({ k: 'f', t: 5, pid: 1, id: 100, w: 'EliteKnife', p: [10, 2, 20], d: [1, 0.1, 0] });
+  L({ k: 'o', t: 5, id: 910, tmpl: 'EliteKnifeThrowProjectile', tid: 1597, team: 1 });
+  for (let i = 0; i <= 18; i++) {
+    const t = 5 + i / 30;
+    L({ k: 's', t: +t.toFixed(3), o: [[910, 10.5 + i * 0.9, 2 + i * 0.05 - 0.004 * i * i, 20, 0, 0, 0, 1]] });
+  }
+  L({ k: 'd', t: 5.6, id: 910 });
+  L({ k: 'f', t: 7, pid: 1, id: 100, w: 'EliteKnifeStab', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 'f', t: 9, pid: 1, id: 100, w: 'KnifeAxis', p: [10, 2, 20], d: [1, 0, 0] });
+  L({ k: 's', t: 10, o: [] });
+  const rec = R.parseRecording(lines.join('\n'));
+  const [toss, stab, swing] = rec.fires;
+  const camera = new THREE.PerspectiveCamera();
+  const guns = { tracers: [], projectiles: [], hits: [] };
+  const player = {
+    time: 4.8, speed: 1, playing: true, followPid: 1, kills: rec.kills, rec,
+    ctx: { camera, guns, scene: new THREE.Scene(), groundHeight: () => 0, waterLevel: () => null },
+    camera: { rig: null, setRig(r) { this.rig = r; } },
+  };
+  const cam = new RC.RoundCam(player, { follow: () => {}, changed: () => {} });
+  cam.bulletTime = RC.BULLET_TIME.strong;
+  cam.arm(toss);
+  const melee = cam.target.melee;
+  const flight = [];
+  let impact = null;
+  for (let i = 0; i < 240 && !impact; i++) {
+    const dt = 1 / 60;
+    player.time += dt * player.speed;
+    cam.step(player.time, dt);
+    if (cam.state === 'flying') flight.push({ t: round(player.time, 3), x: round(cam.pos.x, 2), kind: cam.target.kind });
+    if (cam.state === 'impact') impact = { t: round(player.time, 2), x: round(cam.pos.x, 1) };
+  }
+  // The strip's stand-in, paused mid-flight, and once it has struck.
+  const ghost = new RC.RoundCam(player, {});
+  ghost.modelAt(5.3, toss, null, { hit: 5.6 });
+  const mid = { state: ghost.state, x: round(ghost.pos.x, 2), kind: ghost.target.kind };
+  ghost.modelAt(5.8, toss, null, { hit: 5.6 });
+  const end = { state: ghost.state, x: round(ghost.pos.x, 2) };
+  results.knife = {
+    throwFound: RC.knifeThrowOf(rec, toss)?.life.nid ?? null,
+    stabFound: RC.knifeThrowOf(rec, stab),
+    melee: [toss, stab, swing].map(f => RC.meleeShot(rec, f)),
+    heavy: ['EliteKnife', 'EliteKnifeStab', 'KnifeAxis'].map(RC.heavyRound),
+    nextHeavy: [0, 6].map(t => RC.nextShotOf(rec, null, t, { heavy: true })?.t ?? null),
+    end: RC.thrownEnd(RC.knifeThrowOf(rec, toss)),
+    armedMelee: melee,
+    flying: flight.length, first: flight[0] ?? null, last: flight[flight.length - 1] ?? null,
+    impact, mid, ghostEnd: end,
+  };
+}
+
 // --- the shot: its slow motion, its keys, the round worth riding -------------------------------
 //
 // A clip from 10 s to 16 s slowed to a quarter, eased over half a second at

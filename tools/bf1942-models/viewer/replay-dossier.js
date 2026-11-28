@@ -31,7 +31,7 @@
 
 import { MULTI_GAP, MULTI_WORD, NOT_AIMED } from './replay-medals.js';
 import { whereIs } from './replay-battles.js';
-import { nameAt, playerAt, shownWeapon, teamAt } from './replay-recording.js';
+import { knifeThrowOf, nameAt, playerAt, shownWeapon, teamAt } from './replay-recording.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { MELEE } from './replay-shotstyle.js';
 
@@ -96,6 +96,9 @@ const classOf = weapon => (LAID.test(weapon) ? 'laid' : THROWN.test(weapon) ? 't
   : MELEE.test(weapon) ? 'melee' : 'direct');
 /** A knife kills at most this long after its swing, seconds. */
 const SWING_AGE = 1;
+/** A thrown knife kills at most this long after the throw: its round's
+ *  `timeToLive` (Secret Weapons' `<Knife>ThrowProjectile`, 3 s). */
+const KNIFE_FLIGHT = 3;
 
 /** A kill line with a killer who is not its victim. */
 const credited = k => k.killer !== null && k.killer !== undefined && k.killer !== k.victim;
@@ -190,7 +193,9 @@ const missOf = s => (s.angle >= 90 ? s.distance : s.distance * Math.sin((s.angle
 function roundFor(rec, kill, aim) {
   if (!credited(kill)) return null;
   const named = kill.weapon ? String(kill.weapon) : '';
-  const prefix = named.toLowerCase();
+  // A kill named by its thrown round (`<Knife>ThrowProjectile`) is its
+  // weapon's (`<Knife>`), whose fire records name the weapon.
+  const prefix = named.toLowerCase().replace(/throwprojectile$/, '');
   // The kill's weapon decides when its name says how it kills (a grenade, a
   // mine); a gun's or a vehicle's leaves it to the rounds.
   const by = named && classOf(named) !== 'direct' ? classOf(named) : null;
@@ -224,10 +229,16 @@ function roundFor(rec, kill, aim) {
     return best ? found(best, 'thrown') : null;
   }
   if (kind === 'melee') {
-    // His last swing before the kill: the moment it lands, not a round.
+    // His last swing before the kill: the moment it lands, not a round. A
+    // knife he threw (a recorded round left his hand) flies to the man, so
+    // it may be older; it is the kill's when no swing is nearer.
     for (let i = matching.length - 1; i >= 0; i--) {
       const age = kill.t - matching[i].t;
-      if (age >= -LATE && age <= SWING_AGE) return found(matching[i], 'melee');
+      if (age < -LATE) continue;
+      if (age > KNIFE_FLIGHT) break;
+      const thrown = knifeThrowOf(rec, matching[i]);
+      if (thrown && thrown.from <= kill.t + LATE) return found(matching[i], 'thrown');
+      if (!thrown && age <= SWING_AGE) return found(matching[i], 'melee');
     }
     return null;
   }
