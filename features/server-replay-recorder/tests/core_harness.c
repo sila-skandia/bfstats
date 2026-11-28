@@ -935,6 +935,30 @@ static int events_main(void)
     ticks(1);
     usleep(1200000);
     ticks(2);
+    /* 32: soldier 5 wears three kit parts (lnxded's layout): one waiting on
+     * its activater (state 4), one with no heat, then the jet pack. Only the
+     * pack is written, on a state change or 0.005 of heat. */
+    fake.sol_kitparts_off = 0x11c; fake.akp_state_off = 0x108; fake.akp_heat_off = 0x110; fake.akpt_heat_off = 0x194;
+    {
+        uint8_t *pack_t = calloc(1, 0x400), *plain_t = calloc(1, 0x400);
+        *(float *)(pack_t + 0x194) = 0.075f;
+        uint8_t *waiting = calloc(1, 0x200), *plain = calloc(1, 0x200), *pack = calloc(1, 0x200);
+        *(uint32_t *)(waiting + 0x4c) = U(pack_t); *(int32_t *)(waiting + 0x108) = 4; *(float *)(waiting + 0x110) = 0.9f;
+        *(uint32_t *)(plain + 0x4c) = U(plain_t); *(int32_t *)(plain + 0x108) = 1;
+        *(uint32_t *)(pack + 0x4c) = U(pack_t); *(int32_t *)(pack + 0x108) = 1;
+        uint32_t *head = calloc(3, 4), *n1 = calloc(3, 4), *n2 = calloc(3, 4), *n3 = calloc(3, 4);
+        head[0] = U(n1); n1[0] = U(n2); n2[0] = U(n3); n3[0] = U(head);
+        n1[2] = U(waiting); n2[2] = U(plain); n3[2] = U(pack);
+        *(uint32_t *)(s5 + 0x11c) = U(head);
+        ticks(1);                                                   /* [900, 0, 1] */
+        *(float *)(pack + 0x110) = 0.002f; ticks(1);                /* under 0.005: none */
+        *(int32_t *)(pack + 0x108) = 0; *(float *)(pack + 0x110) = 0.15f; ticks(1);   /* a burst */
+        *(float *)(pack + 0x110) = 0.152f; ticks(1);                /* none */
+        *(int32_t *)(pack + 0x108) = 1; ticks(1);                   /* idling: the state alone */
+        *(int32_t *)(pack + 0x108) = 4; *(float *)(pack + 0x110) = 0.5f; ticks(1);   /* waiting: no part, none */
+        *(uint32_t *)(s5 + 0x11c) = 0;
+    }
+    fake.sol_kitparts_off = 0;
     fake.bf_flag_off = 0; fake.fa_mags_off = 0;
     /* 27: the round's end. setWinner before setGameStatus(2), setVictoryType
      * after it in the same tick: the record carries the type set after. A

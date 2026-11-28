@@ -38,7 +38,7 @@ import { FireState, crossGunOf } from './fire-state.js';
 import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { reloadBarValue, weaponIconCount } from './vehicle-hud.js';
-import { ANIM_FLAGS, bodyAt, crewOf, hpAt, kitAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
+import { ANIM_FLAGS, bodyAt, crewOf, hpAt, kitAt, kitHeatAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
@@ -48,7 +48,7 @@ import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
 import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
 import { kitPackSpec } from './kit-loadout.js';
 import { ROCKETEERING_LOWER } from './rocket-pack.js';
-import { PackFuel } from './replay-pack-fuel.js';
+import { PackHeat } from './replay-pack-heat.js';
 import { packChargeAt, packChargeSpec } from './pack-charge.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
@@ -415,7 +415,7 @@ export class ReplayHud {
     this.written = null;        // 'foot' | 'seat' | null: which variables the page holds of ours
     this.sightShown = false;    // the page's `replay-sight` class
     this.events = new WeakMap(); // life -> Map<weapon or gun, its recorded rounds (and reloads)>
-    this.packFuel = new PackFuel(); // the rocket pack's fuel bar, per life (replay-pack-fuel.js)
+    this.packHeat = new PackHeat(); // a jet pack's heat where the file has no `kh`, per life (replay-pack-heat.js)
     this.hitMarks = null;       // pid -> his hit marks' times (replay-hitmarks.js), once
     this.hitMarkFuses = null;   // the projectile table they were worked out with
     this.weapons = undefined;   // weapon -> { speed, projectile }, null until fetched
@@ -590,17 +590,19 @@ export class ReplayHud {
           recorded: true,
         };
       }
-      // XPack2's jet pack: its fuel, the pack's heat law over the burns his
-      // heights show while his legs are in a rocketeering state.
+      // XPack2's jet pack: its heat, as the recorder read it (bf42plus `kh`),
+      // else the pack's heat law over the burns his heights show while his
+      // legs are in a rocketeering state (replay-pack-heat.js).
       const kit = kitAt(life, t);
       const kitName = loadouts?.kits?.[kit] || !kit ? kit
         : Object.keys(loadouts?.kits ?? {}).find(name => lower(name) === lower(kit)) ?? kit;
       const spec = kitPackSpec(loadouts, kitName);
-      const fuel = spec ? this.packFuel.at(life, spec, t,
+      const recorded = kitHeatAt(rec, life.nid, t);
+      const heat = recorded ? recorded.heat : spec ? this.packHeat.at(life, spec, t,
         at => ROCKETEERING_LOWER.has(bodyAt(rec, life.nid, at)?.lower)) : null;
       return {
         kind: 'foot', pid, team, life, kit, hitMark: this.hitMarkOf(pid, t),
-        pack: spec ? { fuel: fuel ?? 1 } : null,
+        pack: recorded || spec ? { heat: Math.max(0, Math.min(1, heat ?? 0)) } : null,
         outside: this.outsideOf(pid, t),
         stance: body?.stance ?? 'stand',
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
@@ -784,11 +786,11 @@ export class ReplayHud {
         vars['CrossHair/ScopeIcon'] = s.zoom.icon || 'sniper.tga';
         if (!s.zoom.sniperSight) vars['CrossHair/SightIcon'] = s.zoom.sightIcon || 'scout_ring_128x128.tga';
       }
-      // The pack's fuel on the layout's `Recover` bar beside the soldier icon
-      // (`ShowRecover == 3`, `rocketpackbar_full_32x64`), as the page's own
-      // soldier-hud.js writes it.
+      // The pack's heat on the layout's `Recover` bar beside the soldier icon
+      // (`ShowRecover == 3`, `rocketpackbar_full_32x64`), filling as it heats,
+      // as retail's HUD and the page's own soldier-hud.js feed it (SWB-6).
       vars['Recover/ShowRecover'] = s.pack ? 3 : 0;
-      if (s.pack) vars['Recover/Recover'] = s.pack.fuel;
+      if (s.pack) vars['Recover/Recover'] = s.pack.heat;
       else delete vars['Recover/Recover'];
       if (s.data && s.ammo) writeSoldierAmmo(vars, s.data, s.ammo.rounds, s.ammo.mags);
       else for (const name of SOLDIER_AMMO_VARS) delete vars[name];

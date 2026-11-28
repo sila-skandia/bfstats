@@ -397,6 +397,9 @@ check("25/29 flagHolder", [no_t(r) for r in ev("flagHolder")] == [
 am = [e for r in rows if r["k"] == "am" for e in r["o"]]
 check("30 am", am == [[900, 30, 42, 2, 1], [901, 30, 42, 2, 2], [900, 29, 42, 2, 1], [901, 29, 42, 2, 2],
                       [901, 29, -1, -1, 2], [900, 2991, 42, 2, 1], [901, 2991, -1, -1, 2]], am)
+# 32: the jet pack's heat and state, [nid, heat, state], on change
+kh = [e for r in rows if r["k"] == "kh" for e in r["o"]]
+check("32 kh", kh == [[900, 0.0, 1], [900, 0.15, 0], [900, 0.152, 1]], kh)
 # 31: a visit each, begun and ended; the depot's call that gave nothing is none
 heals = [no_t(r) for r in ev("heal")]
 begins = [h for h in heals if not h.get("end")]

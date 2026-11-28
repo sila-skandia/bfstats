@@ -226,7 +226,9 @@ export class RocketPack {
   /** Whether the part is burning this tick (for the flame and the sound). */
   get burning() { return this.state === PACK_STATE.ACTIVE; }
 
-  /** The fuel bar's fill: 1 cool, 0 at the overheat (`Recover/Recover`). */
+  /** What is left before the overheat, 1 cool and 0 overheated. Not the
+   *  HUD's bar: that is the heat itself, filling as the pack heats (SWB-6,
+   *  soldier-hud.js). */
   get fuel() { return Math.max(0, Math.min(1, 1 - this.heat)); }
 }
 

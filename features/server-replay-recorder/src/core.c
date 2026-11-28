@@ -815,6 +815,9 @@ typedef struct {
     int lower, upper, item, bits;
     float pitch, twist;
     int seen;
+    int kh_written;              /* a kh entry has been written for him */
+    float kh_heat;               /* the last: his jet pack's heat */
+    int kh_state;                /* and its state */
     int am_written;              /* an am entry has been written for him */
     int32_t am[4];               /* the last: magazine, reserve, spare magazines, item */
     double am_t;                 /* when it was written */
@@ -1060,6 +1063,7 @@ static Acc g_acc_ps = { "ps", "ps", 0, 0, 0 };
 static Acc g_acc_bai = { "bai", "o", 0, 0, 0 };
 static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
 static Acc g_acc_am = { "am", "o", 0, 0, 0 };
+static Acc g_acc_kh = { "kh", "o", 0, 0, 0 };
 #endif
 
 /* Write the kind's pending entries as one line stamped g_t. */
@@ -1111,6 +1115,7 @@ static void acc_flush_all(void)
     acc_flush(&g_acc_bai);
     acc_flush(&g_acc_pj);
     acc_flush(&g_acc_am);
+    acc_flush(&g_acc_kh);
 #endif
 }
 static void sample_object(uint32_t key, uint32_t obj);
@@ -1844,6 +1849,48 @@ static int held_ammo(uint32_t obj, int item, int32_t *mag, int32_t *reserve, int
     return 1;
 }
 
+/* A soldier's heated kit part, XPack2's jet pack: the first of his
+ * ActiveKitParts that is not waiting on its activater (state 4) and whose
+ * template has heat (active + passive heat > 0, ActiveKitPart::hasHeat) --
+ * the part the client's HUD fills its jet pack bar from (bf42plus `kh`,
+ * menu::Soldier::update 0x006E9690 in BF1942.exe). Out: its heat (0 cool, 1
+ * overheated) and state (0 burning, 1 idling, 2 overheated, 3 off, 4 waiting
+ * on its activater). 0 when he wears none or a read fails.
+ *   lnxded: the list at soldier+0x11c (BFSoldier::
+ *     getDamageDampingFromActiveKitParts 0x0827ec00), state +0x108 and heat
+ *     +0x110 (ActiveKitPart::update 0x082628e0), template heat +0x194/+0x198
+ *     (ledger SWB-1).
+ *   w32ded: the list at soldier+0x13c (handlePlayerInput's walk to
+ *     ActiveKitPart::update, 0x004c4291), state +0x120 and heat +0x128
+ *     (ActiveKitPart::update 0x0050c4b0: the cooling at template+0x250 off
+ *     +0x128 at 0x0050c839), template heat +0x248/+0x24c. */
+static int kit_heat(uint32_t obj, float *heat, int *state)
+{
+    if (!T->sol_kitparts_off) return 0;
+    uint32_t head = read_u32(obj + T->sol_kitparts_off);
+    if (head < 0x1000) return 0;
+    uint32_t node = read_u32(head);
+    /* A soldier wears a handful of parts; the bound guards the walk against
+     * a list read mid-change. */
+    for (int n = 0; node >= 0x1000 && node != head && n < 16; n++) {
+        uint32_t part = read_u32(node + 8);
+        if (part >= 0x1000 && (int)read_u32(part + T->akp_state_off) != 4) {
+            uint32_t tmpl = read_u32(part + T->obj_tmpl_off);
+            float active = 0.0f, passive = 0.0f;
+            if (tmpl >= 0x1000 && rd(&active, 4, tmpl + T->akpt_heat_off) && rd(&passive, 4, tmpl + T->akpt_heat_off + 4)
+                && active + passive > 0.0f) {
+                float h = 0.0f;
+                if (!rd(&h, 4, part + T->akp_heat_off) || !(h > -10.0f && h < 10.0f)) return 0;
+                *heat = h;
+                *state = (int)read_u32(part + T->akp_state_off);
+                return 1;
+            }
+        }
+        node = read_u32(node);
+    }
+    return 0;
+}
+
 /* Soldier pass (roots only, vtable-identified): the animation state machines
  * (BFSoldier::getAnimationState 0x0826d060: soldier+0x2b4 + i*0x44 -- lower
  * machine i=0, upper i=1), the held item (getActiveItemIndex 0x0827f920:
@@ -1897,6 +1944,20 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
             *e++ = ']'; *e = 0;
             acc_add(&g_acc_am, entry);
         }
+    }
+    /* His jet pack's heat and state, [nid, heat, state], when the state
+     * changes or the heat moves by 0.005. */
+    float kh_heat = 0.0f;
+    int kh_state = 0;
+    if (kit_heat(obj, &kh_heat, &kh_state)
+        && (!s->kh_written || kh_state != s->kh_state || fabsf(kh_heat - s->kh_heat) >= 0.005f)) {
+        s->kh_written = 1;
+        s->kh_heat = kh_heat;
+        s->kh_state = kh_state;
+        char entry[64], *e = entry;
+        *e++ = '['; e = put_u(e, nid); *e++ = ','; e = put_f(e, kh_heat, 3); *e++ = ','; e = put_i(e, kh_state);
+        *e++ = ']'; *e = 0;
+        acc_add(&g_acc_kh, entry);
     }
     if (s->lower == lower && s->upper == upper && s->item == item && s->bits == bits
         && fabsf(s->pitch - pitch) < 0.25f && fabsf(s->twist - twist) < 0.25f) return;

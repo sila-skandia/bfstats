@@ -1051,6 +1051,17 @@ const struct rec_target w32ded_target = {
     .fa_pool_count_off = 0x210u,        /* initProjectilePool 0x00505a3a */
     .get_bf_player_addr = (uint32_t)w32_get_bf_player,
     .get_root_parent_addr = (uint32_t)w32_root_parent,
+    /* A soldier's jet pack (core.c kit_heat). The ActiveKitPart here has
+     * BF1942.exe's layout, not lnxded's: handlePlayerInput walks the list
+     * from [soldier+0x13c] to each part's update (0x004c4291..0x004c42d1);
+     * ActiveKitPart::update 0x0050c4b0 tests the state at +0x120, adds the
+     * template's active heat +0x248 on a burst (0x0050c5b3) and its passive
+     * +0x24c idling (0x0050c661) to the heat at +0x128, and takes the
+     * cooling +0x250 off it (0x0050c839). */
+    .sol_kitparts_off = 0x13cu,
+    .akp_state_off = 0x120u,
+    .akp_heat_off = 0x128u,
+    .akpt_heat_off = 0x248u,
 
     .walk_clamp_count = 1,
     .sample_reset_next = 1,

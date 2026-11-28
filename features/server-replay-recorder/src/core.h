@@ -254,6 +254,15 @@ struct rec_target {
     uint32_t fa_link_off;
     uint32_t fat_link_off;
     uint32_t fat_mags_off;
+    /* A soldier's heated kit part, XPack2's jet pack (kit_heat; sol_kitparts_off
+     * 0 = not verified, no kh record): the soldier's ActiveKitPart list (a
+     * pointer to its sentinel node; a node is { next, prev, part }, the part
+     * at +8), a part's state and heat, and its template's active heat (the
+     * passive heat the float after it). */
+    uint32_t sol_kitparts_off;
+    uint32_t akp_state_off;
+    uint32_t akp_heat_off;
+    uint32_t akpt_heat_off;
 
     /* --- behavior switches --- */
     int walk_clamp_count;   /* clamp the walk bound's count at 100000 (w32) */

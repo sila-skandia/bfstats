@@ -483,16 +483,18 @@ export function createSoldierHud(page) {
     vars['Soldier/SoldierMaxHitPoints'] ??= 30;
     vars['Soldier/SoldierHitPoints'] ??= 30;
 
-    // The pack's fuel: the layout's `Recover` bar is the one the engine's own
+    // The pack's heat: the layout's `Recover` bar is the one the engine's own
     // HUD shows for an `ActiveKitPart` with heat (the leaf gated on
     // `Recover/ShowRecover == 3` beside the soldier icon, filled from
     // `Recover/Recover`, over `reloadtimebar_empty` with
-    // `rocketpackbar_full_32x64`). Full is cool: the inverted feed the
-    // shared overheat feeder writes (`1 - heat`, VHUD-10).
+    // `rocketpackbar_full_32x64`). Retail writes the part's heat as it is,
+    // with no inversion (`menu::Soldier::update` 0x006E98D7:
+    // setRecoverData(3, [part+128h]), SWB-6): the bar fills as the pack
+    // heats and is empty when it is cool.
     const pack = onFootActive ? page.soldier.pack : null;
     // Seated, the node is the hull's engine heat, fed above (VHUD-20).
     if (!burn?.show) vars['Recover/ShowRecover'] = pack ? 3 : 0;
-    if (pack) vars['Recover/Recover'] = pack.fuel;
+    if (pack) vars['Recover/Recover'] = Math.max(0, Math.min(1, pack.heat));
 
     // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, `ScopeIndex`
     // stays at the 0 written above so the overlay cannot stick into a seat.

@@ -1028,6 +1028,16 @@ const struct rec_target lnxded_target = {
     .fa_link_off = 0x2a0u,
     .fat_link_off = 0x340u,
     .fat_mags_off = 0x234u,
+    /* A soldier's jet pack (core.c kit_heat): BFSoldier::
+     * getDamageDampingFromActiveKitParts 0x0827ec00 walks the ActiveKitPart
+     * list from [soldier+0x11c] (node+8 the part); ActiveKitPart::update
+     * 0x082628e0 tests the state at +0x108 against 4 and works the heat at
+     * +0x110 (the cooling off it at 0x082629d0); the template's active and
+     * passive heat are +0x194/+0x198 (ledger SWB-1). */
+    .sol_kitparts_off = 0x11cu,
+    .akp_state_off = 0x108u,
+    .akp_heat_off = 0x110u,
+    .akpt_heat_off = 0x194u,
 
     .walk_clamp_count = 1,              /* a torn count cannot make the walk long */
     .sample_reset_next = 0,

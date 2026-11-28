@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   aimAt, bodyAt, controlledAt, deathStance, hpAt, lateRiseAt, isReplicated, kitAt, latestIndex, lifeAt, lowerHeldByLod, nameAt, primaryWeaponFor, recordedDeath,
-  recordedFlight, rootOf, shooterViewLag, soldierLivesOf, stateEntries, teamAt,
+  kitHeatAt, recordedFlight, rootOf, shooterViewLag, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
@@ -120,6 +120,9 @@ const HURT_FRESH = 0.5;
 /** Seconds after a recorded fire state starts a frame may still enter it:
  *  a seek into a throw's middle plays none of it. */
 const FIRE_STATE_FRESH = 0.25;
+/** How far back a recorded pack heat is compared to call a burn: a little
+ *  more than one 10 Hz sample. */
+const PACK_BURN_SPAN = 0.15;
 const HIT_STATE = /^Ub_Hit(Chest|Back)(Stand|Crouch)$|^Ub_HitLie$/;
 const STANCE_HIT = { stand: 'Ub_HitChestStand', crouch: 'Ub_HitChestCrouch', prone: 'Ub_HitLie' };
 
@@ -882,10 +885,15 @@ export class ReplaySoldiers {
     const falling = Boolean(flight) && t < flight.until;
     actor.state.falling = falling;
     this.heldState(s, body, bodyAt(rec, life.nid, t + FLIGHT_LEAD), (dead && !falling) || Boolean(seated), dead);
-    // Burning, from the heights of his own samples (`replayBurning`): the
-    // recording carries no trigger and no heat, and the flame and the burst's
-    // report are what a replay can show of them.
-    if (s.held.rocket && !dead) {
+    // Burning: from the pack's recorded heat where the file has it (bf42plus
+    // `kh`; a burst is the only thing that heats XPack2's pack, so heat
+    // climbing over the last sample is a burn, and a burning state is one),
+    // else from the heights of his own samples (`replayBurning`).
+    const packNow = s.held.rocket && !dead ? kitHeatAt(rec, life.nid, t) : null;
+    if (packNow) {
+      const packBefore = kitHeatAt(rec, life.nid, t - PACK_BURN_SPAN);
+      s.held.burning = packNow.state === 0 || (packBefore !== null && packNow.heat > packBefore.heat + 0.004);
+    } else if (s.held.rocket && !dead) {
       const before = poseAt(life, t - 0.1);
       const now = poseAt(life, t);
       const after = poseAt(life, t + 0.1);

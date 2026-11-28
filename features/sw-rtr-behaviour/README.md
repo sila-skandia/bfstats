@@ -203,26 +203,45 @@ the two Garands keep separate magazines here). The third-person body and the
 bots do not stab. A prone stab plays the standing clip: the rigs bake no
 `Ub_LieAltFire<W>` family.
 
-## The fuel bar in a replay (2026-11-28)
+## The jet pack's bar in a replay, and in the recorders (2026-11-28)
 
 Reported: "in Secret Weapons the jetpack reload bar is not visible". The bar
 is the layout's `Recover` leaf beside the soldier icon (`ShowRecover == 3`,
 `rocketpackbar_full_32x64` over `reloadtimebar_empty_32x64`). The page's own
-soldier fed it (`soldier-hud.js`, from `soldier.pack.fuel`), but a replay's
-first person wrote no `Recover/*` at all (`replay-hud.js`), and the page's
-feed wrote `ShowRecover 0` under it, so a replayed pack wearer had no bar.
+soldier fed it (`soldier-hud.js`), but a replay's first person wrote no
+`Recover/*` at all (`replay-hud.js`), and the page's feed wrote
+`ShowRecover 0` under it, so a replayed pack wearer had no bar.
 
-The recording carries no pack heat. `replay-pack-fuel.js` `PackFuel` runs the
+Two more things came out of it:
+
+- **The bar ran backwards.** `soldier-hud.js` fed `1 - heat` ("full is
+  cool"), an inference (SWB-6 was `inferred`). BF1942.exe's
+  `menu::Soldier::update` (`0x006E9690`) pushes the part's heat itself to
+  `setRecoverData(3, heat)`: the bar fills as the pack heats and is empty
+  when it is cool. SWB-6 is now confirmed from the disassembly, and the page
+  and the replay both feed the heat.
+- **The recorders now write the heat (`kh`).** A recording had nothing of
+  the pack but the flier's positions, so a replay could only estimate it.
+  Both recorders write `[soldier, heat, state]` on change, read the way the
+  HUD reads it: bf42plus (branch `record-kit-part-heat`,
+  `src/replay_parts.cpp`, `docs/replay-format.md`) from the client, and
+  `features/server-replay-recorder` (`kit_heat`) on lnxded and w32ded.
+  `replay-hud.js` uses the recorded heat for the bar and `replay-bodies.js`
+  the recorded burns for the flame.
+
+For files written before `kh`, `replay-pack-heat.js` `PackHeat` runs the
 pack's own heat law (`RocketPack.update`) at 30 Hz over the life, its trigger
 down on each tick his heights read as a burn (`replayBurning`) while his legs
-are in a rocketeering state; `replay-hud.js` writes the result as the page
-does. `replayBurning` alone calls standing still a burn (no fall), so the
-rocketeering gate is what keeps a man on the ground from emptying it.
+are in a rocketeering state. `replayBurning` alone calls standing still a
+burn (no fall), so the rocketeering gate is what keeps a man on the ground
+from filling it. A takeoff's first ticks, before his legs enter the
+rocketeering state, burn nothing there.
 
-Checked on `4dbzkzc6sv` (Raid on Agheila, pid 8 on the pack from 129 s),
-followed in first person on `map.html?mod=xpack2&map=raid_on_agheila`: the bar
-is up beside the soldier icon and refills after his burns. Guard:
-`tests/test_replay_pack_fuel.py`. Still an estimate in the way the burn is:
-a takeoff's first ticks, before his legs enter the rocketeering state, burn
-nothing here.
-
+Checked on `4dbzkzc6sv` (Raid on Agheila, a pre-`kh` client file; pid 8 on
+the pack from 129 s), followed in first person on
+`map.html?mod=xpack2&map=raid_on_agheila`: the bar is up beside the soldier
+icon, empty cool and filling on his burns. Guards:
+`tests/test_replay_pack_heat.py` (the estimate and the `kh` reader), the
+server recorder's `tests/run.sh` check 32. Not yet checked: a real `kh` file,
+which needs the bf42plus change built and a Secret Weapons round played with
+it.

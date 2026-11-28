@@ -269,6 +269,7 @@ every entry that changed.
 | `cp` | Control points: id, name, template, place, team; then team changes |
 | `cpt` | A control point's capture law: state, getting team, get and lose timers, on change (below) |
 | `am` | The magazines of the weapon in a soldier's hands, `[nid, loaded, reserve, spares, item]`, on change (below) |
+| `kh` | A soldier's jet pack, `[nid, heat, state]`, on change (below) |
 | `tk` | Tickets, `[team 1, team 2]`, on change |
 | `pn` / `pj` / `pd` | A projectile's flight: named, placed each sample, ended |
 | `f` | A shot: firing object, player, weapon template, muzzle position and direction; `"fake":1` for AI fake fire |
@@ -503,6 +504,21 @@ and 11; no client recorder writes `heal` or `am`):
   the retail HUD's `PrimaryMag` shows was not read; the viewer feeds it
   `spares`, as its own count does.
 
+- `kh` is a soldier's jet pack (XPack2's `GermanElite_RocketPack`),
+  `[nid, heat, state]`: the first of his ActiveKitParts not waiting on its
+  activater (state 4) whose template has heat, the part the client's HUD
+  fills its jet pack bar from (bf42plus writes the same record from the
+  client, `menu::Soldier::update` `0x006E9690`). `heat` is 0 cool to 1
+  overheated, `state` 0 burning, 1 idling, 2 overheated, 3 off, 4 waiting.
+  Written when the state changes or the heat moves by 0.005. On lnxded the
+  list is at `BFSoldier+0x11c` (`getDamageDampingFromActiveKitParts`
+  `0x0827ec00`), the part's state `+0x108` and heat `+0x110`
+  (`ActiveKitPart::update` `0x082628e0`), the template's active and passive
+  heat `+0x194`/`+0x198` (SWB-1); on w32ded the part has BF1942.exe's
+  layout (list `+0x13c`, state `+0x120`, heat `+0x128`, template heat
+  `+0x248`/`+0x24c`; `target_w32ded.c`). Added 2026-11-28: the viewer drew
+  the bar and the flame from an estimate off the flier's heights before.
+
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
@@ -627,6 +643,7 @@ of the accessor or constructor it was read from.
 | `FireArms` | projectile template `+0x194`, pool `+0x1d8`, pool count `+0x1e4`, fake-fire flag `+0x295`, magazines `+0x17c` (a `vector<int>`), the linked FireArms `+0x2a0`; its template's setWeaponLink `+0x340`, numOfMag `+0x234` |
 | `BFSoldier` (the hands) | item ids `+0x3ac` (a vector of u32), weapons `+0x110` (a vector of FireArms*), matched on the weapon's `+0x48` |
 | `BFPlayer` (CTF) | carries a flag `+0x13c` (u8) |
+| `BFSoldier` (the jet pack) | active kit parts `+0x11c` (an SGI list: node next `+0`, part `+8`); an `ActiveKitPart`'s state `+0x108`, heat `+0x110`; its template's active and passive heat `+0x194` / `+0x198` |
 | `BotManager` | bots `+0x20`, by-player-id table `+0x38`; a bot's AI level of detail `+0x10` |
 | `ChatMessage` | target `+0` (0 is the sender's side only), text `+4`, length `+0x48`, sender's player id `+0x4c` |
 
@@ -813,7 +830,7 @@ target's reads all fail and every check finds no events, at HEAD as well.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), `flagHolder` from the queue and, with the carrier byte, from the sample alone, the three `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); the held weapon's `am` (a change, an empty slot, a linked weapon, unlimited magazines); `heal` visits for a medic on another and on himself, an engineer, a depot, and a depot call that gave nothing; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`, `rec.flagHolds`, `rec.ammo`, `rec.heals` and the SUPPORT board, `replay-support.js`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), `flagHolder` from the queue and, with the carrier byte, from the sample alone, the three `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); the held weapon's `am` (a change, an empty slot, a linked weapon, unlimited magazines); `heal` visits for a medic on another and on himself, an engineer, a depot, and a depot call that gave nothing; a jet pack's `kh` (the part past one waiting on its activater and one with no heat, a burst, a state change alone, a change under 0.005 not written, a pack waiting on its activater not written); then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`, `rec.flagHolds`, `rec.ammo`, `rec.heals` and the SUPPORT board, `replay-support.js`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
 | w32ded guard (Wine) | `tests/w32_guard_test.c`, built with mingw-w64 and run under Wine when both are installed (skipped otherwise): a read of unmapped memory or a guard page fails and the guard page stays armed; a fault in a guarded pass returns 0 and frees the write lock it held twice; a nested guard catches its own fault; the x87 stack a cut-short pass left is empty again; and two child processes that must crash do, a fault outside any guard and one inside msvcrt's `strlen` |
 | w32ded stubs (Wine) | `tests/w32_stub_test.c`, built and run like the guard test: the fire, hit and impact stubs, called as the exe calls them (thiscall), hand the hook and the original their arguments, the impact wrapper calls the original once between begin and end, returns its eax and pops its seven; the fake-fire and hit-sector stubs, entered mid-function from a frame laid out as the exe's, read this, the player, the Mat4 and the two bytes from the right registers and stack slots and reach the trampoline with every register and esp as they came; a trampoline copied from the fake-fire site re-aims its call; with recording off no hook runs |
 | w32ded sites | `tests/w32_sites.py`, against `BF1942_w32ded.exe` when the lab has it ($W32DED_EXE, else `~/bf1942-lab/w32/`; skipped otherwise): each detour site holds its bytes, ends on an instruction boundary, copies nothing relative but the re-aimed call, and no branch in .text lands inside it; each shot, hit and template offset is still in the instruction it was read from |

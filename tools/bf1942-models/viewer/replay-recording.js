@@ -535,6 +535,7 @@ export function parseRecording(text) {
     keyedParts: new Map(),// v4: root nid -> [{ t, parts: [q...], before }], keyed 0 (replay-aim.js)
     engines: new Map(),   // v4: root nid -> Map<engine nid, [{ t, revs, throttle, running, disabled, gear }]>
     stances: new Map(),   // v4: soldier nid -> [{ t, lower, upper, pitch, twist, item, bits }]
+    kitHeat: new Map(),   // bf42plus `kh`: soldier nid -> [{ t, heat, state }], his jet pack's
     animStates: [],       // v4: index -> { name, flags }, the engine's animation state table
     animStatesSkipped: null, // the recorder refused the table: { count, limit }
     recorder: null,       // the recorder's `plus` version string
@@ -1543,6 +1544,18 @@ export function parseRecording(text) {
             });
           }
           break;
+        case 'kh':
+          // A jet pack's heat and state (bf42plus `kh`), as the game's HUD
+          // reads them (menu::Soldier::update): [soldier nid, heat 0 cool to
+          // 1 overheated, state 0 burning, 1 idling, 2 overheated, 3 off,
+          // 4 waiting on its activater]. On change.
+          for (const entry of r.o ?? []) {
+            if (!Array.isArray(entry) || entry.length < 3 || !entry.slice(0, 3).every(Number.isFinite)) continue;
+            const [nid, heat, state] = entry;
+            if (!rec.kitHeat.has(nid)) rec.kitHeat.set(nid, []);
+            rec.kitHeat.get(nid).push({ t, heat, state });
+          }
+          break;
         case 'am':
           // A server recording's held-weapon magazines, on change (core.c
           // `held_ammo`): [soldier nid, loaded, reserve, spares, item],
@@ -1673,6 +1686,7 @@ export function parseRecording(text) {
   for (const list of rec.lods.values()) ordered(list);
   for (const parts of rec.joints.values()) for (const part of parts.values()) ordered(part.keys);
   for (const engines of rec.engines.values()) for (const list of engines.values()) ordered(list);
+  for (const list of rec.kitHeat.values()) ordered(list);
 
   // Everyone else the recording shows playing. A file begun after the join
   // (recording switched on mid-round) by a recorder that wrote no roster has
@@ -3153,6 +3167,14 @@ export function stateEntries(rec, nid, t) {
  *  `{ stance, lower, upper, firing, stabbing, reloading, pitch, item }` and whether
  *  his chute is open (`chuteOpen`) and his weapon zoomed (`zoomed`), or
  *  null. */
+/** Soldier `nid`'s jet pack at `t` as the recorder read it (`kh`): `{ heat,
+ *  state }`, the last at or before `t`, or null when the file has none of
+ *  his (an older file, the server's, or no pack). */
+export function kitHeatAt(rec, nid, t) {
+  const entry = latestAt(rec.kitHeat?.get(nid), t);
+  return entry ? { heat: entry.heat, state: entry.state } : null;
+}
+
 export function bodyAt(rec, nid, t) {
   const entry = latestAt(rec.stances?.get(nid), t);
   if (!entry) return null;
