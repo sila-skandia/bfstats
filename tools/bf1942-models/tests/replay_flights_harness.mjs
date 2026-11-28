@@ -152,6 +152,28 @@ results.standing = {
   heading: flightHeading(standing, standing.destroyed - 1e-3, dir) ? r3v(dir.toArray()) : null,
 };
 
+// A Pak40 shell (Strasbourg, wj6jp56xzw, 236.71 s): the Pak40Gun's
+// `projectilePosition 0/0/3` makes the round 3 m down the barrel from the
+// matrix `f` records, so the `i`'s fire origin is 3 m along the shot's line.
+// A second `i` at the same point names an origin 3 m to the shot's side:
+// another gun's (features/pak40-shell-impacts).
+const pak = parseRecording([
+  { k: 'h', v: 5, plus: 'server-replay-recorder/3', start: '2026-11-28T05:04:24', hz: 30 },
+  { k: 'f', t: 80.0, id: 547, pid: 0, w: 'Pak40Gun', p: [800, 10, 100], d: [0, 0, 1] },
+  { k: 'pn', t: 80.001, o: [[30, 'Pak40Projectile']] },
+  { k: 'pj', t: 80.001, o: [[30, 800, 10, 106.3]] },
+  { k: 'pj', t: 80.034, o: [[30, 800, 10, 109.6]] },
+  { k: 'pj', t: 80.067, o: [[30, 800, 10, 112.9]] },
+  { k: 'i', t: 80.1, pid: 0, tid: 87, tmpl: 'Pak40', o: [803, 10, 103], p: [800, 9.5, 115.9], obj: -1, dmg: 0 },
+  { k: 'i', t: 80.1, pid: 0, tid: 87, tmpl: 'Pak40', o: [800, 10, 103], p: [800, 9.5, 116.0], obj: -1, dmg: 0 },
+  { k: 'pd', t: 80.101, o: [30] },
+].map(line).join('\n')).flights[0];
+results.offsetOrigin = {
+  shot: Boolean(pak.shot),
+  impactOrigin: pak.impact?.origin ?? null,
+  destroyed: r3(pak.destroyed),
+};
+
 // --- drawn, and the end effect -------------------------------------------------------
 const played = [];
 const player = {

@@ -538,7 +538,9 @@ place (15 m of slack: the Defgun's `f` is 13.9 m back) and ahead of it, along
 its direction or within 6 m to its side (a rack's two bombs leave 3.5 m
 either side of the rack's one point). The collision is the nearest `i` from
 the last `pj` to a sample past the `pd`, within the last leg's travel, whose
-fire origin `o` is the shot's muzzle. The first `pj` is a tick out of the
+fire origin `o` lies on the shot's line: the barrel's matrix that `f`
+records moved by the gun's `projectilePosition`, 3 m out on the Pak40 and
+the flak guns (features/pak40-shell-impacts). The first `pj` is a tick out of the
 barrel (3.3 m for a tank shell), so the drawn path is the muzzle a sample
 earlier, the places, and the `i` point.
 

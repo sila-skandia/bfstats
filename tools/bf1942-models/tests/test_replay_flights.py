@@ -88,6 +88,13 @@ class ReplayFlightTests(unittest.TestCase):
         self.assertTrue(linked["impactBack"])
         self.assertIsNone(linked["againImpact"])
 
+    def test_a_round_made_down_the_barrel_still_links_to_its_collision(self) -> None:
+        # The Pak40Gun's projectilePosition 0/0/3: the fire origin is 3 m
+        # along the shot's line, not at its matrix. Without this the
+        # Pak40's shells on Strasbourg and Caen struck nothing in the replay.
+        self.assertEqual(self.results["offsetOrigin"],
+                         {"shot": True, "impactOrigin": [800, 10, 103], "destroyed": 80.1})
+
     def test_the_links_stay_out_of_json_and_spreads(self) -> None:
         self.assertFalse(self.results["linked"]["fireJson"])
         self.assertFalse(self.results["linked"]["spread"])

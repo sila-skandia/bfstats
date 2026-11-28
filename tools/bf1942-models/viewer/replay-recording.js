@@ -2026,9 +2026,31 @@ const ALONG_DOT = 0.9;
 const LATERAL_MAX = 6;
 /** A collision ends the flight between its last sample and its `pd`: its
  *  point lies within the last leg's travel of the last sample, plus slack;
- *  its fire origin (`i.o`, HFD-4) is the linked shot's muzzle. */
+ *  its fire origin (`i.o`, HFD-4) lies on the linked shot's line, at most
+ *  ORIGIN_MATCH off it and ORIGIN_ALONG along it. The origin is where the
+ *  round was made, the barrel's matrix that `f` records moved by the
+ *  FireArms' `projectilePosition`: 0/0/3 on the Pak40Gun (Liberation of
+ *  Caen's own template, which Strasbourg places too), flak38_gun_fire and
+ *  the AA barrels, 0/0/9.7 on the Defgun, 0/0/16 and 0/0/-14 on the
+ *  battleships' cannons (features/pak40-shell-impacts). */
 const IMPACT_SLACK = 3;
 const ORIGIN_MATCH = 2;
+const ORIGIN_ALONG = 20;
+
+/** Whether fire origin `o` lies on shot `f`'s line: within ORIGIN_MATCH of
+ *  it, and no more than ORIGIN_ALONG along it either way. */
+function originOnShot(o, f) {
+  const vx = o[0] - f.pos[0];
+  const vy = o[1] - f.pos[1];
+  const vz = o[2] - f.pos[2];
+  const dist = Math.hypot(vx, vy, vz);
+  if (dist <= ORIGIN_MATCH) return true;
+  const dn = f.dir ? Math.hypot(f.dir[0], f.dir[1], f.dir[2]) : 0;
+  if (!(dn > 1e-6)) return false;
+  const along = (vx * f.dir[0] + vy * f.dir[1] + vz * f.dir[2]) / dn;
+  if (Math.abs(along) > ORIGIN_ALONG) return false;
+  return Math.sqrt(Math.max(0, dist * dist - along * along)) <= ORIGIN_MATCH;
+}
 
 /** `obj[name] = value`, kept out of JSON and spreads: a shot and its flight
  *  point at each other. */
@@ -2070,7 +2092,9 @@ function legSpeed(track, i, j) {
  *   one `f` per barrel.
  * - the impact is the nearest `i` from the last sample to a sample past the
  *   `pd`, whose point lies within the last leg's travel of the last sample
- *   and, when the flight has a shot, whose fire origin is that shot's muzzle.
+ *   and, when the flight has a shot, whose fire origin lies on that shot's
+ *   line (`originOnShot`: the gun's `projectilePosition` puts it up to
+ *   16 m down the barrel).
  *
  * Then each flight's drawn path (`drawnPath`). Returns `{ shots, impacts }`,
  * how many flights were linked to each.
@@ -2129,8 +2153,7 @@ export function linkFlights(rec) {
       if (usedImpacts.has(im) || !im.point) continue;
       const d = Math.hypot(im.point[0] - x[last + 1], im.point[1] - x[last + 2], im.point[2] - x[last + 3]);
       if (d > speedEnd * (im.t - tl + period) + IMPACT_SLACK) continue;
-      const o = flight.shot?.pos;
-      if (o && im.origin && Math.hypot(im.origin[0] - o[0], im.origin[1] - o[1], im.origin[2] - o[2]) > ORIGIN_MATCH) continue;
+      if (flight.shot?.pos && im.origin && !originOnShot(im.origin, flight.shot)) continue;
       if (!hit || d < hit.d) hit = { im, d };
     }
     if (hit) {

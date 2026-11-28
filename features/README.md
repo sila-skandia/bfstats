@@ -265,6 +265,7 @@ folder answers.
 | [video-options](video-options/README.md) | build | What does each of the game's OPTIONS > VIDEO settings change in the client, and which does the viewer honour (view distance, quality, lightmaps, anti-aliasing, render scale)? |
 | [replay-creator-view](replay-creator-view/README.md) | build | How does the replay's creator view work, who can open it, which round does the bullet cam ride, and how is a clip cut? |
 | [replay-feature-sweep-2026-11-01](replay-feature-sweep-2026-11-01/README.md) | research | What does retail BF1942 have that the replay or its recorders do not, ranked for implementation, with each entry's brief and the files it shares? |
+| [pak40-shell-impacts](pak40-shell-impacts/README.md) | fix | Why did a Pak40 shell in a server recording vanish at the ground with no hit (Strasbourg, Caen), and how does the replay link a round made down the barrel to its collision now? |
 | [replay-accuracy](replay-accuracy/README.md) | build | How accurate was each player in a recorded round, from the server's tally or rebuilt from the recording? |
 | [replay-spotlight](replay-spotlight/README.md) | build | How does a kill in the replay's timeline play from just before it with the killer and the one they killed lit, the rest dulled and their rounds flying as tracers (the match-up and its breakdown before it, in its history)? |
 | [replay-load-batching](replay-load-batching/README.md) | fix | Why did a replay keep fetching small files for minutes after it showed, and how does it ask for them up front now? |
