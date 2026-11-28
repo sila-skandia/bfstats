@@ -891,7 +891,7 @@ export class ReplayCreator {
       ['click', 'follow a player, a vehicle\'s crew; chase a round'],
       ['double-click', 'their eyes'],
       ['5', 'their next kill as a take: its clip, looping'],
-      ['shift 5', 'ride their next round, whatever it hits'],
+      ['shift 5', 'their next round as a take, whatever it hits'],
       ['6', 'the next rocket, shell, grenade or thrown knife as a take'],
       ['G', 'the next style of the camera on the round'],
       ['U', 'use this view: your camera from the playhead'],
@@ -1494,7 +1494,10 @@ export class ReplayCreator {
       this.ui.flash(`${nameAt(player.rec, pid, player.time)} fires no more`, 1800);
       return;
     }
-    this.rideShot(f, this.killOfShot(f), 'Next round');
+    // A take, as a kill shot is: the clip marked round the shot and what it
+    // hits, looping, so the studio opens on it rather than on whatever the
+    // replay plays next (the owner, 2026-11-28, on a knife throw).
+    this.startTake(f, this.killOfShot(f), this.takeWord(f, 'Next round'));
   }
 
   /** The round cam set on recorded shot `f`: waiting over the shooter's
@@ -1548,12 +1551,15 @@ export class ReplayCreator {
     this.cams = null;
     this.sync = null;
     this.syncFit = null;
-    this.clipAround(f.t, kill?.t ?? f.t, f.pid, { tail: TAKE_TAIL });
+    // A round that kills nobody: the clip runs to where it lands (a thrown
+    // knife's strike, a grenade's), not to the trigger.
+    const hit = kill ? kill.t : this.hitOf({ f, kill: null });
+    this.clipAround(f.t, Number.isFinite(hit) ? Math.max(f.t, hit) : f.t, f.pid, { tail: TAKE_TAIL });
     this.range.loop = true;
     this.openEditor();
     this.armTake();
-    const hit = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : '';
-    this.ui.flash(`${word}${hit} · looping the clip · click a camera on the strip to change it`, 2600);
+    const kills = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : '';
+    this.ui.flash(`${word}${kills} · looping the clip · click a camera on the strip to change it`, 2600);
   }
 
   /** The take from the clip's start, armed (`again`: round once more). */

@@ -312,7 +312,7 @@ export class CreatorPanel {
       () => creator.chaseKillShot(), 'rc-wide');
     const heavy = this.button('Rocket, shell or grenade', 'bullet', 'Ride the next round big enough to watch (6)',
       () => creator.chaseHeavy(), 'rc-wide');
-    const any = this.button('Their next round', null, 'Ride their very next round, whatever it goes on to hit (shift 5)',
+    const any = this.button('Their next round', null, 'Clip their very next round, whatever it goes on to hit, and ride it (shift 5)',
       () => creator.chaseNext(), 'rc-wide rc-quiet');
     root.append(
       this.group('Ride a round', kill, heavy, any,

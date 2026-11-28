@@ -2797,6 +2797,16 @@ samples, 1.89 m behind it, the plate reading 23-30 m/s, and the hit at
 kill: the two Secret Weapons recordings on the feed have 21 throws and none
 kills.
 
+**Their next round is a take (shift 5).** The owner: "it works, then I open
+studio, but it is of them just continuing to play -- the throw isn't really
+captured". Shift 5 rode the round and left the clip alone; it now starts a
+take as 5 and 6 do: the clip marked from the lead-in to the round's landing
+(`hitOf`: a thrown knife's strike, else its flight) plus the tail, looping,
+the take armed. A take of a round that kills nobody used to end its action
+at the trigger; it ends where the round lands now. On `5txd9vj8ap` at 42.4 s:
+the take is the throw at 43.12 s, the clip 40.12-49.19 s, the action
+43.12-45.59 s, and every pass rides the knife 43.2-45.1 s and holds its hit.
+
 The same recording showed the knife in his hand drawn on his sleeve; that
 was the model extractor, not the replay (`features/hand-weapon-part-placement`).
 
