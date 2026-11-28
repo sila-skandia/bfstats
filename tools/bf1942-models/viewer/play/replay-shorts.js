@@ -303,12 +303,9 @@ const STYLE = `
 .rs-remaster-dialog small { color: #f3ce7b; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
 .rs-remaster-dialog h2 { font: bold 22px/1.15 'Trebuchet MS', sans-serif; margin: 10px 0; }
 .rs-remaster-dialog p { margin: 0 0 18px; }
-.rs-remaster-dialog figure { position: relative; margin: 14px 0; overflow: hidden; border-radius: 5px; }
-.rs-remaster-dialog figure img { position: static; display: block; width: 100%; height: auto; }
-.rs-remaster-dialog figcaption { position: absolute; inset: auto 0 0; display: grid; grid-template-columns: 1fr 1fr;
-  padding: 14px 0 6px; background: linear-gradient(transparent, rgba(0,0,0,.8)); color: #fff;
-  font: 700 12px/1.25 'Trebuchet MS', sans-serif; text-shadow: 0 1px 3px #000; }
-.rs-remaster-dialog figcaption span { padding-left: 8px; }
+.rs-remaster-image { display: block; margin: 14px 0; border-radius: 5px; cursor: zoom-in; }
+.rs-remaster-image:focus-visible { outline: 2px solid #ffda86; outline-offset: 2px; }
+.rs-remaster-image img { position: static; display: block; width: 100%; height: auto; border-radius: inherit; }
 .rs-remaster-dialog a { color: #ffda86; }
 .rs-remaster-dialog button { float: right; color: inherit; background: transparent; border: 1px solid #877b60; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
 .rs-kind-air-to-air { --rs-kind: #8fc0e8; }
@@ -483,15 +480,18 @@ function unrealBadge() {
     const dialog = el('dialog', 'rs-remaster-dialog');
     const title = 'Battlefield 1942 in Unreal Engine';
     dialog.setAttribute('aria-label', title);
-    const water = el('figure');
+    const water = el('a', 'rs-remaster-image');
+    water.href = new URL('play/coral-sea-landing-craft-full.webp', VIEWER_ROOT).href;
+    water.target = '_blank';
+    water.rel = 'noopener';
+    water.title = 'Open full-resolution image in a new tab';
+    water.setAttribute('aria-label', 'Open the full-resolution Coral Sea comparison in a new tab');
     const still = el('img');
     still.width = 1080;
     still.height = 540;
     still.alt = 'A parachute descends over the stern of a carrier, seen across the water from a landing craft on Coral Sea.';
     still.src = new URL('play/coral-sea-landing-craft.webp', VIEWER_ROOT).href;
-    const labels = el('figcaption');
-    labels.append(el('span', '', 'Browser'), el('span', '', 'Unreal Engine 5'));
-    water.append(still, labels);
+    water.append(still);
     const link = el('a', '', 'Visit BF42 Remastered');
     link.href = 'https://bf42remastered.com/';
     link.target = '_blank';
