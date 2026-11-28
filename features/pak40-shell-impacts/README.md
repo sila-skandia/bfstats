@@ -78,4 +78,22 @@ second-`i` case, 200 m off; a new case 3 m to the side).
   collision 6 of 6 (0 of 6 before), Flak38 12 of 17 (the other five burst in
   the air, no `i`). `q8uwcxrjcg` (Berlin) and `5txd9vj8ap` (Hellendoorn), both
   server files, link as before.
-- The page, headless, on local code and then live: see "On the page" below.
+- The 4997 failures `./scripts/verify.sh` reported on this Mac
+  (`test_radio_voice_trees` 4985, `test_level_art`, `test_room_ships`,
+  `test_hud_layout`, `test_regression_corpus`, `test_extract_vehicle_sounds`)
+  fail the same with this change taken out: on-disk asset trees this machine
+  does not hold, and other sessions' work in progress.
+
+## On the page (live, headless, 2026-11-28)
+
+- **Strasbourg, `wj6jp56xzw`, after the deploy.** All six Pak40 flights carry
+  their collision (`linked: [true x6]`). The first, fired at 236.71 s, is drawn
+  along its recorded path to the recorded ground point at 237.978 s
+  (1120.02, 95.72, 935.07), where `Exp2CascadesStone` plays: Pak40Projectile's
+  material 129 against Strasbourg's paved road. Before the fix the same flight
+  ended at its last `pj`, 237.944 s, in the air, with no effect.
+- **Liberation of Caen, `c8z2nt8m7u`** (a client recording: no flights, the
+  page fires its own round from `f`). The Pak40 shot at 129.20 s struck the
+  terrain (material 15, paved road) at 129.6 s and played
+  `Exp2CascadesStone`. This path never had the defect; the only Caen
+  recordings with server flights would have, and are fixed by the same change.
