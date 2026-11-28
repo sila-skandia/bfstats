@@ -223,7 +223,7 @@ Two more things came out of it:
 - **The recorders now write the heat (`kh`).** A recording had nothing of
   the pack but the flier's positions, so a replay could only estimate it.
   Both recorders write `[soldier, heat, state]` on change, read the way the
-  HUD reads it: bf42plus (branch `record-kit-part-heat`,
+  HUD reads it: bf42plus (Casqade/bf42plusplus#5, branch `replay-game`,
   `src/replay_parts.cpp`, `docs/replay-format.md`) from the client, and
   `features/server-replay-recorder` (`kit_heat`) on lnxded and w32ded.
   `replay-hud.js` uses the recorded heat for the bar and `replay-bodies.js`
