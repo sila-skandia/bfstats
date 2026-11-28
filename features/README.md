@@ -120,6 +120,7 @@ folder answers.
 | [dc-engine-reads](dc-engine-reads/README.md) | build | What do Desert Combat's `blastAmmoCount`, gun stabilization and `hasCollisionPhysics 0` really do? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
 | [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, what opens the cone on a swing, and how does a shot shake the view? |
+| [hand-weapon-part-placement](hand-weapon-part-placement/README.md) | fix | Why did Secret Weapons' knives sit on the soldier's sleeve, and where does a weapon's bound part (a side magazine, a knife's blade) belong against its body? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
 | [gun-hull-recoil](gun-hull-recoil/README.md) | build | Why did firing a Sherman's cannon across the hull not move the tank, and what does `fireingForce` do? |
 | [vehicle-gun-deviation](vehicle-gun-deviation/README.md) | fix | Why did every vehicle and stationary gun fire with no deviation, and what cone does a seat gun run? |

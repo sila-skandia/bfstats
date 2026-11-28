@@ -268,26 +268,19 @@ def _conjugate(rt: pose_mod.RT) -> pose_mod.RT:
 # bone at raw pose W is drawn at `W . CLIP_WORLD_YAW`. The main bone's wrapper
 # already carries `B . Y`, so a part at raw C relative to it has to be
 # `Y^-1 . C . Y`, the raw transform conjugated by the yaw. The two differ by
-# the X mirror (yaw x Z mirror), which is invisible at rest (every vanilla
-# part rests on the weapon's own YZ plane, x = 0, unrotated) and for a
-# magazine pulled straight down, and reverses any roll about the barrel.
+# the X mirror (yaw x Z mirror), which is invisible at rest for a part on the
+# weapon's own YZ plane (x = 0, unrotated: most of them) and for a magazine
+# pulled straight down, and reverses any roll about the barrel. Some parts
+# are off that plane: the Johnson's side magazine, FG42's, and Secret
+# Weapons' knives, whose whole blade hangs off `Mag` (`pose.hand_weapon_part`,
+# which the model extractor places every hand weapon's parts with too).
 # FHSW's and FH's bolt rifles are where it shows: their clips key a GUNBODY
 # bone that carries the whole rifle and counter-rolls it against the right
 # hand as the hand works the bolt (K98BoltOperate.baf: the hand rolls 113
 # degrees, GUNBODY 112 back). Conjugated by the Z mirror the two added, and
 # the rifle went round like a clock hand, 179 degrees at the peak; by the
 # yaw they cancel to 3.4 degrees and the rifle stays in the left hand.
-_X = (-1.0, 1.0, 1.0)
-
-
-def _under_grip(rt: pose_mod.RT) -> pose_mod.RT:
-    """A parsed-convention part transform, re-expressed under the grip wrapper."""
-    rotation, translation = rt
-    return (
-        tuple(tuple(_X[i] * rotation[i][j] * _X[j] for j in range(3))
-              for i in range(3)),
-        (-translation[0], translation[1], translation[2]),
-    )
+_under_grip = pose_mod.hand_weapon_part
 
 
 # The fixed change of frame from the engine's raw skeleton world to the rig's:

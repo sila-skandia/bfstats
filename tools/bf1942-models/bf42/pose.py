@@ -167,6 +167,39 @@ def weapon_attachment(weapon_skeleton: Skeleton, main_index: int | None,
     return rotation, translation
 
 
+_X_MIRROR = (-1.0, 1.0, 1.0)
+
+
+def hand_weapon_part(rt: RT) -> RT:
+    """A hand weapon's bound part, placed against the weapon's own geometry.
+
+    `rt` is the part's bone relative to the weapon's main bone as `ske.parse`
+    reads it, in the parsed (Z-mirror) convention. The engine draws the main
+    geometry at the main bone and the part's at its own bone, both straight
+    off the hand; `weapon_attachment(clip_posed=True)` shows how the weapon's
+    geometry meets its skeleton, `W . CLIP_WORLD_YAW`, a half turn and not a
+    mirror. So against the main geometry the part sits at the raw transform
+    conjugated by that yaw: the parsed one conjugated by the X mirror (yaw x Z
+    mirror). Welding a pose at the part's own bone gives the same place
+    (`tests/test_weapon_grip.py`).
+
+    The two differ only for a part off the weapon's YZ plane or turned about
+    an axis other than X, which most parts are not. Secret Weapons' knives
+    are: their mesh hangs off `Mag`, 6 cm to the side of the `Base` they are
+    welded by, and with the parsed rest it lay 10.5 cm from the right palm,
+    up the sleeve (1.1 cm with this; vanilla's single-bone knife 1.4 cm). So
+    are side magazines: with the parsed rest the Johnson's and FG42's stood
+    on the gun's right and the MP18's on its left; with this all three are
+    on the left, where the real guns carry them.
+    """
+    rotation, translation = rt
+    x = _X_MIRROR
+    return (
+        tuple(tuple(x[i] * rotation[i][j] * x[j] for j in range(3)) for i in range(3)),
+        (-translation[0], translation[1], translation[2]),
+    )
+
+
 def refine_binds(skn: skin_mod.Skin,
                  poses: dict[str, RT] | None = None,
                  rounds: int = 4) -> dict[str, RT]:

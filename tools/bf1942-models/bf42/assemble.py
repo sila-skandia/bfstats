@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import con as con_mod
 from . import baf, cockpit_overrides, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
+from . import pose as pose_mod
 from .level import object_lightmap_key
 from .meshtga import mesh_tga_pixels
 from .rfa import DEFAULT_TEXTURE, ArchivePool
@@ -1052,6 +1053,13 @@ class Report:
             "fireArms": self.fire_arms,
             "weapon": self.weapon or None,
         }
+
+
+def is_hand_weapon_skeleton(skeleton: ske.Skeleton | None) -> bool:
+    """Whether `skeleton` is a hand weapon's: rooted at `Bip01 R Hand`, the
+    bone the engine grafts onto the soldier's hand (`pose.py`)."""
+    return bool(skeleton and skeleton.bones
+                and ske.canonical(skeleton.bones[0].name) == "bip01 r hand")
 
 
 def is_foreign_skeleton_part(child: con_mod.ObjectTemplate,
@@ -3422,8 +3430,9 @@ class Assembler:
     def _bind_pose(self, ref: con_mod.ChildRef, child_name: str,
                    skeleton: ske.Skeleton | None, main_index: int | None,
                    report: Report,
-                   ) -> tuple[ske.Matrix3, ske.Vector3, str] | None:
-        """Where `bindToSkeletonPart` puts this child, or None to leave it alone.
+                   ) -> tuple[ske.Matrix3, ske.Vector3, str, bool] | None:
+        """Where `bindToSkeletonPart` puts this child, or None to leave it alone:
+        `(rotation, translation, bone, hand_weapon)`.
 
         A rigid `StandardMesh` sub-part carries no placement of its own, so the
         bone's rest pose *is* its placement — a bazooka rocket is modelled along
@@ -3450,10 +3459,16 @@ class Assembler:
                 f"{child_name} -> {ref.skeleton_part} (no such bone)")
             return None
         rotation, translation = skeleton.relative(index, main_index)
+        hand = is_hand_weapon_skeleton(skeleton)
+        if hand:
+            # A hand weapon's part, where the engine draws it against the
+            # weapon's own geometry (`pose.hand_weapon_part`): not the parsed
+            # rest, which mirrors a part off the weapon's centre plane.
+            rotation, translation = pose_mod.hand_weapon_part((rotation, translation))
         main = skeleton.bones[main_index].name if main_index is not None else "root"
         report.bound_parts.append(
             f"{child_name} -> {skeleton.bones[index].name} (relative to {main})")
-        return rotation, translation, skeleton.bones[index].name
+        return rotation, translation, skeleton.bones[index].name, hand
 
     def _alternative_is_first_person(self, template: con_mod.ObjectTemplate,
                                      ref: con_mod.ChildRef) -> bool:
@@ -3780,7 +3795,7 @@ class Assembler:
                    control: str = "",
                    body_skin: skin.Skin | None = None,
                    world_origin: tuple[float, float, float] | None = None,
-                   bind: tuple[ske.Matrix3, ske.Vector3, str] | None = None,
+                   bind: tuple[ske.Matrix3, ske.Vector3, str, bool] | None = None,
                    skeleton_scope: tuple[ske.Skeleton | None, int | None, str | None]
                    = (None, None, None),
                    first_person_branch: bool = False,
@@ -4479,12 +4494,16 @@ class Assembler:
             pitch -= 90.0
         node_rotation = gltf.quat_from_ypr(yaw, pitch, roll)
         if bind is not None:
-            r_bind, t_bind, bone = bind
+            r_bind, t_bind, bone, *rule = bind
             px, py, pz = position
             tx, ty, tz = t_bind
             position = (px + tx, py + ty, pz + tz)
             node_rotation = gltf.quat_mul(node_rotation, gltf.quat_from_matrix(r_bind))
             extras["boundBone"] = bone
+            if rule and rule[0]:
+                # Placed by `pose.hand_weapon_part`: `patch_weapon_parts.py`
+                # leaves such a node alone.
+                extras["handWeaponPart"] = True
         if aligned := self._part_alignment(template, body_skin):
             r_rel, t_rel, bone = aligned
             px, py, pz = position
